@@ -1,0 +1,83 @@
+-- This file has been generated from package.yaml by hpack version 0.20.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: fb2d1c1b658d95bfecfd79981551ececefac1985546a26b89fdf377a2c547e10
+
+name:           bpfun
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/bpfun#readme>
+homepage:       https://github.com/githubuser/bpfun#readme
+bug-reports:    https://github.com/githubuser/bpfun/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2018 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+cabal-version:  >= 1.10
+
+extra-source-files:
+    ChangeLog.md
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/bpfun
+
+library
+  hs-source-dirs:
+      src
+  build-depends:
+      backprop >=0.2 && <0.3
+    , base >=4.7 && <5
+    , hmatrix >=0.19 && <0.20
+    , hmatrix-backprop >=0.1 && <0.2
+    , microlens >=0.4 && <0.5
+    , microlens-th >=0.4 && <0.5
+    , random >=1.1 && <1.2
+    , simple-reflect >=0.3 && <0.4
+  exposed-modules:
+      Lib
+  other-modules:
+      Paths_bpfun
+  default-language: Haskell2010
+
+executable bpfun-exe
+  main-is: Main.hs
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      backprop >=0.2 && <0.3
+    , base >=4.7 && <5
+    , bpfun
+    , hmatrix >=0.19 && <0.20
+    , hmatrix-backprop >=0.1 && <0.2
+    , microlens >=0.4 && <0.5
+    , microlens-th >=0.4 && <0.5
+    , random >=1.1 && <1.2
+    , simple-reflect >=0.3 && <0.4
+  other-modules:
+      Paths_bpfun
+  default-language: Haskell2010
+
+test-suite bpfun-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      backprop >=0.2 && <0.3
+    , base >=4.7 && <5
+    , bpfun
+    , hmatrix >=0.19 && <0.20
+    , hmatrix-backprop >=0.1 && <0.2
+    , microlens >=0.4 && <0.5
+    , microlens-th >=0.4 && <0.5
+    , random >=1.1 && <1.2
+    , simple-reflect >=0.3 && <0.4
+  other-modules:
+      Paths_bpfun
+  default-language: Haskell2010

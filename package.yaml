@@ -1,0 +1,56 @@
+name:                bpfun
+version:             0.1.0.0
+github:              "githubuser/bpfun"
+license:             BSD3
+author:              "Author name here"
+maintainer:          "example@example.com"
+copyright:           "2018 Author name here"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/bpfun#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- backprop >= 0.2 && < 0.3
+- hmatrix-backprop >= 0.1 && < 0.2
+- hmatrix >= 0.19 && < 0.20
+- simple-reflect >= 0.3 && < 0.4
+- microlens-th >= 0.4 && < 0.5
+- microlens >= 0.4 && < 0.5
+- random >= 1.1 && < 1.2
+# - lens >= 4.16 && < 4.17
+
+library:
+  source-dirs: src
+
+executables:
+  bpfun-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - bpfun
+
+tests:
+  bpfun-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - bpfun
