@@ -295,22 +295,40 @@ trainData =
 --   , ([zers, ones, zers, zers, ones], ones)
 --   , ([ones, zers, zers, zers, zers], ones)
 --   , ([ones, ones, ones, ones, ones], ones)
-  [ ([], zers)
-  , ([zers], zers)
+--   ]
+--   [ ([], zers)
+--   , ([zers], zers)
+--   , ([ones], ones)
+--   , ([zers, zers], zers)
+--   , ([ones, zers], ones)
+--   , ([zers, ones], ones)
+--   , ([ones, ones], ones)
+-- --   , ([zers, zers, zers], zers)
+-- --   , ([ones, zers, zers], ones)
+-- --   , ([zers, ones, zers], ones)
+-- --   , ([ones, ones, zers], ones)
+-- --   , ([zers, zers, ones], ones)
+-- --   , ([ones, zers, ones], ones)
+-- --   , ([zers, ones, ones], ones)
+-- --   , ([ones, ones, ones], ones)
+--   ] 
+  [ ([], ones)
   , ([ones], ones)
-  , ([zers, zers], zers)
-  , ([ones, zers], ones)
-  , ([zers, ones], ones)
+  , ([zers], zers)
   , ([ones, ones], ones)
---   , ([zers, zers, zers], zers)
---   , ([ones, zers, zers], ones)
---   , ([zers, ones, zers], ones)
---   , ([ones, ones, zers], ones)
---   , ([zers, zers, ones], ones)
---   , ([ones, zers, ones], ones)
---   , ([zers, ones, ones], ones)
+  , ([zers, ones], zers)
+  , ([ones, zers], zers)
+  , ([zers, zers], zers)
 --   , ([ones, ones, ones], ones)
-  ] where
+--   , ([zers, ones, ones], zers)
+--   , ([ones, zers, ones], zers)
+--   , ([zers, zers, ones], zers)
+--   , ([ones, ones, zers], zers)
+--   , ([zers, ones, zers], zers)
+--   , ([ones, zers, zers], zers)
+--   , ([zers, zers, zers], zers)
+  ] 
+  where
     k = 5
     vals v = LA.vector . take k $ repeat v
     ones = vals 1
@@ -348,12 +366,15 @@ main = do
               (map BP.auto [zers, zers, ones, zers, zers])
       resMix3 = head $ runRNN (BP.auto rnn')
               (map BP.auto [zers, zers, zers, zers, zers, zers, zers, ones])
+      resMix4 = head $ runRNN (BP.auto rnn')
+              (map BP.auto [zers, zers, zers, zers, ones, zers, zers, zers])
   -- forM_ res $ \x -> print $ BP.evalBP0 x
   LBP.disp 5 $ BP.evalBP0 resOnes
   LBP.disp 5 $ BP.evalBP0 resZers
   LBP.disp 5 $ BP.evalBP0 resMix1
   LBP.disp 5 $ BP.evalBP0 resMix2
   LBP.disp 5 $ BP.evalBP0 resMix3
+  LBP.disp 5 $ BP.evalBP0 resMix4
   return ()
 
 
