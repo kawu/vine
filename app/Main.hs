@@ -1,6 +1,9 @@
 module Main where
 
-import Lib
+import           Lib (someFunc)
+import qualified RNN as RNN
 
 main :: IO ()
-main = someFunc
+main = do
+  RNN.main
+  -- someFunc

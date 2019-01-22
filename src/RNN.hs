@@ -7,13 +7,14 @@
 
 
 module RNN
-  (
+  ( main
   ) where
 
 
 import           GHC.Generics (Generic)
+-- import           GHC.TypeNats (KnownNat)
 
-import           Control.Monad (forM)
+import           Control.Monad (forM, forM_)
 
 import           System.Random (randomRIO)
 
@@ -59,12 +60,12 @@ relu x = (x + abs x) / 2
 ----------------------------------------------
 
 
--- -- | Size of the input word vector representation
+-- -- | Size of input vectors
 -- inpDim :: Int
--- inpDim = 10
+-- inpDim = 5
 -- 
 -- 
--- -- | Hidden layer size
+-- -- | Size of hidden vectors
 -- hidDim :: Int
 -- hidDim = 5
 -- 
@@ -97,7 +98,24 @@ runFFN net x = z
     -- run first layer
     y = logistic $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
     -- run second layer
-    z = logistic $ (net ^^. nWeights2) #> y + (net ^^. nBias2)
+    z = relu $ (net ^^. nWeights2) #> y + (net ^^. nBias2)
+    -- z = (net ^^. nWeights2) #> y + (net ^^. nBias2)
+
+
+-- | Substract the second network from the first one.
+subFFN :: FFN -> FFN -> Double -> FFN
+subFFN x y coef = FFN
+  { _nWeights1 = _nWeights1 x - scale (_nWeights1 y)
+  , _nBias1 = _nBias1 x - scale (_nBias1 y)
+  , _nWeights2 = _nWeights2 x - scale (_nWeights2 y)
+  , _nBias2 = _nBias2 x - scale (_nBias2 y)
+  }
+  where
+    scale x
+      = fromJust
+      . LA.create
+      . LAD.scale coef
+      $ LA.unwrap x
 
 
 ----------------------------------------------
@@ -119,184 +137,230 @@ instance BP.Backprop RNN
 makeLenses ''RNN
 
 
+runRNN
+  :: LBP.Reifies s LBP.W
+  => LBP.BVar s RNN
+  -> [LBP.BVar s (LA.R 5)]
+  -> [LBP.BVar s (LA.R 5)]
+runRNN net [] = [net ^^. h0]
 runRNN net (x:xs) = h:hs
   where
     -- run the recursive calculation (unless `null xs`)
-    hs =
-      if null xs
-         then [net ^^. h0]
-         else runRNN net xs
+    hs = runRNN net xs
     -- get the last hidden state
     h' = head hs
     -- calculate the resulting hidden value
     h = runFFN (net ^^. ffn) (x LBP.# h')
 
 
+-- | Substract the second network from the first one.
+subRNN :: RNN -> RNN -> Double -> RNN
+subRNN x y coef = RNN
+  { _ffn = subFFN (_ffn x) (_ffn y) coef
+  , _h0 = _h0 x - scale (_h0 y)
+  }
+  where
+    scale x
+      = fromJust
+      . LA.create
+      . LAD.scale coef
+      $ LA.unwrap x
+
+
 ----------------------------------------------
--- Net
+-- Error
 ----------------------------------------------
 
 
--- data Net = N
---   { _nWeights1 :: LBP.L 20 100
---   , _nBias1    :: LBP.R 20
---   , _nWeights2 :: LBP.L 5 20
---   , _nBias2    :: LBP.R 5
---   }
---   deriving (Show, Generic)
--- 
--- instance BP.Backprop Net
--- 
--- makeLenses ''Net
--- 
--- 
--- -- | Substract the second network from the first one.
--- subNet :: Net -> Net -> Double -> Net
--- subNet x y coef = N
---   { _nWeights1 = _nWeights1 x - scale (_nWeights1 y)
---   , _nBias1 = _nBias1 x - scale (_nBias1 y)
---   , _nWeights2 = _nWeights2 x - scale (_nWeights2 ''y)
---   , _nBias2 = _nBias2 x - scale (_nBias2 y)
---   }
---   where
---     scale x
---       = fromJust
---       . LA.create
---       . LAD.scale coef
---       $ LA.unwrap x
--- 
--- 
--- data Dropout = Dropout
---   { _saveInput :: LBP.R 100
---     -- ^ Input dropout: each element of the vector specifies the probability
---     -- of *preserving* the corresponding input unit
---   , _saveHidden :: LBP.R 20
---     -- ^ Hidden layer dropout: each element of the vector specifies the
---     -- probability of *preserving* the corresponding hidden unit
---   } deriving (Show, Generic)
--- 
--- instance BP.Backprop Dropout
--- 
--- makeLenses ''Dropout
--- 
--- 
--- runNet dp net x = z
---   where
---     -- run input dropout
---     -- x' = x * (dp ^^. saveInput)
---     x' = x
---     -- run first layer
---     y = logistic $ (net ^^. nWeights1) #> x' + (net ^^. nBias1)
---     -- run hidden dropout
---     -- y' = y * (dp ^^. saveHidden)
---     y' = y
---     -- run second layer
---     z = relu (net ^^. nWeights2) #> y' + (net ^^. nBias2)
--- 
--- 
--- -- | Sample a concrete dropout with 0/1 values.
--- sample :: Dropout -> IO Dropout
--- sample dp = do
---   dpIn <- doit (dp ^. saveInput)
---   dpHd <- doit (dp ^. saveHidden)
---   return $ Dropout
---     { _saveInput = dpIn
---     , _saveHidden = dpHd
---     }
---   where
---     doit vect = fmap LA.vector . forM (toList vect) $ \p -> do
---       x <- randomRIO (0, 1)
---       return $ if x < p then 1 else 0
---     toList = LAD.toList . LA.unwrap
--- 
--- 
--- ----------------------------------------------
--- -- Error
--- ----------------------------------------------
--- 
--- 
--- squaredError target output = error `LBP.dot` error
---   where
---     error = target - output
--- 
--- 
--- netError target input dropout net = squaredError
---   (BP.auto target)
---   (runNet (BP.auto dropout) net (BP.auto input))
--- 
--- 
--- -- squaredErrorDrop target output = error `LA.dot` error
--- --   where
--- --     error = target - output
--- --
--- --
--- -- netErrorDrop target input net = squaredErrorDrop
--- --   target
--- --   (runDropNet net input)
--- 
--- 
--- ----------------------------------------------
--- -- Gradient Descent
--- ----------------------------------------------
--- 
--- 
--- calcGrad target input dropout net =
---   BP.gradBP (netError target input dropout) net
--- 
--- 
--- gradDesc
---   :: Int
---   -- ^ Number of iterations
---   -> LA.R 100
---   -- ^ Input vector
---   -> LA.R 5
---   -- ^ Target output vector
---   -> Dropout
---   -- ^ Dropout
---   -> Net
---   -- ^ Initial network
---   -> IO Net
---   -- ^ Resulting network
--- gradDesc iterNum input target dp net
---   | iterNum > 0 = do
---       print $ BP.evalBP (netError target input dp) net
---       concDP <- sample dp
---       let grad = calcGrad target input concDP net
---           newNet = subNet net grad 0.3
---       gradDesc (iterNum-1) input target dp newNet
---   | otherwise = return net
--- 
--- 
--- ----------------------------------------------
--- -- Main
--- ----------------------------------------------
--- 
--- 
--- someFunc :: IO ()
--- someFunc = do
---   print $ BP.evalBP myFunc (9 :: Double)
---   print $ BP.gradBP myFunc (9 :: Double)
---   print $ BP.evalBP myFunc (Refl.x :: Refl.Expr)
---   print $ BP.gradBP myFunc (Refl.x :: Refl.Expr)
--- 
---   -- an actual network
---   let list k = take k $ cycle [0, 1, 2]
---       zero k = take k $ repeat 0
---       net = N
---         { _nWeights1 = LA.matrix $ list (20*100)
---         , _nBias1 = LA.vector $ list 20
---         , _nWeights2 = LA.matrix $ list (5*20)
---         , _nBias2 = LA.vector $ zero 5
---         }
---       dropout = Dropout
---         { _saveInput = LA.vector . take 100 $ repeat 0.1
---         , _saveHidden = LA.vector . take 20 $ repeat 0.1
---         }
---       input = LA.vector . take 100 $ repeat 1
---       target = LA.vector [0.9, 1, 0.3, 0.4, 0.2]
---       -- target = LA.vector [1, 2, 3, 4, 1]
---       -- target = LA.vector [0.1, 0.0, 0.3, 0.4, 0.2]
---   -- print myNet
---   _net' <- gradDesc 100 input target dropout net
--- 
---   return ()
+squaredError1
+  :: LBP.Reifies s LBP.W
+  => LBP.BVar s (LA.R 5)
+  -> LBP.BVar s (LA.R 5)
+  -> LBP.BVar s LA.ℝ
+squaredError1 target output = err `LBP.dot` err
+  where
+    err = target - output
+
+
+squaredError
+  :: LBP.Reifies s LBP.W
+  => [LBP.BVar s (LA.R 5)]
+  -> [LBP.BVar s (LA.R 5)]
+  -> LBP.BVar s LA.ℝ
+squaredError targets outputs =
+  go targets outputs -- (BP.sequenceVar outputs)
+  where
+    go ts os = 
+      case (ts, os) of
+        (t:tr, o:or) -> squaredError1 t o + go tr or
+        ([], []) -> 0
+        _ -> error "squaredError: lists of different size" 
+
+
+-- netError1 target input net =
+--   squaredError1
+--     (BP.auto target)
+--     (head $ runRNN net (map BP.auto input))
+
+
+netError1 target input net =
+  squaredError
+    [BP.auto target]
+    [head . runRNN net . map BP.auto $ input]
+
+
+netError
+  :: LBP.Reifies s LBP.W
+  => Train
+  -> LBP.BVar s RNN
+  -> LBP.BVar s LA.ℝ
+netError dataSet net =
+  let
+    inputs = map fst dataSet
+    outputs = map (head . runRNN net . map BP.auto) inputs
+    targets = map (BP.auto . snd) dataSet
+  in  
+    squaredError targets outputs
+
+
+----------------------------------------------
+-- Gradient Descent
+----------------------------------------------
+
+
+calcGrad1 target input net =
+  BP.gradBP (netError1 target input) net
+
+
+gradDesc1
+  :: Int
+  -- ^ Number of iterations
+  -> [LA.R 5]
+  -- ^ Input vectors
+  -> LA.R 5
+  -- ^ Target output vector
+  -> RNN
+  -- ^ Initial network
+  -> IO RNN
+  -- ^ Resulting network
+gradDesc1 iterNum input target net
+  | iterNum > 0 = do
+      print $ BP.evalBP (netError1 target input) net
+      let grad = calcGrad1 target input net
+          newNet = subRNN net grad 0.01
+      gradDesc1 (iterNum-1) input target newNet
+  | otherwise = return net
+
+
+calcGrad dataSet net =
+  BP.gradBP (netError dataSet) net
+
+
+gradDesc
+  :: Int
+  -- ^ Number of iterations
+  -> Double
+  -- ^ Gradient scaling coefficient
+  -> Train
+  -- ^ Training dataset
+  -> RNN
+  -- ^ Initial network
+  -> IO RNN
+  -- ^ Resulting network
+gradDesc iterNum coef dataSet net
+  | iterNum > 0 = do
+      print $ BP.evalBP (netError dataSet) net
+      let grad = calcGrad dataSet net
+          newNet = subRNN net grad coef
+      gradDesc (iterNum-1) coef dataSet newNet
+  | otherwise = return net
+
+
+----------------------------------------------
+-- Main
+----------------------------------------------
+
+
+type TrainElem = ([LA.R 5], LA.R 5)
+type Train = [TrainElem]
+
+
+-- | The dataset consists of pairs (input, target output)
+trainData :: Train
+trainData =
+--   [ ([zers, zers, zers, zers, zers], zers)
+--   , ([zers, zers, zers, zers, ones], ones)
+--   , ([zers, zers, zers, ones, zers], ones)
+--   , ([zers, zers, ones, zers, zers], ones)
+--   , ([zers, ones, zers, zers, ones], ones)
+--   , ([ones, zers, zers, zers, zers], ones)
+--   , ([ones, ones, ones, ones, ones], ones)
+  [ ([], zers)
+  , ([zers], zers)
+  , ([ones], ones)
+  , ([zers, zers], zers)
+  , ([ones, zers], ones)
+  , ([zers, ones], ones)
+  , ([ones, ones], ones)
+--   , ([zers, zers, zers], zers)
+--   , ([ones, zers, zers], ones)
+--   , ([zers, ones, zers], ones)
+--   , ([ones, ones, zers], ones)
+--   , ([zers, zers, ones], ones)
+--   , ([ones, zers, ones], ones)
+--   , ([zers, ones, ones], ones)
+--   , ([ones, ones, ones], ones)
+  ] where
+    k = 5
+    vals v = LA.vector . take k $ repeat v
+    ones = vals 1
+    zers = vals 0
+
+
+main :: IO ()
+main = do
+  -- an actual network
+  let list k = take k $ cycle [0, 1, 2]
+      zero k = take k $ repeat 0
+      ffn = FFN
+        { _nWeights1 = LA.matrix $ zero (5*10)
+        , _nBias1 = LA.vector $ zero 5
+        , _nWeights2 = LA.matrix $ zero (5*5)
+        , _nBias2 = LA.vector $ zero 5
+        }
+      rnn = RNN
+        { _ffn = ffn
+        , _h0 = LA.vector $ zero 5
+        }
+      -- input = [LA.vector . take 5 $ repeat 1]
+      -- target = LA.vector [1, 2, 3, 4, 1]
+  -- _rnn' <- gradDesc1 100 input target rnn
+  rnn' <- gradDesc 1000 0.01 trainData rnn
+  let ones = LA.vector . take 5 $ repeat 1
+      zers = LA.vector . take 5 $ repeat 0
+      resOnes = head $ runRNN (BP.auto rnn')
+              (map BP.auto [ones, ones, ones, ones, ones])
+      resZers = head $ runRNN (BP.auto rnn')
+              (map BP.auto [zers, zers, zers, zers, zers])
+      resMix1 = head $ runRNN (BP.auto rnn')
+              (map BP.auto [ones, zers, zers, zers, zers, zers, zers, zers])
+      resMix2 = head $ runRNN (BP.auto rnn')
+              (map BP.auto [zers, zers, ones, zers, zers])
+      resMix3 = head $ runRNN (BP.auto rnn')
+              (map BP.auto [zers, zers, zers, zers, zers, zers, zers, ones])
+  -- forM_ res $ \x -> print $ BP.evalBP0 x
+  LBP.disp 5 $ BP.evalBP0 resOnes
+  LBP.disp 5 $ BP.evalBP0 resZers
+  LBP.disp 5 $ BP.evalBP0 resMix1
+  LBP.disp 5 $ BP.evalBP0 resMix2
+  LBP.disp 5 $ BP.evalBP0 resMix3
+  return ()
+
+
+----------------------------------------------
+-- Rendering
+----------------------------------------------
+
+
+-- showVect :: (KnownNat n) => LA.R n -> String
+-- showVect = undefined
