@@ -139,11 +139,13 @@ makeLenses ''Dropout
 runNet dp net x = z
   where
     -- run input dropout
-    x' = x * (dp ^^. saveInput)
+    -- x' = x * (dp ^^. saveInput)
+    x' = x
     -- run first layer
     y = logistic $ (net ^^. nWeights1) #> x' + (net ^^. nBias1)
     -- run hidden dropout
-    y' = y * (dp ^^. saveHidden)
+    -- y' = y * (dp ^^. saveHidden)
+    y' = y
     -- run second layer
     z = relu (net ^^. nWeights2) #> y' + (net ^^. nBias2)
 
