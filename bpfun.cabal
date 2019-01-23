@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d7a5e55f387b2ff1c71fbe5b9c6ae4e9b734fb5aa50216c227f853d19fcfeb0a
+-- hash: 06d5b4b35bed9b5e8c4f2f8c318d749e14a945a9cbf89fd50db8f30fd923076b
 
 name:           bpfun
 version:        0.1.0.0
@@ -36,6 +36,7 @@ library
       RNN2
       RNN3
       RNN4
+      SMT
   other-modules:
       Paths_bpfun
   hs-source-dirs:

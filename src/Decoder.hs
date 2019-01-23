@@ -9,6 +9,7 @@
 
 module Decoder
   ( Decoder(..)
+  , new
   , run
   , substract
   ) where
@@ -73,6 +74,20 @@ instance
   => BP.Backprop (Decoder h gh i bh)
 
 makeLenses ''Decoder
+
+
+-- | Create a new, random Decoder
+new
+  :: ( KnownNat h, KnownNat gh
+     , KnownNat i, KnownNat bh, KnownNat (i Nats.+ h) )
+  => Int -- h
+  -> Int -- gh
+  -> Int -- i
+  -> Int -- bh
+  -> R i -- EOS
+  -> IO (Decoder h gh i bh)
+new h gh i bh eos =
+  Decoder <$> FFN.new h gh i <*> FFN.new (i+h) bh h <*> pure eos
 
 
 run

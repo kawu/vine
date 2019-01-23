@@ -10,6 +10,7 @@
 
 module Encoder
   ( Encoder(..)
+  , new
   , run
   , substract
   ) where
@@ -52,7 +53,7 @@ data Encoder i ffh h = Encoder
   { _ffn :: FFN (i Nats.+ h) ffh h
     -- ^ The underlying feed-forward network used to calculate 
     -- the subsequent hidden values
-  , _h0  :: LBP.R h
+  , _h0  :: R h
     -- ^ The initial hidden state
   } deriving (Generic)
 
@@ -60,6 +61,17 @@ instance (KnownNat i, KnownNat ffh, KnownNat h, KnownNat (i Nats.+ h)) =>
   BP.Backprop (Encoder i ffh h)
 
 makeLenses ''Encoder
+
+
+-- | Create a new, random Encoder
+new
+  :: (KnownNat i, KnownNat ffh, KnownNat h, KnownNat (i Nats.+ h))
+  => Int -- i
+  -> Int -- ffh
+  -> Int -- h
+  -> IO (Encoder i ffh h)
+new i ffh h =
+  Encoder <$> FFN.new (i+h) ffh h <*> vector h
 
 
 run

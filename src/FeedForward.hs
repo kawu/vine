@@ -12,6 +12,7 @@
 
 module FeedForward
   ( FFN (..)
+  , new
   , run
   , substract
   ) where
@@ -59,6 +60,17 @@ instance (KnownNat idim, KnownNat hdim, KnownNat odim)
   => BP.Backprop (FFN idim hdim odim)
 
 makeLenses ''FFN
+
+
+-- | Create a new, random FFN
+new
+  :: (KnownNat idim, KnownNat hdim, KnownNat odim)
+  => Int -- idim
+  -> Int -- hdim
+  -> Int -- odim
+  -> IO (FFN idim hdim odim)
+new idim hdim odim =
+  FFN <$> matrix hdim idim <*> vector hdim <*> matrix odim hdim <*> vector odim
 
 
 run

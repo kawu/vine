@@ -240,31 +240,6 @@ trainData = Train
   }
 
 
--- | A random list of values between 0 and 1
-randomList :: Int -> IO [Double]
-randomList 0 = return []
-randomList n = do
-  r  <- randomRIO (0, 1)
-  rs <- randomList (n-1)
-  return (r:rs) 
-
-
--- | Create a random matrix
-matrix
-  :: (KnownNat n, KnownNat m)
-  => Int -> Int -> IO (L m n)
-matrix n m = do
-  list <- randomList (n*m)
-  return $ LA.matrix list
-
-
--- | Create a random vector
-vector :: (KnownNat n) => Int -> IO (R n)
-vector k = do
-  list <- randomList k
-  return $ LA.vector list
-
-
 main :: IO ()
 main = do
   ffg <- FFN <$> matrix 5 5 <*> vector 5 <*> matrix 5 5 <*> vector 5
