@@ -139,11 +139,11 @@ subFFN x y coef = FFN
 
 
 -- | The EOS vector
-one, two, three, end, eos :: R 5
+one, two, three, four, eos :: R 5
 one   = LA.vector [1, 0, 0, 0, 0]
 two   = LA.vector [0, 1, 0, 0, 0]
 three = LA.vector [0, 0, 1, 0, 0]
-end   = LA.vector [0, 0, 0, 1, 0]
+four  = LA.vector [0, 0, 0, 1, 0]
 eos   = LA.vector [0, 0, 0, 0, 1]
 
 
@@ -178,9 +178,9 @@ runRNN
   -> [BVar s (R 5)]
     -- ^ Sentence (sequence of vector representations)
   -> BVar s Double
-    -- ^ Probability of the sentence
+    -- ^ Probability of the sentence (log-domain!)
 runRNN net =
-  go (net ^^. h0) 1.0
+  go (net ^^. h0) (log 1.0)
   where
     -- run the calculation, given the previous hidden state
     -- and the list of words to generate
@@ -189,19 +189,19 @@ runRNN net =
         -- determine the probability vector
         probVect = softmax $ runFFN (net ^^. ffG) hPrev
         -- determine the actual probability of the current word
-        newProb = probVect `LBP.dot` wordVect
+        newProb = log $ probVect `LBP.dot` wordVect
         -- determine the next hidden state
         hNext = runFFN (net ^^. ffB) (wordVect # hPrev)
       in
-        go hNext (prob * newProb) ws
+        go hNext (prob + newProb) ws
     go hPrev prob [] =
       let
         -- determine the probability vector
         probVect = softmax $ runFFN (net ^^. ffG) hPrev
         -- determine the actual probability of EOS
-        newProb = probVect `LBP.dot` BP.auto eos
+        newProb = log $ probVect `LBP.dot` BP.auto eos
       in
-        newProb
+        prob + newProb
 
 
 -- | Substract the second network from the first one.
@@ -220,34 +220,50 @@ subRNN x y coef = RNN
 
 
 ----------------------------------------------
--- Error
+-- Likelihood
 ----------------------------------------------
 
 
+-- | Training dataset element
 type TrainElem = [R 5]
-type Train = [TrainElem]
 
 
--- | Likelihood of the training dataset
-likelihood
+-- | Training dataset (both good and bad examples)
+data Train = Train
+  { goodSet :: [TrainElem]
+  , badSet :: [TrainElem]
+  }
+
+
+-- | Log-likelihood of the training dataset
+logLL
   :: Reifies s W
-  => Train
+  => [TrainElem]
   -> BVar s RNN
   -> BVar s Double
-likelihood dataSet net
-  = product
+logLL dataSet net
+  = sum
   . map (runRNN net . map BP.auto)
   $ dataSet
 
 
--- | Log-likelihood
-logLL
+-- | Negated log-likelihood
+negLogLL
+  :: Reifies s W
+  => [TrainElem]
+  -> BVar s RNN
+  -> BVar s Double
+negLogLL dataSet net = negate $ logLL dataSet net
+
+
+-- | Quality of the network.  The lower the better...
+qualityInv
   :: Reifies s W
   => Train
   -> BVar s RNN
   -> BVar s Double
-logLL dataSet =
-  (\x->(-x)) . log . likelihood dataSet
+qualityInv Train{..} net =
+  negLogLL goodSet net - log (1 + negLogLL badSet net)
 
 
 ----------------------------------------------
@@ -256,7 +272,7 @@ logLL dataSet =
 
 
 calcGrad dataSet net =
-  BP.gradBP (logLL dataSet) net
+  BP.gradBP (qualityInv dataSet) net
 
 
 gradDesc
@@ -272,7 +288,7 @@ gradDesc
   -- ^ Resulting network
 gradDesc iterNum coef dataSet net
   | iterNum > 0 = do
-      print $ BP.evalBP (logLL dataSet) net
+      print $ BP.evalBP (qualityInv dataSet) net
       let grad = calcGrad dataSet net
           newNet = subRNN net grad coef
       gradDesc (iterNum-1) coef dataSet newNet
@@ -284,62 +300,90 @@ gradDesc iterNum coef dataSet net
 ----------------------------------------------
 
 
--- | The dataset consists of pairs (input, target output)
-trainData :: Train
-trainData =
-  [ [end]
-  , [one, two, three, end]
-  -- , [one, two, three, four, one, two, three, four, end]
+goodData :: [TrainElem]
+goodData =
+  [ [one]
+  , [one, two]
+  , [one, two, one]
+  , [one, two, one, two]
+  -- additional
+  , [one, two, one, two, one]
+  , [one, two, one, two, one, two]
+  , [one, two, one, two, one, two, one]
+  , [one, two, one, two, one, two, one, two]
   ]
+
+
+badData :: [TrainElem]
+badData = 
+  [ [two]
+  , [one, one]
+  , [three]
+  , [four]
+  , [eos]
+  -- additional
+  , [one, three]
+  , [one, four]
+  , [one, eos]
+  , [one, two, three]
+  , [one, two, four]
+  , [one, two, eos]
+  ]
+
+
+-- | Training dataset (both good and bad examples)
+trainData = Train
+  { goodSet = goodData
+  , badSet = badData 
+  }
+
+
+-- | A random list of values between 0 and 1
+randomList :: Int -> IO [Double]
+randomList 0 = return []
+randomList n = do
+  r  <- randomRIO (0, 1)
+  rs <- randomList (n-1)
+  return (r:rs) 
+
+
+-- | Create a random matrix
+matrix
+  :: (KnownNat n, KnownNat m)
+  => Int -> Int -> IO (L m n)
+matrix n m = do
+  list <- randomList (n*m)
+  return $ LA.matrix list
+
+
+-- | Create a random vector
+vector :: (KnownNat n) => Int -> IO (R n)
+vector k = do
+  list <- randomList k
+  return $ LA.vector list
 
 
 main :: IO ()
 main = do
-  -- an actual network
-  let list k = take k $ cycle [0, 1, 2]
-      zero k = take k $ repeat 0
-      ffg = FFN
-        { _nWeights1 = LA.matrix $ zero (5*5)
-        , _nBias1 = LA.vector $ zero 5
-        , _nWeights2 = LA.matrix $ zero (5*5)
-        , _nBias2 = LA.vector $ zero 5
-        } :: FFN 5 5 5
-      ffb = FFN
-        { _nWeights1 = LA.matrix $ zero (5*10)
-        , _nBias1 = LA.vector $ zero 5
-        , _nWeights2 = LA.matrix $ zero (5*5)
-        , _nBias2 = LA.vector $ zero 5
-        } :: FFN 10 5 5
-      rnn = RNN
-        { _ffG = ffg
-        , _ffB = ffb
-        , _h0 = LA.vector $ zero 5
-        } :: RNN
-  rnn' <- gradDesc 1000 0.01 trainData rnn
-  let res1 = runRNN (BP.auto rnn')
-               (map BP.auto [end])
-      res2 = runRNN (BP.auto rnn')
-               (map BP.auto [one, two, three, end])
-      res3 = runRNN (BP.auto rnn')
-               (map BP.auto [three, two, one, end, three])
-  print $ BP.evalBP0 res1
-  print $ BP.evalBP0 res2
-  print $ BP.evalBP0 res3
---       resZers = head $ runRNN (BP.auto rnn')
---               (map BP.auto [zers, zers, zers, zers, zers])
---       resMix1 = head $ runRNN (BP.auto rnn')
---               (map BP.auto [ones, zers, zers, zers, zers, zers, zers, zers])
---       resMix2 = head $ runRNN (BP.auto rnn')
---               (map BP.auto [zers, zers, ones, zers, zers])
---       resMix3 = head $ runRNN (BP.auto rnn')
---               (map BP.auto [zers, zers, zers, zers, zers, zers, zers, ones])
---       resMix4 = head $ runRNN (BP.auto rnn')
---               (map BP.auto [zers, zers, zers, zers, ones, zers, zers, zers])
---   LBP.disp 5 $ BP.evalBP0 resMix1
---   LBP.disp 5 $ BP.evalBP0 resMix2
---   LBP.disp 5 $ BP.evalBP0 resMix3
---   LBP.disp 5 $ BP.evalBP0 resMix4
-  return ()
+  ffg <- FFN <$> matrix 5 5 <*> vector 5 <*> matrix 5 5 <*> vector 5
+  ffb <- FFN <$> matrix 5 10 <*> vector 5 <*> matrix 5 5 <*> vector 5
+  rnn <- RNN ffg ffb <$> vector 5
+  rnn' <- gradDesc 20000 0.01 trainData rnn
+  let test input =
+        print $ BP.evalBP0 $
+          runRNN (BP.auto rnn') (map BP.auto input)
+  putStrLn "# good:"
+  test [one]
+  test [one, two]
+  test [one, two, one]
+  test [one, two, one, two]
+  test [one, two, one, two, one, two, one, two]
+  test [one, two, one, two, one, two, one, two, one, two]
+  putStrLn "# bad:"
+  test [two]
+  test [one, one]
+  test [two, two, two]
+  test []
 
 
 ----------------------------------------------
