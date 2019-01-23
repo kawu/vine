@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 243fd4292d288f9fdd382163cf0d428d3575a44a14a9bd08c0d909c3e9d14d7d
+-- hash: d7a5e55f387b2ff1c71fbe5b9c6ae4e9b734fb5aa50216c227f853d19fcfeb0a
 
 name:           bpfun
 version:        0.1.0.0
@@ -27,6 +27,7 @@ source-repository head
 library
   exposed-modules:
       Basic
+      Decoder
       Encoder
       FeedForward
       GradientDescent

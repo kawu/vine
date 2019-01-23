@@ -54,10 +54,7 @@ data Encoder i ffh h = Encoder
     -- the subsequent hidden values
   , _h0  :: LBP.R h
     -- ^ The initial hidden state
-  }
-
-deriving instance (KnownNat i, KnownNat ffh, KnownNat h) =>
-  Generic (Encoder i ffh h)
+  } deriving (Generic)
 
 instance (KnownNat i, KnownNat ffh, KnownNat h, KnownNat (i Nats.+ h)) =>
   BP.Backprop (Encoder i ffh h)
