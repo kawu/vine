@@ -46,33 +46,7 @@ reluSmooth x = log(1 + exp(x))
 
 
 relu :: Floating a => a -> a
--- relu x = max 0 x
 relu x = (x + abs x) / 2
-
-
--- -- myFunc :: Double -> Double
--- myFunc :: Floating a => a -> a
--- myFunc x = sqrt (x * 4)
-
-
-----------------------------------------------
--- Configuration
-----------------------------------------------
-
-
--- -- | Size of input vectors
--- inpDim :: Int
--- inpDim = 5
--- 
--- 
--- -- | Size of hidden vectors
--- hidDim :: Int
--- hidDim = 5
--- 
--- 
--- -- | Output layer size
--- outDim :: Int
--- outDim = 5
 
 
 ----------------------------------------------

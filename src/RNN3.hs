@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 
-module RNN2
+module RNN3
   ( main
   ) where
 
@@ -37,10 +37,89 @@ import qualified Numeric.LinearAlgebra.Static as LA
 import           Numeric.LinearAlgebra.Static.Backprop ((#>))
 import qualified Debug.SimpleReflect as Refl
 
-import           Basic
-import qualified FeedForward as FFN
-import           FeedForward (FFN(..))
-import qualified GradientDescent as GD
+
+----------------------------------------------
+-- Utils
+----------------------------------------------
+
+
+logistic :: Floating a => a -> a
+logistic x = 1 / (1 + exp (-x))
+
+
+reluSmooth :: Floating a => a -> a
+reluSmooth x = log(1 + exp(x))
+
+
+relu :: Floating a => a -> a
+-- relu x = max 0 x
+relu x = (x + abs x) / 2
+
+
+-- | Apply the softmax layer to a vector
+softmax
+  :: (KnownNat n, Reifies s W)
+  => BVar s (R n)
+  -> BVar s (R n)
+softmax x0 =
+  LBP.vmap (/norm) x
+  where
+    x = LBP.vmap' exp x0
+    norm = LBP.norm_1V x
+
+
+----------------------------------------------
+-- Feed-forward net
+----------------------------------------------
+
+
+data FFN idim hdim odim = FFN
+  { _nWeights1 :: L hdim idim
+  , _nBias1    :: R hdim
+  , _nWeights2 :: L odim hdim
+  , _nBias2    :: R odim
+  }
+  deriving (Show, Generic)
+
+instance (KnownNat idim, KnownNat hdim, KnownNat odim) 
+  => BP.Backprop (FFN idim hdim odim)
+
+makeLenses ''FFN
+
+
+runFFN
+  :: (KnownNat idim, KnownNat hdim, KnownNat odim, Reifies s W)
+  => BVar s (FFN idim hdim odim)
+  -> BVar s (R idim)
+  -> BVar s (R odim)
+runFFN net x = z
+  where
+    -- run first layer
+    y = logistic $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
+    -- run second layer
+    z = relu $ (net ^^. nWeights2) #> y + (net ^^. nBias2)
+    -- z = (net ^^. nWeights2) #> y + (net ^^. nBias2)
+
+
+-- | Substract the second network from the first one.
+subFFN 
+  :: (KnownNat idim, KnownNat hdim, KnownNat odim)
+  => FFN idim hdim odim
+  -> FFN idim hdim odim
+  -> Double 
+  -> FFN idim hdim odim
+subFFN x y coef = FFN
+  { _nWeights1 = _nWeights1 x - scale (_nWeights1 y)
+  , _nBias1 = _nBias1 x - scale (_nBias1 y)
+  , _nWeights2 = _nWeights2 x - scale (_nWeights2 y)
+  , _nBias2 = _nBias2 x - scale (_nBias2 y)
+  }
+  where
+    scale x
+      = fromJust
+      . LA.create
+      . LAD.scale coef
+      $ LA.unwrap x
 
 
 ----------------------------------------------
@@ -48,7 +127,6 @@ import qualified GradientDescent as GD
 ----------------------------------------------
 
 
--- | The EOS vector
 one, two, three, four, eos :: R 5
 one   = LA.vector [1, 0, 0, 0, 0]
 two   = LA.vector [0, 1, 0, 0, 0]
@@ -97,17 +175,17 @@ runRNN net =
     go hPrev prob (wordVect : ws) =
       let
         -- determine the probability vector
-        probVect = softmax $ FFN.run (net ^^. ffG) hPrev
+        probVect = softmax $ runFFN (net ^^. ffG) hPrev
         -- determine the actual probability of the current word
         newProb = log $ probVect `LBP.dot` wordVect
         -- determine the next hidden state
-        hNext = FFN.run (net ^^. ffB) (wordVect # hPrev)
+        hNext = runFFN (net ^^. ffB) (wordVect # hPrev)
       in
         go hNext (prob + newProb) ws
     go hPrev prob [] =
       let
         -- determine the probability vector
-        probVect = softmax $ FFN.run (net ^^. ffG) hPrev
+        probVect = softmax $ runFFN (net ^^. ffG) hPrev
         -- determine the actual probability of EOS
         newProb = log $ probVect `LBP.dot` BP.auto eos
       in
@@ -117,8 +195,8 @@ runRNN net =
 -- | Substract the second network from the first one.
 -- subRNN :: RNN -> RNN -> Double -> RNN
 subRNN x y coef = RNN
-  { _ffG = FFN.substract (_ffG x) (_ffG y) coef
-  , _ffB = FFN.substract (_ffB x) (_ffB y) coef
+  { _ffG = subFFN (_ffG x) (_ffG y) coef
+  , _ffB = subFFN (_ffB x) (_ffB y) coef
   , _h0 = _h0 x - scale (_h0 y)
   }
   where
@@ -185,24 +263,24 @@ calcGrad dataSet net =
   BP.gradBP (qualityInv dataSet) net
 
 
--- gradDesc
---   :: Int
---   -- ^ Number of iterations
---   -> Double
---   -- ^ Gradient scaling coefficient
---   -> Train
---   -- ^ Training dataset
---   -> RNN
---   -- ^ Initial network
---   -> IO RNN
---   -- ^ Resulting network
--- gradDesc iterNum coef dataSet net
---   | iterNum > 0 = do
---       print $ BP.evalBP (qualityInv dataSet) net
---       let grad = calcGrad dataSet net
---           newNet = subRNN net grad coef
---       gradDesc (iterNum-1) coef dataSet newNet
---   | otherwise = return net
+gradDesc
+  :: Int
+  -- ^ Number of iterations
+  -> Double
+  -- ^ Gradient scaling coefficient
+  -> Train
+  -- ^ Training dataset
+  -> RNN
+  -- ^ Initial network
+  -> IO RNN
+  -- ^ Resulting network
+gradDesc iterNum coef dataSet net
+  | iterNum > 0 = do
+      print $ BP.evalBP (qualityInv dataSet) net
+      let grad = calcGrad dataSet net
+          newNet = subRNN net grad coef
+      gradDesc (iterNum-1) coef dataSet newNet
+  | otherwise = return net
 
 
 ----------------------------------------------
@@ -217,28 +295,27 @@ goodData =
   , [one, two, one]
   , [one, two, one, two]
   -- additional
---   , [one, two, one, two, one]
---   , [one, two, one, two, one, two]
---   , [one, two, one, two, one, two, one]
+  , [one, two, one, two, one]
+  , [one, two, one, two, one, two]
+  , [one, two, one, two, one, two, one]
   , [one, two, one, two, one, two, one, two]
   ]
 
 
 badData :: [TrainElem]
 badData = 
-  [ []
-  , [two]
+  [ [two]
   , [one, one]
   , [three]
   , [four]
   , [eos]
   -- additional
---   , [one, three]
---   , [one, four]
---   , [one, eos]
---   , [one, two, three]
---   , [one, two, four]
---   , [one, two, eos]
+  , [one, three]
+  , [one, four]
+  , [one, eos]
+  , [one, two, three]
+  , [one, two, four]
+  , [one, two, eos]
   ]
 
 
@@ -279,13 +356,7 @@ main = do
   ffg <- FFN <$> matrix 5 5 <*> vector 5 <*> matrix 5 5 <*> vector 5
   ffb <- FFN <$> matrix 5 10 <*> vector 5 <*> matrix 5 5 <*> vector 5
   rnn <- RNN ffg ffb <$> vector 5
-  rnn' <- GD.gradDesc rnn $ GD.Config
-    { maxIterNum = 20000
-    , scaleCoef = 0.1
-    , gradient = calcGrad trainData
-    , substract = subRNN
-    , quality = BP.evalBP (qualityInv trainData)
-    , reportEvery = 100 }
+  rnn' <- gradDesc 20000 0.1 trainData rnn
   let test input =
         print $ BP.evalBP0 $
           runRNN (BP.auto rnn') (map BP.auto input)
