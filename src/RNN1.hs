@@ -6,7 +6,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
 
-module RNN
+module RNN1
   ( main
   ) where
 
