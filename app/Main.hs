@@ -1,7 +1,7 @@
 module Main where
 
 import           Lib (someFunc)
-import qualified RNN2 as RNN
+import qualified RNN3 as RNN
 
 main :: IO ()
 main = do
