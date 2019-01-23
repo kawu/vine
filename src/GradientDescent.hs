@@ -12,7 +12,7 @@ import           Control.Monad (when)
 
 -- | Gradient descent configuration
 data Config net = Config
-  { maxIterNum :: Int
+  { iterNum :: Int
     -- ^ Number of iteration
   , scaleCoef :: Double
     -- ^ Gradient scaling coefficient
@@ -33,11 +33,11 @@ gradDesc :: net -> Config net -> IO net
 gradDesc net0 Config{..} =
   go 0 net0
   where
-    go iterNum net
-      | iterNum <= maxIterNum = do
-          when (iterNum `mod` reportEvery == 0) $ do
+    go k net
+      | k <= iterNum = do
+          when (k `mod` reportEvery == 0) $ do
             print $ quality net
           let grad = gradient net
               newNet = substract net grad scaleCoef
-          go (iterNum+1) newNet
+          go (k+1) newNet
       | otherwise = return net

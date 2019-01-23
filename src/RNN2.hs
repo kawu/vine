@@ -280,12 +280,12 @@ main = do
   ffb <- FFN <$> matrix 5 10 <*> vector 5 <*> matrix 5 5 <*> vector 5
   rnn <- RNN ffg ffb <$> vector 5
   rnn' <- GD.gradDesc rnn $ GD.Config
-    { maxIterNum = 20000
+    { iterNum = 2500
     , scaleCoef = 0.1
     , gradient = calcGrad trainData
     , substract = subRNN
     , quality = BP.evalBP (qualityInv trainData)
-    , reportEvery = 100 }
+    , reportEvery = 250 }
   let test input =
         print $ BP.evalBP0 $
           runRNN (BP.auto rnn') (map BP.auto input)
