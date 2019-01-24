@@ -31,14 +31,14 @@ import           Basic
 
 -- A feed-forward network with one hidden layer.
 -- It transforms:
--- * the input vector of size `10` to
+-- * the input vector of size `1` to
 -- * the hidden vector of size `5` to
--- * the output vector of size `5`
+-- * the output vector of size `1`
 data FFN = FFN
-  { _nWeights1 :: L 5 10 -- first matrix
+  { _nWeights1 :: L 5 1  -- first matrix
   , _nBias1    :: R 5    -- first bias
-  , _nWeights2 :: L 5 5  -- second matrix
-  , _nBias2    :: R 5    -- second bias
+  , _nWeights2 :: L 2 5  -- second matrix
+  , _nBias2    :: R 2    -- second bias
   }
   deriving (Show, Generic)
 
@@ -46,56 +46,23 @@ instance Backprop FFN
 makeLenses ''FFN
 
 
--- evaluate the network `net` on the given input vector `x`
-runFFN net x = z
+-- evaluate the network `net` on the given input `x`
+runFFN net x =
+  -- take the first element of the resulting vector
+  elem0 z
   where
+    -- transform `x` to a singleton vector `v`
+    v = vec1 x
     -- run first layer
-    y = logistic ((net ^^. nWeights1) #> x + (net ^^. nBias1))
+    y = logistic ((net ^^. nWeights1) #> v + (net ^^. nBias1))
     -- run second layer
     z = relu ((net ^^. nWeights2) #> y + (net ^^. nBias2))
 
 
-----------------------------------------------
--- RNN
-----------------------------------------------
-
-
--- A recursive neural network which transforms:
--- * the sequence of input vectors, each of size `5`, to
--- * the sequence of hidden vector, each of size `5`
-data RNN = RNN
-  { _ffn :: FFN
-    -- ^ The underlying network used to calculate subsequent hidden values
-  , _h0  :: R 5
-    -- ^ The initial hidden state
-  }
-  deriving (Show, Generic)
-
-instance Backprop RNN
-makeLenses ''RNN
-
-
--- run the recursive neural network
--- on the given list of input vectors
-runRNN net []     = net ^^. h0
-runRNN net (x:xs) = h
-  where
-    -- run the recursive calculation
-    h' = runRNN net xs
-    -- calculate the new hidden value
-    h = runFFN (net ^^. ffn) (x # h')
-
-
--- like `runRNN` but easier to use (because
+-- like `runFFN` but easier to use (because
 -- not used for back-propagation)
-evalRNN net xs =
-  LAD.toList (LA.unwrap h)
-  where
-    h = evalBP0
-          ( runRNN
-              (constVar net)
-              (map constVar xs)
-          )
+evalFFN net x =
+  evalBP2 runFFN net x
 
 
 ----------------------------------------------
@@ -103,28 +70,20 @@ evalRNN net xs =
 ----------------------------------------------
 
 
--- squared error between two vectors
-squaredError1 target output =
-  err `dot` err
-  where
-    err = target - output
+-- squared error between `xs` and `ys`
+squaredError xs ys = sum $ do
+  (x, y) <- zip xs ys
+  return $ (x-y)**2
 
 
--- a sum of squared errors for each (target, output) pair
-squaredError targets outputs =
-  sum $ do
-    (target, output) <- zip targets outputs 
-    return $ squaredError1 target output
-
-
--- calculate the error of the predictions of the network
+-- error the network gives on our dataset
 netError dataSet net =
-  let
-    inputs = map fst dataSet
-    outputs = map (runRNN net . map constVar) inputs
-    targets = map (auto . snd) dataSet
-  in  
-    squaredError targets outputs
+  squaredError
+    (map (runFFN net) input)
+    target
+  where
+    input  = map (constVar . fst) dataSet
+    target = map (constVar . snd) dataSet
 
 
 ----------------------------------------------
@@ -132,38 +91,13 @@ netError dataSet net =
 ----------------------------------------------
 
 
--- simple vectors: only ones or only zeros
-ones = LA.vector [1, 1, 1, 1, 1]
-zers = LA.vector [0, 0, 0, 0, 0]
-
-
--- IDEA: teach the network to output `zers` if all
--- input vectors are `zers` and `ones` otherwise
-
-
--- the training dataset consists of pairs
--- (input, target output)
+-- small dataset: data points to which we want to fit
+-- our polynomial
 trainData =
-  [ ([zers, zers, zers, zers, zers], zers)
-  , ([zers, zers, zers, zers, ones], ones)
-  , ([zers, zers, zers, ones, zers], ones)
-  , ([zers, zers, ones, zers, zers], ones)
-  , ([zers, ones, zers, zers, ones], ones)
-  , ([ones, zers, zers, zers, zers], ones)
-  , ([ones, ones, ones, ones, ones], ones)
+  [ (-2,  3)
+  , ( 0,  2)
+  , ( 1, -1)
   ]
-
-
--- alternative training data
-trainData2 =
-  [ ([], ones)
-  , ([ones], ones)
-  , ([zers], zers)
-  , ([ones, ones], ones)
-  , ([zers, ones], zers)
-  , ([ones, zers], zers)
-  , ([zers, zers], zers)
-  ] 
 
 
 -- train with the default dataset
@@ -178,7 +112,7 @@ trainWith dataSet net =
 
 -- main function
 main = do
-  net <- newRNN
+  net <- newFFN
   train net
 
 
@@ -189,30 +123,23 @@ main = do
 
 -- gradient descent configuration
 gdCfg dataSet = GD.Config
-  { iterNum = 2500
+  { iterNum = 5000
   , scaleCoef = 0.01
   , gradient = gradBP (netError dataSet)
-  , substract = subRNN
+  , substract = subFFN
   , quality = evalBP (netError dataSet)
-  , reportEvery = 100
+  , reportEvery = 500
   }
 
 
 -- | Substract the second network from the first one.
 subFFN :: FFN -> FFN -> Double -> FFN
-subFFN x y coef = FFN
+subFFN x y coef = 
+  FFN
   { _nWeights1 = _nWeights1 x - scale coef (_nWeights1 y)
   , _nBias1 = _nBias1 x - scale coef (_nBias1 y)
   , _nWeights2 = _nWeights2 x - scale coef (_nWeights2 y)
   , _nBias2 = _nBias2 x - scale coef (_nBias2 y)
-  }
-
-
--- | Substract the second network from the first one.
-subRNN :: RNN -> RNN -> Double -> RNN
-subRNN x y coef = RNN
-  { _ffn = subFFN (_ffn x) (_ffn y) coef
-  , _h0 = _h0 x - scale coef (_h0 y)
   }
 
 
@@ -224,14 +151,7 @@ subRNN x y coef = RNN
 -- create a new, random FFN
 newFFN =
   FFN
-    <$> matrix 5 10
+    <$> matrix 5 1
     <*> vector 5
-    <*> matrix 5 5
-    <*> vector 5
-
-
--- create a new, random RRN
-newRNN =
-  RNN
-    <$> newFFN
-    <*> vector 5
+    <*> matrix 2 5
+    <*> vector 2

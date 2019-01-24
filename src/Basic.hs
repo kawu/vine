@@ -5,6 +5,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TypeFamilies #-}
 
 
 module Basic
@@ -16,6 +18,8 @@ module Basic
   , matrix
   , vector
   , scale
+  , vec1
+  , elem0
   ) where
 
 
@@ -32,6 +36,7 @@ import           Lens.Micro.TH (makeLenses)
 import           Lens.Micro ((^.))
 
 import           Data.Maybe (fromJust)
+import qualified Data.Vector.Storable.Sized as SVS
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop ((^^.))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
@@ -39,6 +44,7 @@ import           Numeric.LinearAlgebra.Static.Backprop
   (R, L, BVar, Reifies, W, (#))
 import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.LinearAlgebra.Static as LA
+import qualified Numeric.LinearAlgebra.Static.Vector as LA
 import           Numeric.LinearAlgebra.Static.Backprop ((#>))
 import qualified Debug.SimpleReflect as Refl
 
@@ -100,3 +106,20 @@ vector k = do
 
 -- | Scale the given vector/matrix
 scale coef x = fromJust . LA.create . LAD.scale coef $ LA.unwrap x
+
+
+-- | Create a singleton vector (an overkill, but this
+-- should be provided in the upstream libraries)
+vec1 :: Reifies s W => BVar s Double -> BVar s (R 1)
+vec1 =
+  BP.isoVar
+    (LA.vector . (:[]))
+    (\(LA.rVec->v) -> (SVS.index v 0))
+{-# INLINE vec1 #-}
+
+
+-- | Extract the k-th element in the given vector
+elem0
+  :: (Reifies s W, KnownNat n, 1 Nats.<= n)
+  => BVar s (R n) -> BVar s Double
+elem0 = fst . LBP.headTail
