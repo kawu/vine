@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 06d5b4b35bed9b5e8c4f2f8c318d749e14a945a9cbf89fd50db8f30fd923076b
+-- hash: 369263515cc3dde0e5e8eb338e029f3d60f017ed6b7e0dd8c0c8b2599dd499d8
 
 name:           bpfun
 version:        0.1.0.0
@@ -29,6 +29,7 @@ library
       Basic
       Decoder
       Encoder
+      Ex1
       FeedForward
       GradientDescent
       Lib
