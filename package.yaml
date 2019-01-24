@@ -21,9 +21,11 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- vector-sized >= 1.0 && < 1.1
 - backprop >= 0.2 && < 0.3
-- hmatrix-backprop >= 0.1 && < 0.2
 - hmatrix >= 0.19 && < 0.20
+- hmatrix-backprop >= 0.1 && < 0.2
+- hmatrix-vector-sized >= 0.1 && < 0.2
 - simple-reflect >= 0.3 && < 0.4
 - microlens-th >= 0.4 && < 0.5
 - microlens >= 0.4 && < 0.5

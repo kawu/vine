@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 
-module RNN3
+module Obsolete.RNN3
   ( main
   ) where
 

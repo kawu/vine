@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 
-module RNN4
+module Obsolete.RNN2
   ( main
   ) where
 
@@ -157,42 +157,52 @@ logLL dataSet net
   $ dataSet
 
 
--- | Normalized log-likelihood of the training dataset
-normLogLL
+-- | Negated log-likelihood
+negLogLL
   :: Reifies s W
   => [TrainElem]
   -> BVar s RNN
   -> BVar s Double
-normLogLL dataSet net =
-  sum
-    [ logProb / n
-    | trainElem <- dataSet
-    , let logProb = runRNN net (map BP.auto trainElem)
-    , let n = fromIntegral $ length trainElem + 1
-    ]
+negLogLL dataSet net = negate $ logLL dataSet net
 
 
--- | Quality of the network (inverted; the lower the better)
+-- | Quality of the network.  The lower the better...
 qualityInv
   :: Reifies s W
   => Train
   -> BVar s RNN
   -> BVar s Double
 qualityInv Train{..} net =
-  negLLL goodSet net - log (1 + negLLL badSet net)
-  where
-    -- negLLL dataSet net = negate (logLL dataSet net)
-    negLLL dataSet net = negate (normLogLL dataSet net)
+  negLogLL goodSet net - log (1 + negLogLL badSet net)
 
 
 ----------------------------------------------
--- Gradient
+-- Gradient Descent
 ----------------------------------------------
 
 
--- | Gradient calculation
 calcGrad dataSet net =
   BP.gradBP (qualityInv dataSet) net
+
+
+-- gradDesc
+--   :: Int
+--   -- ^ Number of iterations
+--   -> Double
+--   -- ^ Gradient scaling coefficient
+--   -> Train
+--   -- ^ Training dataset
+--   -> RNN
+--   -- ^ Initial network
+--   -> IO RNN
+--   -- ^ Resulting network
+-- gradDesc iterNum coef dataSet net
+--   | iterNum > 0 = do
+--       print $ BP.evalBP (qualityInv dataSet) net
+--       let grad = calcGrad dataSet net
+--           newNet = subRNN net grad coef
+--       gradDesc (iterNum-1) coef dataSet newNet
+--   | otherwise = return net
 
 
 ----------------------------------------------
@@ -216,14 +226,13 @@ goodData =
 
 badData :: [TrainElem]
 badData = 
-  [ 
-    []
---   , [two]
---   , [one, one]
---   , [three]
---   , [four]
---   , [eos]
---   -- additional
+  [ []
+  , [two]
+  , [one, one]
+  , [three]
+  , [four]
+  , [eos]
+  -- additional
 --   , [one, three]
 --   , [one, four]
 --   , [one, eos]
@@ -242,37 +251,31 @@ trainData = Train
 
 main :: IO ()
 main = do
-  ffg <- FFN.new 5 5 5
-  ffb <- FFN.new 10 5 5
+  ffg <- FFN <$> matrix 5 5 <*> vector 5 <*> matrix 5 5 <*> vector 5
+  ffb <- FFN <$> matrix 5 10 <*> vector 5 <*> matrix 5 5 <*> vector 5
   rnn <- RNN ffg ffb <$> vector 5
   rnn' <- GD.gradDesc rnn $ GD.Config
-    { iterNum = 5000
+    { iterNum = 2500
     , scaleCoef = 0.1
     , gradient = calcGrad trainData
     , substract = subRNN
     , quality = BP.evalBP (qualityInv trainData)
-    , reportEvery = 500 }
-  let test input = do
-        let res = BP.evalBP0 $
-              runRNN (BP.auto rnn') (map BP.auto input)
-        putStrLn $ show res ++ " (length: " ++ show (length input) ++ ")"
+    , reportEvery = 250 }
+  let test input =
+        print $ BP.evalBP0 $
+          runRNN (BP.auto rnn') (map BP.auto input)
   putStrLn "# good:"
   test [one]
   test [one, two]
   test [one, two, one]
   test [one, two, one, two]
-  test [one, two, one, two, one, two]
   test [one, two, one, two, one, two, one, two]
   test [one, two, one, two, one, two, one, two, one, two]
   putStrLn "# bad:"
-  test []
   test [two]
   test [one, one]
   test [two, two, two]
-  test [one, two, two]
-  test [one, one, one]
-  test [one, two, one, two, two]
-  test [one, two, one, two, one, two, one, two, two, one]
+  test []
 
 
 ----------------------------------------------
