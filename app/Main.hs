@@ -10,4 +10,4 @@ import qualified Ex4 as Ex4
 
 main :: IO ()
 main = do
-  SMT.main
+  return ()

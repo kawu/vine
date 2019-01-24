@@ -20,6 +20,7 @@ module Basic
   , scale
   , vec1
   , elem0
+  , toList
   ) where
 
 
@@ -123,3 +124,8 @@ elem0
   :: (Reifies s W, KnownNat n, 1 Nats.<= n)
   => BVar s (R n) -> BVar s Double
 elem0 = fst . LBP.headTail
+
+
+-- | Convert the given vector to a list
+toList :: (KnownNat n) => R n -> [Double]
+toList = LAD.toList . LA.unwrap

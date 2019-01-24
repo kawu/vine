@@ -89,7 +89,7 @@ runRNN net (x:xs) = h
 -- like `runRNN` but easier to use (because
 -- not used for back-propagation)
 evalRNN net xs =
-  LAD.toList (LA.unwrap h)
+  toList h
   where
     h = evalBP0
           ( runRNN
