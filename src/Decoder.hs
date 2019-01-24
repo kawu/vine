@@ -139,12 +139,5 @@ substract
 substract x y coef = Decoder
   { _ffG = FFN.substract (_ffG x) (_ffG y) coef
   , _ffB = FFN.substract (_ffB x) (_ffB y) coef
-  -- , _h0 = _h0 x - scale (_h0 y)
   , _eos = _eos x -- EOS should not change; this is a bit risky!
   }
---   where
---     scale x
---       = fromJust
---       . LA.create
---       . LAD.scale coef
---       $ LA.unwrap x
