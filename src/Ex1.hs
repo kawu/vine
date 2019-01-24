@@ -11,38 +11,10 @@ module Ex1 where
 
 
 import           GHC.Generics (Generic)
-
--- import           Prelude hiding (words)
--- 
--- import           GHC.TypeNats (KnownNat)
--- import qualified GHC.TypeNats as Nats
--- 
--- import           Control.Monad (forM, forM_)
--- 
--- import           System.Random (randomRIO)
--- 
 import           Lens.Micro.TH (makeLenses)
-
--- import           Data.Maybe (fromJust)
--- import qualified Numeric.Backprop as BP
--- import           Numeric.Backprop ((^^.))
--- import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
--- import           Numeric.LinearAlgebra.Static.Backprop
---   (R, L, BVar, Reifies, W, (#))
--- import qualified Numeric.LinearAlgebra as LAD
--- import qualified Numeric.LinearAlgebra.Static as LA
--- import           Numeric.LinearAlgebra.Static.Backprop ((#>))
--- import qualified Debug.SimpleReflect as Refl
--- 
--- import           Basic
--- import qualified FeedForward as FFN
--- import           FeedForward (FFN(..))
--- import qualified GradientDescent as GD
-
 import           Numeric.Backprop
 
 import qualified GradientDescent as GD
-import           GradientDescent (gradDesc, Config(..))
 
 
 -----------------------------------------------------
@@ -81,6 +53,11 @@ run p x =
   (p ^^. a2) * x^2
 
 
+-----------------------------------------------------
+-- Error calculation
+-----------------------------------------------------
+
+
 -- squared error between `xs` and `ys`
 squaredError xs ys = sum $ do
   (x, y) <- zip xs ys
@@ -97,9 +74,14 @@ polyError dataSet poly =
     target = map (constVar . snd) dataSet
 
 
+-----------------------------------------------------
+-- Training
+-----------------------------------------------------
+
+
 -- small dataset: data points to which we want to fit
 -- our polynomial
-trainDefault =
+trainData =
   [ (-2,  3)
   , ( 0,  2)
   , ( 1, -1)
@@ -109,11 +91,11 @@ trainDefault =
 
 -- train with the default dataset
 train poly =
-  trainWith poly trainDefault
+  trainWith trainData poly
 
 
 -- train with a custom dataset
-trainWith poly dataSet =
+trainWith dataSet poly =
   GD.gradDesc poly (gdCfg dataSet)
 
 

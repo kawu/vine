@@ -15,6 +15,7 @@ module Basic
   -- * Utils
   , matrix
   , vector
+  , scale
   ) where
 
 
@@ -96,3 +97,6 @@ vector k = do
   list <- randomList k
   return $ LA.vector list
 
+
+-- | Scale the given vector/matrix
+scale coef x = fromJust . LA.create . LAD.scale coef $ LA.unwrap x
