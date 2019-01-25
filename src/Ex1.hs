@@ -20,7 +20,7 @@ import qualified GradientDescent as GD
 
 
 -- x to the power of 2
-f x = x ** 2
+f x = x ^ 2
 
 -- exponential function
 g x = exp x
