@@ -20,6 +20,11 @@ import           GHC.Generics (Generic)
 import           Lens.Micro.TH (makeLenses)
 import           Lens.Micro ((^.))
 
+import           Data.Ord (comparing)
+import qualified Data.List as L
+import qualified Data.Map.Strict as M
+import qualified Data.DAG as DAG
+
 import qualified Prelude.Backprop as PB
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop ((^^.))
@@ -28,14 +33,13 @@ import           Numeric.LinearAlgebra.Static.Backprop
   (R, L, BVar, Reifies, W, (#), (#>))
 import qualified Numeric.LinearAlgebra.Static as LA
 
-import qualified Data.Map.Strict as M
-import qualified Data.DAG as DAG
-
 import           Net.Basic
 import qualified Net.List as NL
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
+
+import Debug.Trace (trace)
 
 
 ----------------------------------------------
@@ -49,17 +53,17 @@ import qualified GradientDescent as GD
 -- to use `_matP :: L 2 5` instead `_matP :: L 1 5`, for instance.
 --
 data RecDAG = RecDAG
-  { _matA :: L
-      5   -- Size of the hidden state
-      10  -- Size of the past state + size of the input word embeddings
-    -- ^ To calculate the hidden state of the current arc given the past and
-    -- the vector representation of the current arc
---   { _ffA :: FFN
---       10  -- Size of the past state + size of the input word embeddings
---       5   -- FFN's internal hidden state
+--   { _matA :: L
 --       5   -- Size of the hidden state
+--       10  -- Size of the past state + size of the input word embeddings
 --     -- ^ To calculate the hidden state of the current arc given the past and
 --     -- the vector representation of the current arc
+  { _ffA :: FFN
+      10  -- Size of the past state + size of the input word embeddings
+      5   -- FFN's internal hidden state
+      5   -- Size of the hidden state
+    -- ^ To calculate the hidden state of the current arc given the past and
+    -- the vector representation of the current arc
   , _matP :: L
       2   -- Output: single value
       5   -- Size of the hidden state
@@ -82,9 +86,8 @@ data RecDAG = RecDAG
 --       1   -- Output: single value (relative importance)
 --     -- ^ To calculate the relative importance of the previous arc w.r.t.
 --     -- the current arc
---
---   , _p0  :: R 5
---     -- ^ The initial past state
+  , _p0  :: R 5
+    -- ^ The initial past state
   } deriving (Show, Generic)
 
 instance BP.Backprop RecDAG
@@ -94,10 +97,11 @@ makeLenses ''RecDAG
 -- | Create a new, random network
 new :: IO RecDAG
 new = RecDAG
-  <$> matrix 5 10 -- FFN.new 10 5 5
+  -- <$> matrix 5 10
+  <$> FFN.new 10 5 5
   <*> matrix 2 5  -- FFN.new 10 5 1
   <*> matrix 2 10 -- FFN.new 10 5 1
-  -- <*> vector 5
+  <*> vector 5
 
 
 -- | DAG with labeled arcs
@@ -137,17 +141,39 @@ run net dag =
         -- be done more efficiently without `sequenceVar`?)
         atts = BP.sequenceVar . NL.softmax $ BP.collectVar relImps
         -- calculate the overall representation of the past
-        past = PB.sum . BP.collectVar $ do
-          (hid, att) <- zip hids atts
-          return $ LBP.vmap (*att) hid
+        past =
+          if null hids
+             then net ^^. p0
+             else PB.sum . BP.collectVar $ do
+                    (hid, att) <- zip hids atts
+                    return $ LBP.vmap (*att) hid
         -- calculate the new hidden state
-        newHid = (net ^^. matA) #> (past # arc)
+        -- newHid = (net ^^. matA) #> (past # arc)
+        newHid = FFN.run (net ^^. ffA) (past # arc)
         -- newHid = logistic $ (net ^^. matA) #> (past # arc)
-        -- newHid = FFN.run (net ^^. ffA) (past # arc)
         -- calculate the ,,marginal probability''
-        prob = elem0 . logistic $ (net ^^. matP) #> newHid
+        prob = logistic . elem0 $ (net ^^. matP) #> newHid
+        -- prob = elem0 $ (net ^^. matP) #> newHid
       in
         (newHid, prob)
+
+
+-- | Evaluate the network over a DAG labeled with input word embeddings.
+-- User-friendly (and without back-propagation) version of `run`.
+eval
+  :: RecDAG
+    -- ^ Recurrent DAG network
+  -> DAG (R 5)
+    -- ^ Input DAG with word embeddings
+  -> M.Map DAG.EdgeID Double
+eval net dag =
+  BP.evalBP0
+    ( BP.collectVar
+    . fmap snd
+    $ run
+        (BP.constVar net)
+        (fmap BP.constVar dag)
+    )
 
 
 ----------------------------------------------
@@ -162,25 +188,53 @@ type Train =
   ]
 
 
--- vocabulary, including EOS
-ones, zers :: R 5
-ones = LA.vector [0, 0, 0, 0, 0]
-zers = LA.vector [1, 1, 1, 1, 1]
+-- vocabulary, including special SOS/EOS symbol
+noun, verb, adj, adv :: R 5
+noun = LA.vector [1, 0, 0, 0, 0]
+verb = LA.vector [0, 1, 0, 0, 0]
+adj  = LA.vector [0, 0, 1, 0, 0]
+adv  = LA.vector [0, 0, 0, 1, 0]
+os   = LA.vector [0, 0, 0, 0, 1]
 
 
+-- | TODO: Make sure this is correct (cf. `fromEdgesUnsafe`)
 trainData :: Train
-trainData = 
+trainData =
   [ mkElem
-      [ (edge 0 1 ones, 1)
-      , (edge 0 2 zers, 0)
-      , (edge 1 2 ones, 1)
+      [ (edge 0 1 noun, 1)
+      , (edge 1 2 verb, 1)
+      , (edge 2 3 noun, 1)
+      ]
+  , mkElem
+      [ (edge 0 1 noun, 1)
+      , (edge 1 2 verb, 1)
+      , (edge 2 3 adj, 1)
+      , (edge 2 4 verb, 0)
+      , (edge 3 4 noun, 1)
+      , (edge 1 4 adj, 0)
+      ]
+  , mkElem
+      [ (edge 0 1 adv, 0)
+      , (edge 0 2 noun, 1)
+      , (edge 2 3 verb, 1)
+      ]
+  , mkElem
+      [ (edge 0 1 adj, 1)
+      , (edge 0 5 adv, 0)
+      , (edge 1 2 noun, 1)
+      , (edge 1 3 adj, 0)
+      , (edge 2 3 verb, 1)
+      , (edge 3 4 adj, 1)
+      , (edge 4 5 noun, 1)
       ]
   ]
   where
     edge p q x = DAG.Edge (DAG.NodeID p) (DAG.NodeID q) x
+    mkElem desc0 =
+      let desc = L.sortBy (comparing $ DAG.tailNode . fst) desc0
+       in (mkDAG desc, mkTarget desc)
     mkDAG = DAG.fromEdgesUnsafe . map fst
     mkTarget = M.fromList . zip (map DAG.EdgeID [0..]) . map snd
-    mkElem desc = (mkDAG desc, mkTarget desc)
 
 
 ----------------------------------------------
@@ -188,10 +242,7 @@ trainData =
 ----------------------------------------------
 
 
--- | Error between the target and the actual output.
---
--- TODO: What kind of error is this, actually...
---
+-- | Squared error between the target and the actual output.
 errorOne
   :: (Reifies s W)
   => M.Map DAG.EdgeID (BVar s Double)
@@ -202,7 +253,8 @@ errorOne
 errorOne target output = PB.sum . BP.collectVar $ do
   (arcID, tval) <- M.toList target
   let oval = output M.! arcID
-  return . abs $ tval - oval
+  return $ (tval - oval) ^ 2
+  -- return . abs $ tval - oval
 
 
 -- | Error on a dataset.
@@ -258,24 +310,27 @@ train net =
 
 -- | Gradient descent configuration
 gdCfg dataSet = GD.Config
-  { iterNum = 10000
-  , scaleCoef = 1
+  { iterNum = 5000
+  , scaleCoef = 0.05
   , gradient = BP.gradBP (netError dataSet)
   , substract = subRecDAG
   , quality = BP.evalBP (netError dataSet)
-  , reportEvery = 100
+  , reportEvery = 500
   }
 
 
 -- | Substract the second network (multiplied by the given coefficient) from
 -- the first one.
 subRecDAG x y coef = RecDAG
-  { _matA =  _matA x - scale (_matA y)
-  , _matP =  _matP x - scale (_matP y)
-  , _matI =  _matI x - scale (_matI y)
+  -- { _matA = _matA x - scaleL (_matA y)
+  { _ffA = FFN.substract (_ffA x) (_ffA y) coef
+  , _matP = _matP x - scaleL (_matP y)
+  , _matI = _matI x - scaleL (_matI y)
+  , _p0   =   _p0 x - scaleR   (_p0 y)
   }
   where
-    scale = LA.dmmap (*coef)
+    scaleL = LA.dmmap (*coef)
+    scaleR = LA.dvmap (*coef)
 
 
 ----------------------------------------------
