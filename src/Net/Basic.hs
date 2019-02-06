@@ -63,7 +63,7 @@ relu :: Floating a => a -> a
 relu x = (x + abs x) / 2
 
 
--- | Apply the softmax layer to a vector
+-- | Apply the softmax layer to a vector.
 softmax
   :: (KnownNat n, Reifies s W)
   => BVar s (R n)
