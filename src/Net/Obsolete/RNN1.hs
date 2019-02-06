@@ -6,7 +6,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
 
-module Obsolete.RNN1
+module Net.Obsolete.RNN1
   ( main
   ) where
 

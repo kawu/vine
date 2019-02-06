@@ -35,14 +35,14 @@ import qualified Numeric.LinearAlgebra.Static as LA
 import           Numeric.LinearAlgebra.Static.Backprop ((#>))
 import qualified Debug.SimpleReflect as Refl
 
-import           Basic
-import qualified FeedForward as FFN
-import           FeedForward (FFN(..))
+import           Net.Basic
+import qualified Net.FeedForward as FFN
+import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
-import qualified Encoder as Enc
-import           Encoder (Encoder)
-import qualified Decoder as Dec
-import           Decoder (Decoder)
+import qualified SMT.Encoder as Enc
+import           SMT.Encoder (Encoder)
+import qualified SMT.Decoder as Dec
+import           SMT.Decoder (Decoder)
 
 
 ----------------------------------------------

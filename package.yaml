@@ -1,10 +1,10 @@
 name:                bpfun
 version:             0.1.0.0
-github:              "githubuser/bpfun"
+github:              "kawu/bpfun"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2018 Author name here"
+author:              "Jakub Waszczuk"
+maintainer:          "waszczuk.kuba@gmail.com"
+copyright:           "2019 Jakub Waszczuk"
 
 extra-source-files:
 - README.md
@@ -30,6 +30,7 @@ dependencies:
 - microlens-th >= 0.4 && < 0.5
 - microlens >= 0.4 && < 0.5
 - random >= 1.1 && < 1.2
+- pedestrian-dag >= 0.2 && < 0.3
 # - lens >= 4.16 && < 4.17
 
 library:

@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 
-module Basic
+module Net.Basic
   ( logistic
   , reluSmooth
   , relu

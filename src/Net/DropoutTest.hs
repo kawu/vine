@@ -7,7 +7,7 @@
 -- {-# LANGUAGE DuplicateRecordFields #-}
 
 
-module Lib
+module Net.DropoutTest
     ( someFunc
     ) where
 

@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 
-module Ex1 where
+module Net.Ex1 where
 
 
 import           GHC.Generics (Generic)

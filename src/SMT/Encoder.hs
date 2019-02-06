@@ -8,7 +8,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 
-module Encoder
+module SMT.Encoder
   ( Encoder(..)
   , new
   , run
@@ -38,9 +38,9 @@ import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.LinearAlgebra.Static as LA
 import qualified Debug.SimpleReflect as Refl
 
-import           Basic
-import qualified FeedForward as FFN
-import           FeedForward (FFN(..))
+import           Net.Basic
+import qualified Net.FeedForward as FFN
+import           Net.FeedForward (FFN(..))
 
 
 ----------------------------------------------

@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 
-module Obsolete.RNN3
+module Net.Obsolete.RNN4
   ( main
   ) where
 
@@ -37,9 +37,9 @@ import qualified Numeric.LinearAlgebra.Static as LA
 import           Numeric.LinearAlgebra.Static.Backprop ((#>))
 import qualified Debug.SimpleReflect as Refl
 
-import           Basic
-import qualified FeedForward as FFN
-import           FeedForward (FFN(..))
+import           Net.Basic
+import qualified Net.FeedForward as FFN
+import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
 
 
@@ -242,8 +242,8 @@ trainData = Train
 
 main :: IO ()
 main = do
-  ffg <- FFN <$> matrix 5 5 <*> vector 5 <*> matrix 5 5 <*> vector 5
-  ffb <- FFN <$> matrix 5 10 <*> vector 5 <*> matrix 5 5 <*> vector 5
+  ffg <- FFN.new 5 5 5
+  ffb <- FFN.new 10 5 5
   rnn <- RNN ffg ffb <$> vector 5
   rnn' <- GD.gradDesc rnn $ GD.Config
     { iterNum = 5000

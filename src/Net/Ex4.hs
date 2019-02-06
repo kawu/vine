@@ -6,7 +6,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
 
-module Ex4 where
+module Net.Ex4 where
 
 
 import           Prelude hiding (words)
@@ -23,10 +23,10 @@ import           Numeric.Backprop ((^^.))
 import           Numeric.LinearAlgebra.Static.Backprop
                    (R, L, (#), (#>), dot)
 
-import           Basic
+import           Net.Basic
+import qualified Net.FeedForward as FFN
+import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
-import qualified FeedForward as FFN
-import           FeedForward (FFN(..))
 
 
 ----------------------------------------------

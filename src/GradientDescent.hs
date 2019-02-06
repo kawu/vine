@@ -1,6 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 
 
+-- | Simple implementation of gradient descent
+
+
 module GradientDescent
   ( Config (..)
   , gradDesc

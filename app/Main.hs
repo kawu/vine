@@ -3,10 +3,10 @@ module Main
   ) where
 
 import qualified SMT as SMT
-import qualified Ex1 as Ex1
-import qualified Ex2 as Ex2
-import qualified Ex3 as Ex3
-import qualified Ex4 as Ex4
+import qualified Net.Ex1 as Ex1
+import qualified Net.Ex2 as Ex2
+import qualified Net.Ex3 as Ex3
+import qualified Net.Ex4 as Ex4
 
 main :: IO ()
 main = do

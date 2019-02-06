@@ -18,7 +18,7 @@ Then run the following commands:
 You can then proceed to play with the examples:
 
 ```console
-> import Ex1
+> import Net.Ex1
 > import Numeric.Backprop
 >
 > gradBP f 3

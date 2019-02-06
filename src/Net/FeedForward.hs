@@ -10,7 +10,7 @@
 {- Feed-forward network -}
 
 
-module FeedForward
+module Net.FeedForward
   ( FFN (..)
   , new
   , run
@@ -40,7 +40,7 @@ import qualified Numeric.LinearAlgebra.Static as LA
 import           Numeric.LinearAlgebra.Static.Backprop ((#>))
 import qualified Debug.SimpleReflect as Refl
 
-import Basic
+import           Net.Basic
 
 
 ----------------------------------------------

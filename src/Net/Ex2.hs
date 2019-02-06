@@ -6,7 +6,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
 
-module Ex2 where
+module Net.Ex2 where
 
 
 import           GHC.Generics (Generic)
@@ -21,7 +21,7 @@ import           Numeric.LinearAlgebra.Static.Backprop
                    (R, L, (#), (#>), dot)
 
 import qualified GradientDescent as GD
-import           Basic
+import           Net.Basic
 
 
 ----------------------------------------------
