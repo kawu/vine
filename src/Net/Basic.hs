@@ -11,10 +11,12 @@
 
 module Net.Basic
   ( logistic
+  , sigma
   , reluSmooth
   , relu
   , softmax
   -- * Utils
+  , elemWiseMult
   , matrix
   , vector
   , scale
@@ -50,8 +52,18 @@ import           Numeric.LinearAlgebra.Static.Backprop ((#>))
 import qualified Debug.SimpleReflect as Refl
 
 
+------------------------------------
+-- Activation functions
+------------------------------------
+
+
 logistic :: Floating a => a -> a
 logistic x = 1 / (1 + exp (-x))
+
+
+-- TODO: are you sure?
+sigma :: Floating a => a -> a
+sigma = logistic
 
 
 reluSmooth :: Floating a => a -> a
@@ -78,6 +90,19 @@ softmax x0 =
 ------------------------------------
 -- Utils
 ------------------------------------
+
+
+
+-- | Element-wise multiplication
+--
+-- TODO: Make sure this is correct!
+--
+elemWiseMult
+  :: (KnownNat n, Reifies s W)
+  => BVar s (R n)
+  -> BVar s (R n)
+  -> BVar s (R n)
+elemWiseMult x y = x * y
 
 
 -- | A random list of values between 0 and 1
