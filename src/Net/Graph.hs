@@ -240,24 +240,41 @@ netError dataSet depth net =
 ----------------------------------------------
 
 
+-- -- | Vocabulary, including a special UNK symbol (not useful for the moment?)
+-- noun, verb, adj, adv, unk :: R 5
+-- noun = LA.vector [1, 0, 0, 0, 0]
+-- verb = LA.vector [0, 1, 0, 0, 0]
+-- adj  = LA.vector [0, 0, 1, 0, 0]
+-- adv  = LA.vector [0, 0, 0, 1, 0]
+-- unk  = LA.vector [0, 0, 0, 0, 1]
+
+
 -- | Vocabulary, including a special UNK symbol (not useful for the moment?)
-noun, verb, adj, adv, unk :: R 5
-noun = LA.vector [1, 0, 0, 0, 0]
-verb = LA.vector [0, 1, 0, 0, 0]
-adj  = LA.vector [0, 0, 1, 0, 0]
-adv  = LA.vector [0, 0, 0, 1, 0]
-unk  = LA.vector [0, 0, 0, 0, 1]
+zero, one :: R 5
+zero = LA.vector [0, 0, 0, 0, 0]
+one  = LA.vector [1, 0, 0, 0, 0]
 
 
 -- | Training dataset
 trainData :: Dataset
 trainData =
   [ mkElem 
-      [ (0, noun) =>> 1
-      , (1, verb) =>> 0
-      , (2, adj)  =>> 0
-      , (3, noun) =>> 1 ]
-      [ (0, 1), (1, 2), (2, 3) ]
+      [ (0, zero)  =>> 0
+      , (1, one)   =>> 1
+      , (2, zero)  =>> 1
+      , (3, zero)  =>> 1
+      , (4, zero)  =>> 0
+      , (5, zero)  =>> 0
+      , (6, zero)  =>> 0
+      , (7, zero)  =>> 1
+      , (8, zero)  =>> 1
+      , (9, zero)  =>> 0
+      , (10, zero) =>> 1
+      ]
+      [ (0, 1), (1, 2), (2, 3), (3, 7)
+      , (4, 0), (5, 1), (6, 3), (7, 8)
+      , (9, 8), (3, 10), (10, 1)
+      ]
   ]
   where
     (=>>) (v, h) x = (v, h, x)
@@ -280,13 +297,27 @@ trainData =
 
 
 -- | Train with a custom dataset.
-trainWith dataSet net =
-  GD.gradDesc net (gdCfg dataSet)
+trainWith dataSet depth net =
+  GD.gradDesc net (gdCfg dataSet depth)
+
+
+-- | Progressive training
+trainProg dataSet maxDepth =
+  go 0
+  where
+    go depth net
+      | depth > maxDepth = 
+          return net
+      | otherwise = do
+          putStrLn $ "# depth = " ++ show depth
+          net' <- trainWith dataSet depth net
+          go (depth+1) net'
 
 
 -- | Train with the default dataset.
-train net =
-  trainWith trainData net
+train =
+  trainProg trainData 3
+  -- trainWith trainData 3
 
 
 -----------------------------------------------------
@@ -295,16 +326,14 @@ train net =
 
 
 -- | Gradient descent configuration
-gdCfg dataSet = GD.Config
-  { iterNum = 100000
+gdCfg dataSet depth = GD.Config
+  { iterNum = 1000
   , scaleCoef = 0.1
   , gradient = BP.gradBP (netError dataSet depth)
   , substract = subNet
   , quality = BP.evalBP (netError dataSet depth)
   , reportEvery = 100
   } 
-  where
-    depth = 2
 
 
 -- | Substract the second network (multiplied by the given coefficient) from
