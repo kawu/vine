@@ -72,6 +72,13 @@ data GraphNet = GraphNet
       2   -- Output: single value (`2` due to a bug)
       5   -- Size of the hidden state
     -- ^ Output probability matrix
+--   , _probN :: FFN
+--       5   -- Size of the hidden state
+--       3   -- Hidden layer size
+--       2   -- Output: single value (`2` due to a bug)
+--     -- ^ Output probability FFN
+    -- WARNING: it might be not enough to use a matrix here, since it is not
+    -- able to transform a 0 vector into something which is not 0!
   } deriving (Show, Generic)
 
 instance BP.Backprop GraphNet
@@ -92,6 +99,7 @@ new = GraphNet
   <*> matrix 5 5
   <*> matrix 5 5
   <*> matrix 2 5
+  -- <*> FFN.new 5 3 2
 
 
 -- | Local graph type
@@ -124,6 +132,7 @@ run net depth graph =
           (v, h) <- M.toList prevHiddenMap
           -- TODO: logistic could be possibly replaced by something else!
           let x = logistic . elem0 $ (net ^^. probM) #> h
+          -- let x = elem0 $ FFN.run (net ^^. probN) h
           return (v, (h, x))
       | otherwise =
           let
@@ -175,6 +184,27 @@ run net depth graph =
               return (v, result)
           in
             go newHidden (k-1)
+
+
+-- | Evaluate the network over a graph labeled with input word embeddings.
+-- User-friendly (and without back-propagation) version of `run`.
+eval
+  :: GraphNet
+    -- ^ Graph network / params
+  -> Int
+    -- ^ Recursion depth
+  -> Graph (R 5)
+    -- ^ Input graph labeled with initial hidden states (word embeddings)
+  -> M.Map G.Vertex Double
+eval net depth graph =
+  BP.evalBP0
+    ( BP.collectVar
+    . fmap snd
+    $ run
+        (BP.constVar net)
+        depth
+        (fmap BP.constVar graph)
+    )
 
 
 ----------------------------------------------
@@ -251,14 +281,35 @@ netError dataSet depth net =
 
 -- | Vocabulary, including a special UNK symbol (not useful for the moment?)
 zero, one :: R 5
-zero = LA.vector [0, 0, 0, 0, 0]
+zero = LA.vector [0, 0, 0, 0, 1] -- NOTE: this `1` is important!
 one  = LA.vector [1, 0, 0, 0, 0]
 
 
 -- | Training dataset
 trainData :: Dataset
 trainData =
-  [ mkElem 
+  [ mkElem [(0, zero) =>> 0] []
+  , mkElem [(0, one)  =>> 1] []
+  , mkElem [(0, zero) =>> 0, (1, zero) =>> 0] [(0, 1)]
+  , mkElem [(0, zero) =>> 0, (1, zero) =>> 0] [(1, 0)]
+  , mkElem [(0, zero) =>> 0, (1, one)  =>> 1] [(0, 1)]
+  , mkElem [(0, zero) =>> 1, (1, one)  =>> 1] [(1, 0)]
+  , mkElem [(0, zero) =>> 0, (1, zero) =>> 0] [(0, 1), (1, 0)]
+  , mkElem [(0, one)  =>> 1, (1, zero) =>> 1] [(0, 1), (1, 0)]
+  , mkElem [(0, zero) =>> 1, (1, one)  =>> 1] [(0, 1), (1, 0)]
+  , mkElem 
+      [ (0, one)  =>> 1
+      , (1, zero) =>> 1
+      , (2, zero) =>> 1
+      , (3, zero) =>> 1
+      ] [(0, 1), (1, 2), (2, 3)]
+  , mkElem 
+      [ (0, zero) =>> 0
+      , (1, zero) =>> 0
+      , (2, one)  =>> 1
+      , (3, zero) =>> 1
+      ] [(0, 1), (1, 2), (2, 3)]
+  , mkElem
       [ (0, zero)  =>> 0
       , (1, one)   =>> 1
       , (2, zero)  =>> 1
@@ -275,6 +326,42 @@ trainData =
       , (4, 0), (5, 1), (6, 3), (7, 8)
       , (9, 8), (3, 10), (10, 1)
       ]
+--   , mkElem
+--       [ (0, zero)  =>> 0
+--       , (1, zero)  =>> 0
+--       , (2, zero)  =>> 0
+--       ]
+--       [ (0, 1), (1, 2)
+--       ]
+--   , mkElem
+--       [ (0, one)   =>> 1
+--       , (1, zero)  =>> 1
+--       , (2, zero)  =>> 1
+--       ]
+--       [ (0, 1), (1, 2)
+--       ]
+--   , mkElem
+--       [ (0, zero)  =>> 0
+--       , (1, zero)  =>> 0
+--       , (2, zero)  =>> 0
+--       , (3, zero)  =>> 0
+--       ]
+--       [ (0, 1), (0, 2), (0, 3)
+--       , (1, 0), (1, 2), (1, 3)
+--       , (2, 0), (2, 1), (2, 3)
+--       , (3, 0), (3, 1), (3, 2)
+--       ]
+--   , mkElem
+--       [ (0, zero)  =>> 1
+--       , (1, zero)  =>> 1
+--       , (2, zero)  =>> 1
+--       , (3, one)   =>> 1
+--       ]
+--       [ (0, 1), (0, 2), (0, 3)
+--       , (1, 0), (1, 2), (1, 3)
+--       , (2, 0), (2, 1), (2, 3)
+--       , (3, 0), (3, 1), (3, 2)
+--       ]
   ]
   where
     (=>>) (v, h) x = (v, h, x)
@@ -289,6 +376,30 @@ trainData =
           , graphInv = G.transposeG gStr
           , labelMap = lbMap }
         valMap = M.fromList [(v, x) | (v, _, x) <- nodes]
+
+
+-- | Create graph from lists of labeled nodes and edges.
+mkGraph
+  :: [(G.Vertex, R 5)]
+    -- ^ Nodes with input labels
+  -> [(G.Vertex, G.Vertex)]
+    -- ^ Edges
+  -> Graph (R 5)
+mkGraph nodes arcs =
+  graph
+  where
+    vertices = [v | (v, _) <- nodes]
+    gStr = G.buildG (minimum vertices, maximum vertices) arcs
+    lbMap = M.fromList nodes
+    graph = Graph
+      { graphStr = gStr
+      , graphInv = G.transposeG gStr
+      , labelMap = lbMap }
+
+
+-- | Run the network on the test graph and print the resulting label map.
+runTest net depth graph =
+  mapM_ print (M.toList $ eval net depth graph)
 
 
 ----------------------------------------------
@@ -316,7 +427,7 @@ trainProg dataSet maxDepth =
 
 -- | Train with the default dataset.
 train =
-  trainProg trainData 3
+  trainProg trainData
   -- trainWith trainData 3
 
 
@@ -328,7 +439,7 @@ train =
 -- | Gradient descent configuration
 gdCfg dataSet depth = GD.Config
   { iterNum = 1000
-  , scaleCoef = 0.1
+  , scaleCoef = 0.01
   , gradient = BP.gradBP (netError dataSet depth)
   , substract = subNet
   , quality = BP.evalBP (netError dataSet depth)
@@ -350,6 +461,7 @@ subNet x y coef = GraphNet
   , _finalW = _finalW x - scaleL (_finalW y)
   , _finalU = _finalU x - scaleL (_finalU y)
   , _probM = _probM x - scaleL (_probM y)
+  -- , _probN = FFN.substract (_probN x) (_probN y) coef
   }
   where
     scaleL = LA.dmmap (*coef)
