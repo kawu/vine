@@ -37,8 +37,9 @@ import qualified Net.List as NL
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
+import qualified GradientDescent.Momentum as Mom
 
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 
 
 ----------------------------------------------
@@ -83,6 +84,68 @@ data GraphNet = GraphNet
 
 instance BP.Backprop GraphNet
 makeLenses ''GraphNet
+
+instance Mom.ParamSet GraphNet where
+  zero = GraphNet
+    (mat 5 5)
+    (vec 5)
+    (mat 5 5)
+    (vec 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 2 5)
+      where
+        mat n m = LA.matrix (take (m*n) [0,0..])
+        vec n   = LA.vector (take n [0,0..])
+  add x y = GraphNet
+    { _incM = _incM x + _incM y
+    , _incB = _incB x + _incB y
+    , _outM = _outM x + _outM y
+    , _outB = _outB x + _outB y
+    , _updateW = _updateW x + _updateW y
+    , _updateU = _updateU x + _updateU y
+    , _resetW = _resetW x + _resetW y
+    , _resetU = _resetU x + _resetU y
+    , _finalW = _finalW x + _finalW y
+    , _finalU = _finalU x + _finalU y
+    , _probM = _probM x + _probM y
+    }
+  scale coef x = GraphNet
+    { _incM = scaleL $ _incM x
+    , _incB = scaleR $ _incB x
+    , _outM = scaleL $ _outM x
+    , _outB = scaleR $ _outB x
+    , _updateW = scaleL $ _updateW x
+    , _updateU = scaleL $ _updateU x
+    , _resetW = scaleL $ _resetW x
+    , _resetU = scaleL $ _resetU x
+    , _finalW = scaleL $ _finalW x
+    , _finalU = scaleL $ _finalU x
+    , _probM = scaleL $ _probM x
+    } where
+        scaleL = LA.dmmap (*coef)
+        scaleR = LA.dvmap (*coef)
+  size = BP.evalBP size
+
+
+size net =
+  sqrt $ sum
+    [ LBP.norm_2M (net ^^. incM) ^ 2
+    , LBP.norm_2V (net ^^. incB) ^ 2
+    , LBP.norm_2M (net ^^. outM) ^ 2
+    , LBP.norm_2V (net ^^. outB) ^ 2
+    , LBP.norm_2M (net ^^. updateW) ^ 2
+    , LBP.norm_2M (net ^^. updateU) ^ 2
+    , LBP.norm_2M (net ^^. resetW) ^ 2
+    , LBP.norm_2M (net ^^. resetU) ^ 2
+    , LBP.norm_2M (net ^^. finalW) ^ 2
+    , LBP.norm_2M (net ^^. finalU) ^ 2
+    , LBP.norm_2M (net ^^. probM) ^ 2
+    ]
 
 
 -- | Create a new, random network
@@ -169,18 +232,16 @@ run net depth graph =
                   res = resetMap M.! v
                   hidPrev = prevHiddenMap M.! v
                   result = tanh
-                         $ (net ^^. finalW) #> att
-                         + (net ^^. finalU) #> (res `elemWiseMult` hidPrev)
+                    ( (net ^^. finalW) #> att +
+                      (net ^^. finalU) #> (res * hidPrev)
+                    )
               return (v, result)
             newHidden = M.fromList $ do
               v <- graphNodes graph
               let upd = updateMap M.! v
                   hidPrev = prevHiddenMap M.! v
                   hidTilda = newHiddenTilda M.! v
-                  -- TODO: does (1 - upd) really work!?
-                  result = ((1 - upd) `elemWiseMult` hidPrev)
-                         + (upd `elemWiseMult` hidTilda)
---                   result = hidPrev
+                  result = ((1 - upd)*hidPrev) + (upd*hidTilda)
               return (v, result)
           in
             go newHidden (k-1)
@@ -228,8 +289,8 @@ errorOne
     -- ^ Output values
   -> BVar s Double
 errorOne target output = PB.sum . BP.collectVar $ do
-  (arcID, tval) <- M.toList target
-  let oval = output M.! arcID
+  (key, tval) <- M.toList target
+  let oval = output M.! key
   return $ (tval - oval) ^ 2
 
 
@@ -262,7 +323,7 @@ netError dataSet depth net =
     outputs = map (fmap snd . run net depth . fmap BP.auto) inputs
     targets = map (fmap BP.auto . snd) dataSet
   in  
-    errorMany targets outputs
+    errorMany targets outputs + (size net * 0.01)
 
 
 ----------------------------------------------
@@ -288,7 +349,9 @@ one  = LA.vector [1, 0, 0, 0, 0]
 -- | Training dataset
 trainData :: Dataset
 trainData =
-  [ mkElem [(0, zero) =>> 0] []
+  [ mkElem 
+      [(0, zero) =>> 0]
+      []
   , mkElem [(0, one)  =>> 1] []
   , mkElem [(0, zero) =>> 0, (1, zero) =>> 0] [(0, 1)]
   , mkElem [(0, zero) =>> 0, (1, zero) =>> 0] [(1, 0)]
@@ -326,42 +389,42 @@ trainData =
       , (4, 0), (5, 1), (6, 3), (7, 8)
       , (9, 8), (3, 10), (10, 1)
       ]
---   , mkElem
---       [ (0, zero)  =>> 0
---       , (1, zero)  =>> 0
---       , (2, zero)  =>> 0
---       ]
---       [ (0, 1), (1, 2)
---       ]
---   , mkElem
---       [ (0, one)   =>> 1
---       , (1, zero)  =>> 1
---       , (2, zero)  =>> 1
---       ]
---       [ (0, 1), (1, 2)
---       ]
---   , mkElem
---       [ (0, zero)  =>> 0
---       , (1, zero)  =>> 0
---       , (2, zero)  =>> 0
---       , (3, zero)  =>> 0
---       ]
---       [ (0, 1), (0, 2), (0, 3)
---       , (1, 0), (1, 2), (1, 3)
---       , (2, 0), (2, 1), (2, 3)
---       , (3, 0), (3, 1), (3, 2)
---       ]
---   , mkElem
---       [ (0, zero)  =>> 1
---       , (1, zero)  =>> 1
---       , (2, zero)  =>> 1
---       , (3, one)   =>> 1
---       ]
---       [ (0, 1), (0, 2), (0, 3)
---       , (1, 0), (1, 2), (1, 3)
---       , (2, 0), (2, 1), (2, 3)
---       , (3, 0), (3, 1), (3, 2)
---       ]
+  , mkElem
+      [ (0, zero)  =>> 0
+      , (1, zero)  =>> 0
+      , (2, zero)  =>> 0
+      ]
+      [ (0, 1), (1, 2)
+      ]
+  , mkElem
+      [ (0, one)   =>> 1
+      , (1, zero)  =>> 1
+      , (2, zero)  =>> 1
+      ]
+      [ (0, 1), (1, 2)
+      ]
+  , mkElem
+      [ (0, zero)  =>> 0
+      , (1, zero)  =>> 0
+      , (2, zero)  =>> 0
+      , (3, zero)  =>> 0
+      ]
+      [ (0, 1), (0, 2), (0, 3)
+      , (1, 0), (1, 2), (1, 3)
+      , (2, 0), (2, 1), (2, 3)
+      , (3, 0), (3, 1), (3, 2)
+      ]
+  , mkElem
+      [ (0, zero)  =>> 1
+      , (1, zero)  =>> 1
+      , (2, zero)  =>> 1
+      , (3, one)   =>> 1
+      ]
+      [ (0, 1), (0, 2), (0, 3)
+      , (1, 0), (1, 2), (1, 3)
+      , (2, 0), (2, 1), (2, 3)
+      , (3, 0), (3, 1), (3, 2)
+      ]
   ]
   where
     (=>>) (v, h) x = (v, h, x)
@@ -409,7 +472,7 @@ runTest net depth graph =
 
 -- | Train with a custom dataset.
 trainWith dataSet depth net =
-  GD.gradDesc net (gdCfg dataSet depth)
+  Mom.gradDesc net (momCfg dataSet depth)
 
 
 -- | Progressive training
@@ -437,35 +500,47 @@ train =
 
 
 -- | Gradient descent configuration
-gdCfg dataSet depth = GD.Config
+momCfg dataSet depth = Mom.Config
   { iterNum = 1000
-  , scaleCoef = 0.01
   , gradient = BP.gradBP (netError dataSet depth)
-  , substract = subNet
   , quality = BP.evalBP (netError dataSet depth)
   , reportEvery = 100
-  } 
-
-
--- | Substract the second network (multiplied by the given coefficient) from
--- the first one.
-subNet x y coef = GraphNet
-  { _incM = _incM x - scaleL (_incM y)
-  , _incB = _incB x - scaleR (_incB y)
-  , _outM = _outM x - scaleL (_outM y)
-  , _outB = _outB x - scaleR (_outB y)
-  , _updateW = _updateW x - scaleL (_updateW y)
-  , _updateU = _updateU x - scaleL (_updateU y)
-  , _resetW = _resetW x - scaleL (_resetW y)
-  , _resetU = _resetU x - scaleL (_resetU y)
-  , _finalW = _finalW x - scaleL (_finalW y)
-  , _finalU = _finalU x - scaleL (_finalU y)
-  , _probM = _probM x - scaleL (_probM y)
-  -- , _probN = FFN.substract (_probN x) (_probN y) coef
+  , gain0 = 0.1
+  , tau = 100
+  , gamma = 0.9
   }
-  where
-    scaleL = LA.dmmap (*coef)
-    scaleR = LA.dvmap (*coef)
+
+
+-- -- | Gradient descent configuration
+-- gdCfg dataSet depth = GD.Config
+--   { iterNum = 1000
+--   , scaleCoef = 0.01
+--   , gradient = BP.gradBP (netError dataSet depth)
+--   , substract = subNet
+--   , quality = BP.evalBP (netError dataSet depth)
+--   , reportEvery = 100
+--   }
+
+
+-- -- | Substract the second network (multiplied by the given coefficient) from
+-- -- the first one.
+-- subNet x y coef = GraphNet
+--   { _incM = _incM x - scaleL (_incM y)
+--   , _incB = _incB x - scaleR (_incB y)
+--   , _outM = _outM x - scaleL (_outM y)
+--   , _outB = _outB x - scaleR (_outB y)
+--   , _updateW = _updateW x - scaleL (_updateW y)
+--   , _updateU = _updateU x - scaleL (_updateU y)
+--   , _resetW = _resetW x - scaleL (_resetW y)
+--   , _resetU = _resetU x - scaleL (_resetU y)
+--   , _finalW = _finalW x - scaleL (_finalW y)
+--   , _finalU = _finalU x - scaleL (_finalU y)
+--   , _probM = _probM x - scaleL (_probM y)
+--   -- , _probN = FFN.substract (_probN x) (_probN y) coef
+--   }
+--   where
+--     scaleL = LA.dmmap (*coef)
+--     scaleR = LA.dvmap (*coef)
 
 
 ----------------------------------------------
