@@ -10,7 +10,8 @@ import qualified Net.Ex4 as Ex4
 import qualified Net.DAG as DAG
 import qualified Net.Graph as Graph
 import qualified GradientDescent.Momentum as Mom
+import qualified Embedding.Dict as D
 
 main :: IO ()
 main = do
-  return ()
+  D.main
