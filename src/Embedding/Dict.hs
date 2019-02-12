@@ -44,11 +44,10 @@ empty = M.empty
 -- one in the pre-trained FastText word embedding files.
 load :: (KnownNat n) => FilePath -> IO (Dict n)
 load path = do
-  xs <- tail . L.lines <$> L.readFile path
+  xs <- L.lines <$> L.readFile path
   foldM update empty xs
   where
     update dict line = do
-      print $ M.size dict
       let w : vs0 = L.words line
           vs = map (read . L.unpack) vs0
           embedding = LA.fromList vs

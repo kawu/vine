@@ -16,7 +16,7 @@ module Net.Basic
   , relu
   , softmax
   -- * Utils
-  , elemWiseMult
+  -- , elemWiseMult
   , matrix
   , vector
   , scale
@@ -93,23 +93,25 @@ softmax x0 =
 
 
 
--- | Element-wise multiplication
---
--- TODO: Make sure this is correct!
---
-elemWiseMult
-  :: (KnownNat n, Reifies s W)
-  => BVar s (R n)
-  -> BVar s (R n)
-  -> BVar s (R n)
-elemWiseMult x y = x * y
+-- -- | Element-wise multiplication
+-- --
+-- -- TODO: Make sure this is correct!
+-- --
+-- elemWiseMult
+--   :: (KnownNat n, Reifies s W)
+--   => BVar s (R n)
+--   -> BVar s (R n)
+--   -> BVar s (R n)
+-- elemWiseMult x y = x * y
 
 
 -- | A random list of values between 0 and 1
 randomList :: Int -> IO [Double]
 randomList 0 = return []
 randomList n = do
-  r  <- randomRIO (0, 1)
+  -- NOTE:  (-0.1, 0.1) worked well, checking smaller values
+  -- NOTE:  (-0.01, 0.01) seems to work fine as well
+  r  <- randomRIO (-0.01, 0.01)
   rs <- randomList (n-1)
   return (r:rs) 
 
