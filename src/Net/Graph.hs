@@ -124,7 +124,7 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     (mat 300 300)
     (mat 300 300)
     (mat 300 300)
-    (mat 5 300)
+    (mat 2 300)
       where
         mat n m = LA.matrix (take (m*n) [0,0..])
         vec n   = LA.vector (take n [0,0..])
