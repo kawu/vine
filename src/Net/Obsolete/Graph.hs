@@ -8,42 +8,18 @@
 {-# LANGUAGE TypeOperators #-}
 
 
-module Net.Graph
-  ( 
-  -- * Network
-    Param(..)
-  , size
-  , new
-  , Graph(..)
-  , run
-  , eval
-  , runTest
+module Net.Obsolete.Graph where
 
-  -- * Dataset
-  , Dataset
-  , mkGraph
-  , mkSent
 
-  -- * Error
-  , netError
-
-  -- * Training
-  , trainProg
-  ) where
-
+import           Control.Monad (guard)
 
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat)
-import qualified GHC.TypeNats as Nats
-
-import           Control.Monad (guard, forM_)
 
 import           Lens.Micro.TH (makeLenses)
 import           Lens.Micro ((^.))
 
 import           Data.Ord (comparing)
 import qualified Data.List as L
-import qualified Data.Text as T
 import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
 import qualified Data.Array as A
@@ -53,7 +29,7 @@ import qualified Numeric.Backprop as BP
 import           Numeric.Backprop ((^^.))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
-  (R, L, BVar, Reifies, W, (#), (#>), dot)
+  (R, L, BVar, Reifies, W, (#), (#>))
 import qualified Numeric.LinearAlgebra.Static as LA
 
 import           Net.Basic
@@ -63,7 +39,7 @@ import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
 import qualified GradientDescent.Momentum as Mom
 
-import qualified Embedding.Dict as D
+-- import Debug.Trace (trace)
 
 
 ----------------------------------------------
@@ -71,36 +47,34 @@ import qualified Embedding.Dict as D
 ----------------------------------------------
 
 
--- | Parameters of the graph-structured network
---   * d -- embedding dimention size
---   * c -- number of classes
-data Param d c = Param
-  { _incM :: L d d
+-- | Graph-structured network; Dimention size = 5
+data GraphNet = GraphNet
+  { _incM :: L 5 5
     -- ^ Incoming edges matrix
-  , _incB :: R d
+  , _incB :: R 5
     -- ^ Incoming edges bias
-  , _outM :: L d d
+  , _outM :: L 5 5
     -- ^ Outgoing edges matrix
-  , _outB :: R d
+  , _outB :: R 5
     -- ^ Outgoing edges bias
-  , _updateW :: L d d
+  , _updateW :: L 5 5
     -- ^ Update matrix W
-  , _updateU :: L d d
+  , _updateU :: L 5 5
     -- ^ Update matrix U
-  , _resetW :: L d d
+  , _resetW :: L 5 5
     -- ^ Reset matrix W
-  , _resetU :: L d d
+  , _resetU :: L 5 5
     -- ^ Reset matrix U
-  , _finalW :: L d d
+  , _finalW :: L 5 5
     -- ^ Final matrix W
-  , _finalU :: L d d
+  , _finalU :: L 5 5
     -- ^ Final matrix U
   , _probM :: L
-      c -- Output: probabilities for different categories
-      d -- Size of the hidden state
+      2   -- Output: single value (`2` due to a bug)
+      5   -- Size of the hidden state
     -- ^ Output probability matrix
 --   , _probN :: FFN
---       300   -- Size of the hidden state
+--       5   -- Size of the hidden state
 --       3   -- Hidden layer size
 --       2   -- Output: single value (`2` due to a bug)
 --     -- ^ Output probability FFN
@@ -108,27 +82,26 @@ data Param d c = Param
     -- able to transform a 0 vector into something which is not 0!
   } deriving (Show, Generic)
 
-instance (KnownNat d, KnownNat c) => BP.Backprop (Param d c)
-makeLenses ''Param
+instance BP.Backprop GraphNet
+makeLenses ''GraphNet
 
-instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
-  -- TODO: make `zero` depend on `d` and `c`! 
-  zero = Param
-    (mat 300 300)
-    (vec 300)
-    (mat 300 300)
-    (vec 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 5 300)
+instance Mom.ParamSet GraphNet where
+  zero = GraphNet
+    (mat 5 5)
+    (vec 5)
+    (mat 5 5)
+    (vec 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 5 5)
+    (mat 2 5)
       where
         mat n m = LA.matrix (take (m*n) [0,0..])
         vec n   = LA.vector (take n [0,0..])
-  add x y = Param
+  add x y = GraphNet
     { _incM = _incM x + _incM y
     , _incB = _incB x + _incB y
     , _outM = _outM x + _outM y
@@ -141,7 +114,7 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     , _finalU = _finalU x + _finalU y
     , _probM = _probM x + _probM y
     }
-  scale coef x = Param
+  scale coef x = GraphNet
     { _incM = scaleL $ _incM x
     , _incB = scaleR $ _incB x
     , _outM = scaleL $ _outM x
@@ -159,11 +132,6 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
   size = BP.evalBP size
 
 
--- | Size (euclidean norm) of the network parameters
-size
-  :: (KnownNat d, KnownNat c, Reifies s W)
-  => BVar s (Param d c)
-  -> BVar s Double
 size net =
   sqrt $ sum
     [ LBP.norm_2M (net ^^. incM) ^ 2
@@ -180,20 +148,21 @@ size net =
     ]
 
 
--- | Create a new, random network.
-new :: (KnownNat d, KnownNat c) => Int -> Int -> IO (Param d c)
-new d c = Param
-  <$> matrix d d
-  <*> vector d
-  <*> matrix d d
-  <*> vector d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix c d
+-- | Create a new, random network
+new :: IO GraphNet
+new = GraphNet
+  <$> matrix 5 5
+  <*> vector 5
+  <*> matrix 5 5
+  <*> vector 5
+  <*> matrix 5 5
+  <*> matrix 5 5
+  <*> matrix 5 5
+  <*> matrix 5 5
+  <*> matrix 5 5
+  <*> matrix 5 5
+  <*> matrix 2 5
+  -- <*> FFN.new 5 3 2
 
 
 -- | Local graph type
@@ -209,14 +178,14 @@ data Graph a = Graph
 
 -- | Run the network over a DAG labeled with input word embeddings.
 run
-  :: (KnownNat d, KnownNat c, Reifies s W)
-  => BVar s (Param d c)
+  :: (Reifies s W)
+  => BVar s GraphNet
     -- ^ Graph network / params
   -> Int
     -- ^ Recursion depth
-  -> Graph (BVar s (R d))
+  -> Graph (BVar s (R 5))
     -- ^ Input graph labeled with initial hidden states
-  -> M.Map G.Vertex (BVar s (R c))
+  -> M.Map G.Vertex (BVar s (R 5), BVar s Double)
     -- ^ Output map with (i) final hidden states and (ii) output values
 run net depth graph =
   go (labelMap graph) depth
@@ -225,9 +194,9 @@ run net depth graph =
       | k <= 0 = M.fromList $ do
           (v, h) <- M.toList prevHiddenMap
           -- TODO: logistic could be possibly replaced by something else!
-          let x = softmax $ (net ^^. probM) #> h
+          let x = logistic . elem0 $ (net ^^. probM) #> h
           -- let x = elem0 $ FFN.run (net ^^. probN) h
-          return (v, x)
+          return (v, (h, x))
       | otherwise =
           let
             attMap = M.fromList $ do
@@ -281,17 +250,17 @@ run net depth graph =
 -- | Evaluate the network over a graph labeled with input word embeddings.
 -- User-friendly (and without back-propagation) version of `run`.
 eval
-  :: (KnownNat d, KnownNat c)
-  => Param d c
+  :: GraphNet
     -- ^ Graph network / params
   -> Int
     -- ^ Recursion depth
-  -> Graph (R d)
+  -> Graph (R 5)
     -- ^ Input graph labeled with initial hidden states (word embeddings)
-  -> M.Map G.Vertex (R c)
+  -> M.Map G.Vertex Double
 eval net depth graph =
   BP.evalBP0
     ( BP.collectVar
+    . fmap snd
     $ run
         (BP.constVar net)
         depth
@@ -299,93 +268,37 @@ eval net depth graph =
     )
 
 
--- | Run the network on the test graph and print the resulting label map.
-runTest
-  :: (KnownNat d, KnownNat c)
-  => Param d c
-  -> Int
-  -> Graph (R d)
-  -> IO ()
-runTest net depth graph =
-  forM_ (M.toList $ eval net depth graph) $ \(x, v) ->
-    print (x, LA.unwrap v)
-
-
-----------------------------------------------
--- Dataset
-----------------------------------------------
-
-
--- | Dataset: a list of (graph, target value map) pairs.
-type Dataset d c =
-  [ ( Graph (R d)
-    , M.Map G.Vertex (R c)
-    )
-  ]
-
-
--- | Create graph from lists of labeled nodes and edges.
-mkGraph
-  :: (KnownNat d)
-  => [(G.Vertex, R d)]
-    -- ^ Nodes with input labels
-  -> [(G.Vertex, G.Vertex)]
-    -- ^ Edges
-  -> Graph (R d)
-mkGraph nodes arcs =
-  graph
-  where
-    vertices = [v | (v, _) <- nodes]
-    gStr = G.buildG (minimum vertices, maximum vertices) arcs
-    lbMap = M.fromList nodes
-    graph = Graph
-      { graphStr = gStr
-      , graphInv = G.transposeG gStr
-      , labelMap = lbMap }
-
-
--- | Create an input sentence consisting of the given embedding vectors.
-mkSent
-  :: (KnownNat d)
-  => D.Dict d
-    -- ^ Embedding dictionary
-  -> [T.Text]
-    -- ^ Input words
-  -> Graph (R d)
-mkSent d ws =
-  mkGraph
-    [(i, vec w) | (i, w) <- zip [0..] ws]
-    [(i, i+1) | i <- is]
-  where
-    vec = (d M.!)
-    is = [0 .. length ws - 2]
-
-
 ----------------------------------------------
 -- Error
 ----------------------------------------------
 
 
+-- | Dataset: a list of (graph, target value map) pairs.
+type Dataset =
+  [ ( Graph (R 5)
+    , M.Map G.Vertex Double )
+  ]
+
+
 -- | Squared error between the target and the actual output.
 errorOne
-  :: (Ord a, KnownNat n, Reifies s W)
-  => M.Map a (BVar s (R n))
+  :: (Ord a, Reifies s W)
+  => M.Map a (BVar s Double)
     -- ^ Target values
-  -> M.Map a (BVar s (R n))
+  -> M.Map a (BVar s Double)
     -- ^ Output values
   -> BVar s Double
 errorOne target output = PB.sum . BP.collectVar $ do
   (key, tval) <- M.toList target
   let oval = output M.! key
-      err = tval - oval
-  return $ err `dot` err
+  return $ (tval - oval) ^ 2
 
 
 -- | Error on a dataset.
 errorMany
-  :: (Ord a, KnownNat n, Reifies s W)
-  => [M.Map a (BVar s (R n))] -- ^ Targets
-  -> [M.Map a (BVar s (R n))] -- ^ Outputs
+  :: (Ord a, Reifies s W)
+  => [M.Map a (BVar s Double)] -- ^ Targets
+  -> [M.Map a (BVar s Double)] -- ^ Outputs
   -> BVar s Double
 errorMany targets outputs =
   go targets outputs
@@ -399,18 +312,157 @@ errorMany targets outputs =
 
 -- | Network error on a given dataset.
 netError
-  :: (Reifies s W, KnownNat d, KnownNat c)
-  => Dataset d c
+  :: (Reifies s W)
+  => Dataset
   -> Int -- ^ Recursion depth
-  -> BVar s (Param d c)
+  -> BVar s GraphNet
   -> BVar s Double
 netError dataSet depth net =
   let
     inputs = map fst dataSet
-    outputs = map (run net depth . fmap BP.auto) inputs
+    outputs = map (fmap snd . run net depth . fmap BP.auto) inputs
     targets = map (fmap BP.auto . snd) dataSet
   in  
-    errorMany targets outputs -- + (size net * 0.01)
+    errorMany targets outputs + (size net * 0.01)
+
+
+----------------------------------------------
+-- Training dataset
+----------------------------------------------
+
+
+-- -- | Vocabulary, including a special UNK symbol (not useful for the moment?)
+-- noun, verb, adj, adv, unk :: R 5
+-- noun = LA.vector [1, 0, 0, 0, 0]
+-- verb = LA.vector [0, 1, 0, 0, 0]
+-- adj  = LA.vector [0, 0, 1, 0, 0]
+-- adv  = LA.vector [0, 0, 0, 1, 0]
+-- unk  = LA.vector [0, 0, 0, 0, 1]
+
+
+-- | Vocabulary, including a special UNK symbol (not useful for the moment?)
+zero, one :: R 5
+zero = LA.vector [0, 0, 0, 0, 1] -- NOTE: this `1` is important!
+one  = LA.vector [1, 0, 0, 0, 0]
+
+
+-- | Training dataset
+trainData :: Dataset
+trainData =
+  [ mkElem 
+      [(0, zero) =>> 0]
+      []
+  , mkElem [(0, one)  =>> 1] []
+  , mkElem [(0, zero) =>> 0, (1, zero) =>> 0] [(0, 1)]
+  , mkElem [(0, zero) =>> 0, (1, zero) =>> 0] [(1, 0)]
+  , mkElem [(0, zero) =>> 0, (1, one)  =>> 1] [(0, 1)]
+  , mkElem [(0, zero) =>> 1, (1, one)  =>> 1] [(1, 0)]
+  , mkElem [(0, zero) =>> 0, (1, zero) =>> 0] [(0, 1), (1, 0)]
+  , mkElem [(0, one)  =>> 1, (1, zero) =>> 1] [(0, 1), (1, 0)]
+  , mkElem [(0, zero) =>> 1, (1, one)  =>> 1] [(0, 1), (1, 0)]
+  , mkElem 
+      [ (0, one)  =>> 1
+      , (1, zero) =>> 1
+      , (2, zero) =>> 1
+      , (3, zero) =>> 1
+      ] [(0, 1), (1, 2), (2, 3)]
+  , mkElem 
+      [ (0, zero) =>> 0
+      , (1, zero) =>> 0
+      , (2, one)  =>> 1
+      , (3, zero) =>> 1
+      ] [(0, 1), (1, 2), (2, 3)]
+  , mkElem
+      [ (0, zero)  =>> 0
+      , (1, one)   =>> 1
+      , (2, zero)  =>> 1
+      , (3, zero)  =>> 1
+      , (4, zero)  =>> 0
+      , (5, zero)  =>> 0
+      , (6, zero)  =>> 0
+      , (7, zero)  =>> 1
+      , (8, zero)  =>> 1
+      , (9, zero)  =>> 0
+      , (10, zero) =>> 1
+      ]
+      [ (0, 1), (1, 2), (2, 3), (3, 7)
+      , (4, 0), (5, 1), (6, 3), (7, 8)
+      , (9, 8), (3, 10), (10, 1)
+      ]
+  , mkElem
+      [ (0, zero)  =>> 0
+      , (1, zero)  =>> 0
+      , (2, zero)  =>> 0
+      ]
+      [ (0, 1), (1, 2)
+      ]
+  , mkElem
+      [ (0, one)   =>> 1
+      , (1, zero)  =>> 1
+      , (2, zero)  =>> 1
+      ]
+      [ (0, 1), (1, 2)
+      ]
+  , mkElem
+      [ (0, zero)  =>> 0
+      , (1, zero)  =>> 0
+      , (2, zero)  =>> 0
+      , (3, zero)  =>> 0
+      ]
+      [ (0, 1), (0, 2), (0, 3)
+      , (1, 0), (1, 2), (1, 3)
+      , (2, 0), (2, 1), (2, 3)
+      , (3, 0), (3, 1), (3, 2)
+      ]
+  , mkElem
+      [ (0, zero)  =>> 1
+      , (1, zero)  =>> 1
+      , (2, zero)  =>> 1
+      , (3, one)   =>> 1
+      ]
+      [ (0, 1), (0, 2), (0, 3)
+      , (1, 0), (1, 2), (1, 3)
+      , (2, 0), (2, 1), (2, 3)
+      , (3, 0), (3, 1), (3, 2)
+      ]
+  ]
+  where
+    (=>>) (v, h) x = (v, h, x)
+    mkElem nodes arcs =
+      (graph, valMap)
+      where
+        vertices = [v | (v, _, _) <- nodes]
+        gStr = G.buildG (minimum vertices, maximum vertices) arcs
+        lbMap = M.fromList [(v, h) | (v, h, _) <- nodes]
+        graph = Graph
+          { graphStr = gStr
+          , graphInv = G.transposeG gStr
+          , labelMap = lbMap }
+        valMap = M.fromList [(v, x) | (v, _, x) <- nodes]
+
+
+-- | Create graph from lists of labeled nodes and edges.
+mkGraph
+  :: [(G.Vertex, R 5)]
+    -- ^ Nodes with input labels
+  -> [(G.Vertex, G.Vertex)]
+    -- ^ Edges
+  -> Graph (R 5)
+mkGraph nodes arcs =
+  graph
+  where
+    vertices = [v | (v, _) <- nodes]
+    gStr = G.buildG (minimum vertices, maximum vertices) arcs
+    lbMap = M.fromList nodes
+    graph = Graph
+      { graphStr = gStr
+      , graphInv = G.transposeG gStr
+      , labelMap = lbMap }
+
+
+-- | Run the network on the test graph and print the resulting label map.
+runTest net depth graph =
+  mapM_ print (M.toList $ eval net depth graph)
 
 
 ----------------------------------------------
@@ -418,31 +470,77 @@ netError dataSet depth net =
 ----------------------------------------------
 
 
--- -- | Train with a custom dataset.
--- trainWith gdCfg net =
---   Mom.gradDesc net gdCfg
+-- | Train with a custom dataset.
+trainWith dataSet depth net =
+  Mom.gradDesc net (momCfg dataSet depth)
 
 
 -- | Progressive training
-trainProg 
-  :: (KnownNat d, KnownNat c)
-  => (Int -> Mom.Config (Param d c))
-    -- ^ Gradient descent config, depending on the chosen depth
-  -> Int
-    -- ^ Maximum depth
-  -> Param d c
-    -- ^ Initial params
-  -> IO (Param d c)
-trainProg gdCfg maxDepth =
+trainProg dataSet maxDepth =
   go 0
   where
     go depth net
-      | depth > maxDepth =
+      | depth > maxDepth = 
           return net
       | otherwise = do
           putStrLn $ "# depth = " ++ show depth
-          net' <- Mom.gradDesc net (gdCfg depth)
+          net' <- trainWith dataSet depth net
           go (depth+1) net'
+
+
+-- | Train with the default dataset.
+train =
+  trainProg trainData
+  -- trainWith trainData 3
+
+
+-----------------------------------------------------
+-- Gradient descent
+-----------------------------------------------------
+
+
+-- | Gradient descent configuration
+momCfg dataSet depth = Mom.Config
+  { iterNum = 1000
+  , gradient = BP.gradBP (netError dataSet depth)
+  , quality = BP.evalBP (netError dataSet depth)
+  , reportEvery = 100
+  , gain0 = 0.1
+  , tau = 100
+  , gamma = 0.9
+  }
+
+
+-- -- | Gradient descent configuration
+-- gdCfg dataSet depth = GD.Config
+--   { iterNum = 1000
+--   , scaleCoef = 0.01
+--   , gradient = BP.gradBP (netError dataSet depth)
+--   , substract = subNet
+--   , quality = BP.evalBP (netError dataSet depth)
+--   , reportEvery = 100
+--   }
+
+
+-- -- | Substract the second network (multiplied by the given coefficient) from
+-- -- the first one.
+-- subNet x y coef = GraphNet
+--   { _incM = _incM x - scaleL (_incM y)
+--   , _incB = _incB x - scaleR (_incB y)
+--   , _outM = _outM x - scaleL (_outM y)
+--   , _outB = _outB x - scaleR (_outB y)
+--   , _updateW = _updateW x - scaleL (_updateW y)
+--   , _updateU = _updateU x - scaleL (_updateU y)
+--   , _resetW = _resetW x - scaleL (_resetW y)
+--   , _resetU = _resetU x - scaleL (_resetU y)
+--   , _finalW = _finalW x - scaleL (_finalW y)
+--   , _finalU = _finalU x - scaleL (_finalU y)
+--   , _probM = _probM x - scaleL (_probM y)
+--   -- , _probN = FFN.substract (_probN x) (_probN y) coef
+--   }
+--   where
+--     scaleL = LA.dmmap (*coef)
+--     scaleR = LA.dvmap (*coef)
 
 
 ----------------------------------------------
