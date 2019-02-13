@@ -62,7 +62,7 @@ notMwe = LA.vector [0, 1]
 trainData :: FilePath -> IO (G.Dataset 300 2)
 trainData path = do
   -- Load the embedding dictionary
-  d <- D.load path
+  d <- D.load False path
   let vec = (d M.!)
   return $
     [ mkElem vec

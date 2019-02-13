@@ -2,7 +2,12 @@
 {-# LANGUAGE DataKinds #-}
 
 
-module Embedding.Dict where
+module Embedding.Dict
+  ( Dict
+  , empty
+  , load
+  , loadSel
+  ) where
 
 
 -- | Simple embedding dictionary implementation.
@@ -40,20 +45,35 @@ empty = M.empty
 ------------------------------------
 
 
--- | Load the entire dictionary to memory.  The data format is the same as the
--- one in the pre-trained FastText word embedding files.
-load :: (KnownNat n) => FilePath -> IO (Dict n)
-load path = do
+-- | A version of `loadSel` which actually loads the entire dictionary.
+load :: (KnownNat n) => Bool -> FilePath -> IO (Dict n)
+load = loadSel $ const True
+
+
+-- | Load a part of the dictionary to memory.  The data format is the same as
+-- the one in the pre-trained FastText word embedding files (but the function
+-- assumes that no header line is present).
+loadSel
+  :: (KnownNat n)
+  => (T.Text -> Bool) -- ^ Selection function
+  -> Bool             -- ^ Has header
+  -> FilePath
+  -> IO (Dict n)
+loadSel select hasHeader path = do
   xs <- L.lines <$> L.readFile path
-  foldM update empty xs
+  let handleHeader = if hasHeader then tail else id
+  foldM update empty (handleHeader xs)
   where
     update dict line = do
       let w : vs0 = L.words line
           vs = map (read . L.unpack) vs0
           embedding = LA.fromList vs
-      return $
-        embedding `seq` M.size dict `seq`
-        M.insert (L.toStrict w) embedding dict
+      -- print (M.size dict)
+      M.size dict `seq`
+        if select (L.toStrict w)
+           then embedding `seq` return $
+             M.insert (L.toStrict w) embedding dict
+           else return dict
 
 
 ------------------------------------
@@ -61,8 +81,8 @@ load path = do
 ------------------------------------
 
 
-main :: IO ()
-main = do
-  let path = "/datadisk/workdata/fasttext/pre-trained/english/wiki-news-300d-1M-subword.vec"
-  d <- load path :: IO (Dict 300)
-  print $ M.size d
+-- main :: IO ()
+-- main = do
+--   let path = "/datadisk/workdata/fasttext/pre-trained/english/wiki-news-300d-1M-subword.vec"
+--   d <- load path :: IO (Dict 300)
+--   print $ M.size d

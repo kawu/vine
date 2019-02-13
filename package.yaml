@@ -51,6 +51,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - bpfun
+    - optparse-applicative >= 0.12 && < 0.15
 
 tests:
   bpfun-test:

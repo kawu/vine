@@ -359,7 +359,7 @@ det  = LA.vector [0, 0, 0, 0, 1]
 trainData :: FilePath -> IO (Dataset 300 5)
 trainData path = do
   -- Load the embedding dictionary
-  d <- D.load path
+  d <- D.load False path
   let vec = (d M.!)
       john = vec "John"
       sleeps = vec "sleeps"
