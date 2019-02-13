@@ -10,6 +10,9 @@
 -- TODO: We need this because of KnownNat (d Nats.+ d)
 {-# LANGUAGE UndecidableInstances #-}
 
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+
 
 module Net.ArcGraph
   ( 
@@ -37,7 +40,8 @@ module Net.ArcGraph
 
 
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat)
+import           GHC.TypeNats (KnownNat, natVal)
+-- import           GHC.Natural (naturalToInt)
 import qualified GHC.TypeNats as Nats
 
 import           Control.Monad (guard, forM_)
@@ -45,6 +49,7 @@ import           Control.Monad (guard, forM_)
 import           Lens.Micro.TH (makeLenses)
 import           Lens.Micro ((^.))
 
+import           Data.Proxy (Proxy(..))
 import           Data.Ord (comparing)
 import qualified Data.List as L
 import qualified Data.Text as T
@@ -122,23 +127,25 @@ makeLenses ''Param
 
 instance (KnownNat d, KnownNat c, KnownNat (d Nats.+ d))
   => Mom.ParamSet (Param d c) where
-  -- TODO: make `zero` depend on `d` and `c`! 
   zero = Param
-    (mat 300 300)
-    (vec 300)
-    (mat 300 300)
-    (vec 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 300 300)
-    (mat 2 300)
-    (mat 300 600)
+    (mat dpar dpar)
+    (vec dpar)
+    (mat dpar dpar)
+    (vec dpar)
+    (mat dpar dpar)
+    (mat dpar dpar)
+    (mat dpar dpar)
+    (mat dpar dpar)
+    (mat dpar dpar)
+    (mat dpar dpar)
+    (mat cpar dpar)
+    (mat dpar (dpar*2))
       where
         mat n m = LA.matrix (take (m*n) [0,0..])
         vec n   = LA.vector (take n [0,0..])
+        dpar = proxyVal (Proxy :: Proxy d)
+        cpar = proxyVal (Proxy :: Proxy c)
+        proxyVal = fromInteger . toInteger . natVal
   add x y = Param
     { _incM = _incM x + _incM y
     , _incB = _incB x + _incB y
