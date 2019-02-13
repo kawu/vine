@@ -6,12 +6,11 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeOperators #-}
-
--- TODO: We need this because of KnownNat (d Nats.+ d)
-{-# LANGUAGE UndecidableInstances #-}
-
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+-- {-# LANGUAGE TypeApplications    #-}
+
+-- To make GHC automatically infer that `KnownNat d => KnownNat (d + d)`
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
 
 module Net.ArcGraph
@@ -120,13 +119,10 @@ data Param d c = Param
   } deriving (Generic)
   -- TODO: automatically deriving `Show` does not work 
 
--- TODO: cannot it infer automatically that (d Nats.+ d) is also a KnownNat?
-instance (KnownNat d, KnownNat c, KnownNat (d Nats.+ d)) 
-  => BP.Backprop (Param d c)
+instance (KnownNat d, KnownNat c) => BP.Backprop (Param d c)
 makeLenses ''Param
 
-instance (KnownNat d, KnownNat c, KnownNat (d Nats.+ d))
-  => Mom.ParamSet (Param d c) where
+instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
   zero = Param
     (mat dpar dpar)
     (vec dpar)
@@ -181,7 +177,7 @@ instance (KnownNat d, KnownNat c, KnownNat (d Nats.+ d))
 
 -- | Size (euclidean norm) of the network parameters
 size
-  :: (KnownNat d, KnownNat c, KnownNat (d Nats.+ d), Reifies s W)
+  :: (KnownNat d, KnownNat c, Reifies s W)
   => BVar s (Param d c)
   -> BVar s Double
 size net =
@@ -202,7 +198,7 @@ size net =
 
 
 -- | Create a new, random network.
-new :: (KnownNat d, KnownNat c, KnownNat (d Nats.+ d)) => Int -> Int -> IO (Param d c)
+new :: (KnownNat d, KnownNat c) => Int -> Int -> IO (Param d c)
 new d c = Param
   <$> matrix d d
   <*> vector d
@@ -235,7 +231,7 @@ type Arc = (G.Vertex, G.Vertex)
 
 -- | Run the network over a DAG labeled with input word embeddings.
 run
-  :: (KnownNat d, KnownNat c, KnownNat (d Nats.+ d), Reifies s W)
+  :: (KnownNat d, KnownNat c, Reifies s W)
   => BVar s (Param d c)
     -- ^ Graph network / params
   -> Int
@@ -322,7 +318,7 @@ run net depth graph =
 -- | Evaluate the network over a graph labeled with input word embeddings.
 -- User-friendly (and without back-propagation) version of `run`.
 eval
-  :: (KnownNat d, KnownNat c, KnownNat (d Nats.+ d))
+  :: (KnownNat d, KnownNat c)
   => Param d c
     -- ^ Graph network / params
   -> Int
@@ -342,7 +338,7 @@ eval net depth graph =
 
 -- | Run the network on the test graph and print the resulting label map.
 runTest
-  :: (KnownNat d, KnownNat c, KnownNat (d Nats.+ d))
+  :: (KnownNat d, KnownNat c)
   => Param d c
   -> Int
   -> Graph (R d)
@@ -440,7 +436,7 @@ errorMany targets outputs =
 
 -- | Network error on a given dataset.
 netError
-  :: (Reifies s W, KnownNat d, KnownNat c, KnownNat (d Nats.+ d))
+  :: (Reifies s W, KnownNat d, KnownNat c)
   => Dataset d c
   -> Int -- ^ Recursion depth
   -> BVar s (Param d c)
@@ -466,7 +462,7 @@ netError dataSet depth net =
 
 -- | Progressive training
 trainProg 
-  :: (KnownNat d, KnownNat c, KnownNat (d Nats.+ d))
+  :: (KnownNat d, KnownNat c)
   => (Int -> Mom.Config (Param d c))
     -- ^ Gradient descent config, depending on the chosen depth
   -> Int
