@@ -54,8 +54,8 @@ import qualified Net.ArcGraph as G
 
 -- | Is MWE or not?
 mwe, notMwe :: R 2
-mwe = LA.vector [1, 0]
-notMwe = LA.vector [0, 1]
+notMwe = LA.vector [1, 0]
+mwe = LA.vector [0, 1]
 
 
 -- | Training dataset

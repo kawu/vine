@@ -9,6 +9,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- {-# LANGUAGE TypeApplications    #-}
 
+-- To derive Binary for `Param`
+{-# LANGUAGE DeriveAnyClass #-}
+
 -- To make GHC automatically infer that `KnownNat d => KnownNat (d + d)`
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
@@ -55,6 +58,8 @@ import qualified Data.Text as T
 import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
 import qualified Data.Array as A
+import           Data.Binary (Binary)
+import qualified Data.Binary as Bin
 
 import qualified Prelude.Backprop as PB
 import qualified Numeric.Backprop as BP
@@ -116,11 +121,44 @@ data Param d c = Param
     -- able to transform a 0 vector into something which is not 0!
   , _arcM :: L d (d Nats.+ d)
     -- ^ A matrix to calculate arc embeddings based on node embeddings
-  } deriving (Generic)
+  , _arcB :: R d
+    -- ^ Bias for `arcM`
+  } deriving (Generic, Binary)
   -- TODO: automatically deriving `Show` does not work 
 
 instance (KnownNat d, KnownNat c) => BP.Backprop (Param d c)
 makeLenses ''Param
+
+-- instance (KnownNat d, KnownNat c) => Binary (Param d c) where
+--   put Param{..} = do
+--     Bin.put _incM
+--     Bin.put _incB
+--     Bin.put _outM
+--     Bin.put _outB
+--     Bin.put _updateW
+--     Bin.put _updateU
+--     Bin.put _resetW
+--     Bin.put _resetU
+--     Bin.put _finalW
+--     Bin.put _finalU
+--     Bin.put _probM
+--     Bin.put _arcM
+--     Bin.put _arcB
+--   get = Param
+--     <$> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+--     <*> Bin.get
+
 
 instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
   zero = Param
@@ -136,6 +174,7 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     (mat dpar dpar)
     (mat cpar dpar)
     (mat dpar (dpar*2))
+    (vec dpar)
       where
         mat n m = LA.matrix (take (m*n) [0,0..])
         vec n   = LA.vector (take n [0,0..])
@@ -155,6 +194,7 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     , _finalU = _finalU x + _finalU y
     , _probM = _probM x + _probM y
     , _arcM = _arcM x + _arcM y
+    , _arcB = _arcB x + _arcB y
     }
   scale coef x = Param
     { _incM = scaleL $ _incM x
@@ -169,6 +209,7 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     , _finalU = scaleL $ _finalU x
     , _probM = scaleL $ _probM x
     , _arcM = scaleL $ _arcM x
+    , _arcB = scaleR $ _arcB x
     } where
         scaleL = LA.dmmap (*coef)
         scaleR = LA.dvmap (*coef)
@@ -194,6 +235,7 @@ size net =
     , LBP.norm_2M (net ^^. finalU) ^ 2
     , LBP.norm_2M (net ^^. probM) ^ 2
     , LBP.norm_2M (net ^^. arcM) ^ 2
+    , LBP.norm_2V (net ^^. arcB) ^ 2
     ]
 
 
@@ -212,6 +254,7 @@ new d c = Param
   <*> matrix d d
   <*> matrix c d
   <*> matrix d (d*2)
+  <*> vector d
 
 
 -- | Local graph type
@@ -248,10 +291,10 @@ run net depth graph =
       let hv = nodeMap M.! v
           hw = nodeMap M.! w
           -- TODO: try adding bias
-          -- TODO: try using feed-forward network
+          -- TODO: consider using feed-forward network
           -- NOTE: with `logistic` training didn't go well, but maybe you can
           --   try it again later
-          he = (net ^^. arcM) #> (hv # hw)
+          he = (net ^^. arcM) #> (hv # hw) + (net ^^. arcB)
       return ((v, w), he)
     go prevNodeMap prevArcMap k
       | k <= 0 = M.fromList $ do
@@ -266,14 +309,14 @@ run net depth graph =
               let inc = sum $ do
                     w <- incoming v graph
                     let hw = prevArcMap M.! (w, v)
-                        -- TODO: bias should not be perhaps included for each
+                        -- TODO: perhaps bias should not be included for each
                         -- adjacent edge, just once?
                         x = (net ^^. incM) #> hw + (net ^^. incB)
                     return x
               let out = sum $ do
                     w <- outgoing v graph
                     let hw = prevArcMap M.! (v, w)
-                        -- TODO: bias should not be perhaps included for each
+                        -- TODO: perhaps bias should not be included for each
                         -- adjacent edge, just once?
                         x = (net ^^. outM) #> hw + (net ^^. outB)
                     return x
