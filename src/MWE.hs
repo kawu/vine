@@ -23,6 +23,7 @@ import qualified Numeric.Backprop as BP
 import qualified Data.Graph as G
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
 import qualified Format.Cupt as Cupt
@@ -98,6 +99,8 @@ mkElem mweSel sent embs =
       -- Check the token is not a root
       guard . not $ isRoot tok
       let par = tokPar tok
+          -- The arc label is `True` if the token and its parent are annoted as
+          -- a part of the same MWE of the appropriate MWE category
           arcLabel =
             if (not . S.null)
                  ((getMweIDs tok) `S.intersection` (getMweIDs par))
@@ -165,13 +168,13 @@ train mweSel cupt embss = do
       return (graph, labMap)
     -- Gradient descent configuration
     gdCfg dataSet depth = Mom.Config
-      { iterNum = 300
+      { iterNum = 100
       , gradient = BP.gradBP (Net.netError dataSet depth)
       , quality = BP.evalBP (Net.netError dataSet depth)
-      , reportEvery = 10
-      , gain0 = 0.01 / fromIntegral (depth+1)
-      , tau = 150
-      , gamma = 0.8 ** fromIntegral (depth+1)
+      , reportEvery = 1
+      , gain0 = 0.05 / fromIntegral (depth+1)
+      , tau = 50
+      , gamma = 0.0 ** fromIntegral (depth+1)
       }
 
 
@@ -180,6 +183,7 @@ train mweSel cupt embss = do
 ----------------------------------------------
 
 
+-- | Tag many sentences
 tagMany
   :: Net.Param 300 2  -- ^ Network parameters
   -> Cupt.MweTyp      -- ^ MWE type (category) to tag with
@@ -187,7 +191,9 @@ tagMany
   -> [[LA.R 300]]     -- ^ Embeddings
   -> IO ()
 tagMany net mweTyp cupt embss = do
-  forM_ (zip cupt embss) $ \(sent, embs) ->
+  forM_ (zip cupt embss) $ \(sent, embs) -> do
+    T.putStr "# "
+    T.putStrLn . T.unwords $ map Cupt.orth sent
     tag net mweTyp sent embs
 
 
@@ -199,12 +205,15 @@ tag
   -> [LA.R 300]       -- ^ Embeddings
   -> IO ()
 tag net mweTyp sent embs = do
+
   forM_ (M.toList arcMap) $ \(e, v) -> do
     when (isMWE v) (printArc e)
+
   where
+
     elem = mkElem (const False) sent embs
     arcMap = Net.eval net 1 (graph elem)
-    isMWE statVect = 
+    isMWE statVect =
       let vect = LA.unwrap statVect
           val = vect `LAD.atIndex` 1
        in val > 0.5
@@ -212,9 +221,6 @@ tag net mweTyp sent embs = do
     wordMap = M.fromList $ do
       tok <- sent
       return (tokMap elem M.! Cupt.tokID tok, Cupt.orth tok)
---     revTokMap = M.fromList $ do
---       (tokID, ix) <- M.toList (tokMap elem)
---       return (ix, wordMap M.! tokID)
 
     printArc (p, q) = do
       T.putStr (wordMap M.! p)

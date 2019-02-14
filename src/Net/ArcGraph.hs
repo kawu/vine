@@ -477,7 +477,34 @@ mkSent d ws =
 ----------------------------------------------
 
 
--- | Squared error between the target and the actual output.
+-- -- | Squared error between the target and the actual output.
+-- errorOne
+--   :: (Ord a, KnownNat n, Reifies s W)
+--   => M.Map a (BVar s (R n))
+--     -- ^ Target values
+--   -> M.Map a (BVar s (R n))
+--     -- ^ Output values
+--   -> BVar s Double
+-- errorOne target output = PB.sum . BP.collectVar $ do
+--   (key, tval) <- M.toList target
+--   let oval = output M.! key
+--       err = tval - oval
+--   return $ err `dot` err
+
+
+-- | Cross entropy between the true and the artificial distributions
+crossEntropy
+  :: (KnownNat n, Reifies s W)
+  => BVar s (R n)
+    -- ^ Target ,,true'' distribution
+  -> BVar s (R n)
+    -- ^ Output ,,artificial'' distribution
+  -> BVar s Double
+crossEntropy p q =
+  negate (p `dot` LBP.vmap' log q)
+
+
+-- | Cross entropy between the target and the output values
 errorOne
   :: (Ord a, KnownNat n, Reifies s W)
   => M.Map a (BVar s (R n))
@@ -488,8 +515,7 @@ errorOne
 errorOne target output = PB.sum . BP.collectVar $ do
   (key, tval) <- M.toList target
   let oval = output M.! key
-      err = tval - oval
-  return $ err `dot` err
+  return $ crossEntropy tval oval
 
 
 -- | Error on a dataset.

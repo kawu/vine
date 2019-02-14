@@ -168,11 +168,11 @@ opts = subparser
     )
     <> command "train"
     (info (helper <*> trainOptions)
-      (progDesc "Train a model")
+      (progDesc "Training")
     )
     <> command "tag"
     (info (helper <*> tagOptions)
-      (progDesc "Tag with a model")
+      (progDesc "Tagging")
     )
   )
 

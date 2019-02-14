@@ -325,7 +325,8 @@ rootParID :: TokID
 rootParID = TokID (-1)
 
 
--- | Decorate all MWE instances with their types and add the artificial root node.
+-- | Decorate all MWE instances with their types and add the artificial root
+-- node.
 decorate :: MaySent -> Sent
 decorate =
   (root:) . snd . List.mapAccumL update M.empty
