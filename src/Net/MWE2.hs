@@ -59,7 +59,7 @@ mwe = LA.vector [0, 1]
 
 
 -- | Training dataset
-trainData :: FilePath -> IO (G.Dataset 300 2)
+trainData :: FilePath -> IO (G.DataSet 300 2)
 trainData path = do
   -- Load the embedding dictionary
   d <- D.load False path
@@ -145,11 +145,11 @@ train embPath depth net0 = do
 
 -- | Gradient descent configuration
 gdCfg dataSet depth = Mom.Config
-  { iterNum = 200
+  { iterNum = 250
   , gradient = BP.gradBP (G.netError dataSet depth)
   , quality = BP.evalBP (G.netError dataSet depth)
   , reportEvery = 10
   , gain0 = 0.01
   , tau = 100
-  , gamma = 0.9
+  , gamma = 0.5
   }

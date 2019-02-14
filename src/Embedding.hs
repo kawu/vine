@@ -6,6 +6,8 @@
 module Embedding
   ( Config(..)
   , produceEmbeddings
+  , readEmbeddings
+  , parseEmbeddings
   ) where
 
 
@@ -17,6 +19,8 @@ import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy as L
+import qualified Data.Text.Lazy.IO as L
 
 import qualified Numeric.LinearAlgebra.Static as LA
 
@@ -25,13 +29,16 @@ import qualified Embedding.Dict as D
 import           Net.Basic (toList)
 
 
+-----------------------------------
+-- Creation
+-----------------------------------
+
+
 data Config = Config
   { embPath :: FilePath
     -- ^ Embedding file
   , inpPath :: FilePath
     -- ^ Input .cupt file
-  , outPath :: FilePath
-    -- ^ Output file (TODO: remove and use stdin?)
   , embNoHeader :: Bool
     -- ^ Does the embedding file has header?
   } deriving (Show, Eq, Ord)
@@ -56,9 +63,46 @@ produceEmbeddings Config{..} = do
           Just v -> do
             T.putStr (Cupt.orth tok) >> T.putStr "\t"
             T.putStrLn . T.intercalate "\t" . map (T.pack . show) $ toList v
-    putStrLn ""
+      putStrLn ""
 
 
 -- | Determine the vocabulary in the .cupt file.
 determineVocab :: [Cupt.GenToken mwe] -> S.Set T.Text
 determineVocab = S.fromList . map Cupt.orth
+
+
+-----------------------------------
+-- Loading
+-----------------------------------
+
+
+-- | Read the embeddings file
+readEmbeddings
+  :: (KnownNat d)
+  => FilePath -- ^ Embedding file, one vector per .cupt word
+  -> IO [[LA.R d]]
+readEmbeddings = fmap parseEmbeddings . L.readFile
+
+
+-- | Parse the embeddings
+parseEmbeddings
+  :: (KnownNat d)
+  => L.Text -- ^ Embedding file, one vector per .cupt word
+  -> [[LA.R d]]
+parseEmbeddings
+  = map parseSent
+  . filter (not . L.null)
+  . L.splitOn "\n\n"
+
+
+parseSent :: (KnownNat d) => L.Text -> [LA.R d]
+parseSent
+  = map parseToken
+  . L.lines
+
+
+parseToken :: (KnownNat d) => L.Text -> LA.R d
+parseToken line =
+  let w : vs0 = L.words line
+      vs = map (read . L.unpack) vs0
+   in LA.fromList vs

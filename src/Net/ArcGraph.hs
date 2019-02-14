@@ -28,8 +28,12 @@ module Net.ArcGraph
   , eval
   , runTest
 
-  -- * Dataset
-  , Dataset
+  -- * Storage
+  , saveParam
+  , loadParam
+
+  -- * Data set
+  , DataSet
   , mkGraph
   , mkSent
 
@@ -60,6 +64,8 @@ import qualified Data.Graph as G
 import qualified Data.Array as A
 import           Data.Binary (Binary)
 import qualified Data.Binary as Bin
+import qualified Data.ByteString.Lazy as B
+import           Codec.Compression.Zlib (compress, decompress)
 
 import qualified Prelude.Backprop as PB
 import qualified Numeric.Backprop as BP
@@ -80,7 +86,7 @@ import qualified Embedding.Dict as D
 
 
 ----------------------------------------------
--- Recurrent DAG Network
+-- Network Parameters
 ----------------------------------------------
 
 
@@ -392,12 +398,37 @@ runTest net depth graph =
 
 
 ----------------------------------------------
--- Dataset
+-- Serialization
 ----------------------------------------------
 
 
--- | Dataset: a list of (graph, target value map) pairs.
-type Dataset d c =
+-- | Save the parameters in the given file.
+saveParam
+  :: (KnownNat d, KnownNat c)
+  => FilePath
+  -> Param d c
+  -> IO ()
+saveParam path =
+  B.writeFile path . compress . Bin.encode
+
+
+-- | Load the parameters from the given file.
+loadParam
+  :: (KnownNat d, KnownNat c)
+  => FilePath
+  -> IO (Param d c)
+loadParam path =
+  Bin.decode . decompress <$> B.readFile path
+  -- B.writeFile path . compress . Bin.encode
+
+
+----------------------------------------------
+-- DataSet
+----------------------------------------------
+
+
+-- | DataSet: a list of (graph, target value map) pairs.
+type DataSet d c =
   [ ( Graph (R d)
     , M.Map Arc (R c)
     )
@@ -480,7 +511,7 @@ errorMany targets outputs =
 -- | Network error on a given dataset.
 netError
   :: (Reifies s W, KnownNat d, KnownNat c)
-  => Dataset d c
+  => DataSet d c
   -> Int -- ^ Recursion depth
   -> BVar s (Param d c)
   -> BVar s Double

@@ -1,3 +1,6 @@
+{-# LANGUAGE RecordWildCards #-}
+
+
 module Main 
   ( main
   ) where
@@ -27,10 +30,12 @@ import qualified Data.Text.Lazy.IO as TL
 -- import qualified Net.DAG as DAG
 import qualified Net.ArcGraph as Graph
 import qualified Net.POS as POS
-import qualified Net.MWE2 as MWE
+-- import qualified Net.MWE2 as MWE
+import qualified MWE
 import qualified GradientDescent.Momentum as Mom
 import qualified Embedding.Dict as D
 import qualified Embedding as Emb
+import qualified Format.Cupt as Cupt
 
 
 -- main :: IO ()
@@ -45,9 +50,29 @@ import qualified Embedding as Emb
 --------------------------------------------------
 
 
+-- | Available commands
 data Command
     = FastText Emb.Config
       -- ^ Calculate fasttext embeddings for the individual words in the file
+    | Train TrainConfig
+      -- ^ Train a model
+    | Tag 
+      { inpCupt  :: FilePath
+      , inpEmbs  :: FilePath
+      , inpModel :: FilePath
+      , mweTyp   :: T.Text
+      }
+      -- ^ Tagging
+
+
+-- | Training configuration
+data TrainConfig = TrainConfig
+  { trainCupt :: FilePath
+  , trainEmbs :: FilePath
+  , mweCat    :: T.Text
+    -- ^ MWE category (e.g., LVC) to focus on
+  , outModel  :: Maybe FilePath
+  }
 
 
 --------------------------------------------------
@@ -69,18 +94,65 @@ fastTextOptions = fmap FastText $ Emb.Config
        <> short 'i'
        <> help "Input .cupt file"
         )
-  <*> strOption
-        ( metavar "FILE"
-       <> long "output"
-       <> short 'o'
-       <> help "Output file"
-        )
   <*> switch
         ( long "no-header"
        <> short 'n'
        <> help "Embedding file has no header"
         )
 
+
+trainOptions :: Parser Command
+trainOptions = fmap Train $ TrainConfig
+  <$> strOption
+        ( metavar "FILE"
+       <> long "input"
+       <> short 'i'
+       <> help "Input .cupt file"
+        )
+  <*> strOption
+        ( metavar "FILE"
+       <> long "embed"
+       <> short 'e'
+       <> help "Input embedding file"
+        )
+  <*> strOption
+        ( long "mwe"
+       <> short 'm'
+       <> help "MWE category to focus on"
+        )
+  <*> (optional . strOption)
+        ( metavar "FILE"
+       <> long "output"
+       <> short 'o'
+       <> help "Output model file"
+        )
+
+
+tagOptions :: Parser Command
+tagOptions = Tag
+  <$> strOption
+        ( metavar "FILE"
+       <> long "input"
+       <> short 'i'
+       <> help "Input .cupt file"
+        )
+  <*> strOption
+        ( metavar "FILE"
+       <> long "embed"
+       <> short 'e'
+       <> help "Input embedding file"
+        )
+  <*> strOption
+        ( metavar "FILE"
+       <> long "params"
+       <> short 'p'
+       <> help "Input model parameters file"
+        )
+  <*> strOption
+        ( long "mwe"
+       <> short 'm'
+       <> help "MWE category to focus on"
+        )
 
 
 --------------------------------------------------
@@ -93,6 +165,14 @@ opts = subparser
   ( command "fasttext"
     (info (helper <*> fastTextOptions)
       (progDesc "Determine fasttext embeddings")
+    )
+    <> command "train"
+    (info (helper <*> trainOptions)
+      (progDesc "Train a model")
+    )
+    <> command "tag"
+    (info (helper <*> tagOptions)
+      (progDesc "Tag with a model")
     )
   )
 
@@ -108,6 +188,30 @@ run cmd =
   case cmd of
     FastText cfg -> do
       Emb.produceEmbeddings cfg
+    Train TrainConfig{..} -> do
+      -- Read .cupt (ignore paragraph boundaries); need to apply
+      -- `tail.decorate` because we don't want the dummy root!
+      cupt <- map (tail . Cupt.decorate) . concat
+        <$> Cupt.readCupt trainCupt
+      -- Read the corresponding embeddings
+      embs <- Emb.readEmbeddings trainEmbs
+      net <- MWE.train (==mweCat) cupt embs
+      case outModel of
+        Nothing -> return ()
+        Just path -> do
+          putStrLn "Saving model..."
+          Graph.saveParam path net
+      putStrLn "Done!"
+    Tag{..} -> do
+      -- Load the model
+      net <- Graph.loadParam inpModel
+      -- Read .cupt (ignore paragraph boundaries); need to apply
+      -- `tail.decorate` because we don't want the dummy root!
+      cupt <- map (tail . Cupt.decorate) . concat
+        <$> Cupt.readCupt inpCupt
+      -- Read the corresponding embeddings
+      embs <- Emb.readEmbeddings inpEmbs
+      MWE.tagMany net mweTyp cupt embs
 
 
 main :: IO ()
@@ -116,5 +220,5 @@ main =
   where
     optsExt = info (helper <*> opts)
        ( fullDesc
-      <> progDesc "MWE identification based on graph-structured neural nets"
+      <> progDesc "MWE identification tool"
       <> header "galago" )
