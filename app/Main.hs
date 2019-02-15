@@ -18,6 +18,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy.IO as TL
 
+import qualified Dhall as Dhall
+
 -- import           System.FilePath (isAbsolute, (</>))
 
 -- import           System.Environment (getArgs)
@@ -62,11 +64,16 @@ data Command
 data TrainConfig = TrainConfig
   { trainCupt :: FilePath
   , trainEmbs :: FilePath
-  , trainTmp  :: FilePath
-    -- ^ Directory to store temporary stuff
-  , mweCat    :: T.Text
+  , trainTmpDir :: FilePath
+    -- ^ For temporary storage
+  , trainMweCat :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
-  , outModel  :: Maybe FilePath
+  , trainInModel   :: Maybe FilePath
+    -- ^ Input model (otherwise, random)
+  , trainOutModel  :: Maybe FilePath
+    -- ^ Where to store the output model
+  , trainCfgPath :: Maybe FilePath
+    -- ^ Additional training configuration path
   }
 
 
@@ -121,10 +128,20 @@ trainOptions = fmap Train $ TrainConfig
        <> help "MWE category to focus on"
         )
   <*> (optional . strOption)
+        ( long "in-model"
+       <> help "Input model"
+        )
+  <*> (optional . strOption)
         ( metavar "FILE"
        <> long "output"
        <> short 'o'
-       <> help "Output model file"
+       <> help "Output model"
+        )
+  <*> (optional . strOption)
+        ( metavar "FILE"
+       <> long "config"
+       <> short 'c'
+       <> help "Additional training configuration"
         )
 
 
@@ -186,26 +203,45 @@ opts = subparser
 run :: Command -> IO ()
 run cmd =
   case cmd of
+
     FastText cfg -> do
       Emb.produceEmbeddings cfg
+
     Train TrainConfig{..} -> do
+
+--       let configPath' =
+--             if isAbsolute configPath
+--             then configPath
+--             else "./" </> configPath
+--           tagConfig = Task.TagConfig
+--             { tagBestPath = bestPath
+--             , splitMwesOn = splitOn }
+      config <- 
+        case trainCfgPath of
+          Nothing -> return MWE.defTrainCfg
+          Just configPath -> Dhall.detailed
+            (Dhall.input Dhall.auto $ fromString configPath)
+
+      -- Initial network
+      net0 <- Graph.new 300 2
       -- Read .cupt (ignore paragraph boundaries); need to apply
       -- `tail.decorate` because we don't want the dummy root!
       cupt <- map (tail . Cupt.decorate) . concat
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
-      net <- MWE.train (==mweCat) trainTmp
+      net <- MWE.train config trainTmpDir trainMweCat
         ( map
             (uncurry MWE.Sent)
             (zip cupt embs)
-        )
-      case outModel of
+        ) net0
+      case trainOutModel of
         Nothing -> return ()
         Just path -> do
           putStrLn "Saving model..."
           Graph.saveParam path net
       putStrLn "Done!"
+
     Tag{..} -> do
       -- Load the model
       net <- Graph.loadParam inpModel

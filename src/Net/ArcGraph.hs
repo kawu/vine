@@ -34,6 +34,7 @@ module Net.ArcGraph
 
   -- * Data set
   , DataSet
+  , Elem(..)
   , mkGraph
   , mkSent
 
@@ -41,7 +42,7 @@ module Net.ArcGraph
   , netError
 
   -- * Training
-  , trainProg
+  -- , trainProg
   ) where
 
 
@@ -131,40 +132,10 @@ data Param d c = Param
   , _arcB :: R d
     -- ^ Bias for `arcM`
   } deriving (Generic, Binary)
-  -- TODO: automatically deriving `Show` does not work 
+  -- NOTE: automatically deriving `Show` does not work 
 
 instance (KnownNat d, KnownNat c) => BP.Backprop (Param d c)
 makeLenses ''Param
-
--- instance (KnownNat d, KnownNat c) => Binary (Param d c) where
---   put Param{..} = do
---     Bin.put _incM
---     Bin.put _incB
---     Bin.put _outM
---     Bin.put _outB
---     Bin.put _updateW
---     Bin.put _updateU
---     Bin.put _resetW
---     Bin.put _resetU
---     Bin.put _finalW
---     Bin.put _finalU
---     Bin.put _probM
---     Bin.put _arcM
---     Bin.put _arcB
---   get = Param
---     <$> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
---     <*> Bin.get
 
 
 instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
@@ -428,12 +399,21 @@ loadParam path =
 ----------------------------------------------
 
 
+-- | Dataset element
+data Elem d c = Elem
+  { graph :: Graph (R d)
+    -- ^ Input graph
+  , labMap :: M.Map Arc (R c)
+    -- ^ Target labels
+  } deriving (Show, Generic, Binary)
+
+
 -- | DataSet: a list of (graph, target value map) pairs.
-type DataSet d c =
-  [ ( Graph (R d)
-    , M.Map Arc (R c)
-    )
-  ]
+type DataSet d c = [Elem d c]
+--   [ ( Graph (R d)
+--     , M.Map Arc (R c)
+--     )
+--   ]
 
 
 -- | Create graph from lists of labeled nodes and edges.
@@ -544,9 +524,9 @@ netError
   -> BVar s Double
 netError dataSet depth net =
   let
-    inputs = map fst dataSet
+    inputs = map graph dataSet
     outputs = map (run net depth . fmap BP.auto) inputs
-    targets = map (fmap BP.auto . snd) dataSet
+    targets = map (fmap BP.auto . labMap) dataSet
   in  
     errorMany targets outputs -- + (size net * 0.01)
 
@@ -561,26 +541,26 @@ netError dataSet depth net =
 --   Mom.gradDesc net gdCfg
 
 
--- | Progressive training
-trainProg 
-  :: (KnownNat d, KnownNat c)
-  => (Int -> Mom.Config (Param d c))
-    -- ^ Gradient descent config, depending on the chosen depth
-  -> Int
-    -- ^ Maximum depth
-  -> Param d c
-    -- ^ Initial params
-  -> IO (Param d c)
-trainProg gdCfg maxDepth =
-  go 0
-  where
-    go depth net
-      | depth > maxDepth =
-          return net
-      | otherwise = do
-          putStrLn $ "# depth = " ++ show depth
-          net' <- Mom.gradDesc net (gdCfg depth)
-          go (depth+1) net'
+-- -- | Progressive training
+-- trainProg 
+--   :: (KnownNat d, KnownNat c)
+--   => (Int -> Mom.Config (Param d c))
+--     -- ^ Gradient descent config, depending on the chosen depth
+--   -> Int
+--     -- ^ Maximum depth
+--   -> Param d c
+--     -- ^ Initial params
+--   -> IO (Param d c)
+-- trainProg gdCfg maxDepth =
+--   go 0
+--   where
+--     go depth net
+--       | depth > maxDepth =
+--           return net
+--       | otherwise = do
+--           putStrLn $ "# depth = " ++ show depth
+--           net' <- Mom.gradDesc net (gdCfg depth)
+--           go (depth+1) net'
 
 
 ----------------------------------------------

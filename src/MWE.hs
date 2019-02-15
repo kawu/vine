@@ -9,7 +9,13 @@
 
 module MWE 
   ( Sent(..)
+
+  -- * Training
+  , TrainConfig(..)
+  , defTrainCfg
   , train
+
+  -- * Tagging
   , tag
   , tagMany
   ) where
@@ -28,6 +34,9 @@ import qualified Numeric.LinearAlgebra.Static as LA
 import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.Backprop as BP
 
+import           Dhall -- (Interpret)
+import qualified Data.Aeson as JSON
+
 import qualified Data.Graph as G
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
@@ -41,7 +50,8 @@ import qualified Data.IORef as R
 
 import qualified Format.Cupt as Cupt
 import qualified Net.ArcGraph as Net
-import qualified Net.MWE2 as MWE
+import           Net.ArcGraph (Elem)
+-- import qualified Net.MWE2 as MWE
 import qualified Embedding as Emb
 import qualified GradientDescent.Momentum as Mom
 import qualified SGD as SGD
@@ -64,20 +74,6 @@ data Sent d = Sent
 
 
 
--- | Encoded dataset element
---
--- TODO: Move to `Net.ArcGraph` module.
---
-data Elem d = Elem
-  { graph :: Net.Graph (R d)
-    -- ^ Input graph
-  , labMap :: M.Map Net.Arc (R 2)
-    -- ^ Target labels
---   , tokMap :: M.Map Cupt.TokID G.Vertex
---     -- ^ Token ID -> graph vertices mapping
-  } deriving (Show, Generic, Binary)
-
-
 -- | Convert the given Cupt file to a training dataset element.
 --   * `d` -- embedding size (dimension)
 mkElem
@@ -86,7 +82,7 @@ mkElem
     -- ^ MWE type (category) selection method
   -> Sent d
     -- ^ Input sentence
-  -> (Elem d, M.Map Cupt.TokID G.Vertex)
+  -> (Elem d 2, M.Map Cupt.TokID G.Vertex)
 mkElem mweSel Sent{..} =
 
   (createElem nodes arcs, idMap)
@@ -136,8 +132,8 @@ createElem
   :: (KnownNat d)
   => [(G.Vertex, R d)]
   -> [(Net.Arc, Bool)]
-  -> Elem d
-createElem nodes arcs = Elem
+  -> Elem d 2
+createElem nodes arcs = Net.Elem
   { graph = graph
   , labMap = valMap
   }
@@ -156,9 +152,15 @@ createElem nodes arcs = Elem
       return 
         ( arc
         , if isMwe
-             then MWE.mwe
-             else MWE.notMwe
+             then mwe
+             else notMwe
         )
+
+
+-- | Is MWE or not?
+mwe, notMwe :: R 2
+notMwe = LA.vector [1, 0]
+mwe = LA.vector [0, 1]
 
 
 ----------------------------------------------
@@ -175,7 +177,7 @@ mkDataSet
   -> FilePath
     -- ^ Path to store temporary results
   -> [Sent d]
-  -> IO (SGD.DataSet (Elem d))
+  -> IO (SGD.DataSet (Elem d 2))
 mkDataSet mweSel path xs = do
   D.doesDirectoryExist path >>= \case
     False -> return ()
@@ -199,70 +201,84 @@ mkDataSet mweSel path xs = do
 ----------------------------------------------
 
 
--- data TrainConfig = TrainConfig
---   { 
---   } deriving (Show, Eq, Ord)
+globalDepth :: Int 
+globalDepth = 0 
 
 
--- -- | Train the MWE identification network.
--- train
---   :: (Cupt.MweTyp -> Bool)
---     -- ^ MWE type (category) selection method
---   -> [Sent 300]
---   -> IO (Net.Param 300 2)
--- train mweSel cupt = do
---   net0 <- Net.new 300 2
---   Net.trainProg (gdCfg trainData) 1 net0
---   where
---     trainData = do
---       sent <- cupt
---       let (Elem{..}, _) = mkElem mweSel sent
---       return (graph, labMap)
---     -- Gradient descent configuration
---     gdCfg dataSet depth = Mom.Config
---       { iterNum = 200
---       , gradient = pure . BP.gradBP (Net.netError dataSet depth)
---       , quality = pure . BP.evalBP (Net.netError dataSet depth)
---       , reportEvery = 10
---       , gain0 = 0.01 / fromIntegral (depth+1)
---       , tau = 100
---       , gamma = 0.0 ** fromIntegral (depth+1)
---       }
+data TrainConfig = TrainConfig
+  { trainDepth :: Integer
+    -- ^ Graph net recursion depth
+  , trainIterNum :: Integer
+    -- ^ Number of iterations (for SGD)
+  , trainBatchSize :: Integer
+    -- ^ Batch size (for SGD)
+  , trainReportEvery :: Double
+    -- ^ For SGD
+  , trainGain0 :: Double
+    -- ^ For SGD
+  , trainTau :: Double
+    -- ^ For SGD
+  , trainGamma :: Double
+    -- ^ For SGD
+  } deriving (Show, Eq, Ord, Generic, Interpret)
+
+
+-- instance Interpret TrainConfig
+
+instance JSON.FromJSON TrainConfig
+instance JSON.ToJSON TrainConfig where
+  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+
+
+-- | Default training configuration
+defTrainCfg :: TrainConfig
+defTrainCfg = TrainConfig
+  { trainDepth = 0
+  , trainIterNum = 10
+  , trainBatchSize = 1
+  , trainReportEvery = 1
+  , trainGain0 = 0.01
+  , trainTau = 5
+  , trainGamma = 0.9
+  }
 
 
 -- | Train the MWE identification network.
 train
-  :: (Cupt.MweTyp -> Bool)
-    -- ^ MWE type (category) selection method
+  :: TrainConfig
+    -- ^ General training confiration
   -> FilePath
-    -- ^ Path to store temporary results
+    -- ^ Directory for temporary storage
+  -> Cupt.MweTyp
+    -- ^ Selected MWE type (category)
   -> [Sent 300]
     -- ^ Training dataset
+  -> Net.Param 300 2
+    -- ^ Initial network
   -> IO (Net.Param 300 2)
-train mweSel tmpPath cupt = do
-  dataSet <- mkDataSet mweSel tmpPath cupt
-  net0 <- Net.new 300 2
-  trainProgSGD sgdCfg dataSet 1 net0
+train cfg tmpDir mweTyp cupt net0 = do
+  dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+  -- net0 <- Net.new 300 2
+  trainProgSGD sgdCfg dataSet globalDepth net0
   where
     sgdCfg depth = SGD.Config
-      { iterNum = 30
-      , batchSize = 1
-      , gradient = \xs net -> BP.gradBP (Net.netError (map unElem xs) depth) net
-      , quality = \x net -> BP.evalBP (Net.netError [unElem x] depth) net
-      , reportEvery = 1
-      , gain0 = 0.01 -- / fromIntegral (depth+1)
-      , tau = 5
-      , gamma = 0.9 -- ** fromIntegral (depth+1)
+      { iterNum = fromIntegral $ trainIterNum cfg
+      , batchSize = fromIntegral $ trainBatchSize cfg
+      , gradient = \xs -> BP.gradBP (Net.netError xs depth)
+      , quality = \x -> BP.evalBP (Net.netError [x] depth)
+      , reportEvery = trainReportEvery cfg
+      , gain0 = trainGain0 cfg -- / fromIntegral (depth+1)
+      , tau = trainTau cfg
+      , gamma = trainGamma cfg -- ** fromIntegral (depth+1)
       }
-    unElem Elem{..} = (graph, labMap)
 
 
 -- | Progressive training
 trainProgSGD
   :: (KnownNat d, KnownNat c)
-  => (Int -> SGD.Config (Net.Param d c) (Elem d))
+  => (Int -> SGD.Config (Net.Param d c) (Elem d c))
     -- ^ Gradient descent config, depending on the chosen depth
-  -> SGD.DataSet (Elem d)
+  -> SGD.DataSet (Elem d c)
     -- ^ Training dataset
   -> Int
     -- ^ Maximum depth
@@ -313,7 +329,7 @@ tag net mweTyp sent = do
   where
 
     (elem, tokMap) = mkElem (const False) sent
-    arcMap = Net.eval net 1 (graph elem)
+    arcMap = Net.eval net globalDepth (Net.graph elem)
     isMWE statVect =
       let vect = LA.unwrap statVect
           val = vect `LAD.atIndex` 1
