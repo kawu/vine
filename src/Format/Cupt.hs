@@ -337,11 +337,11 @@ rootParID :: TokID
 rootParID = TokID (-1)
 
 
--- | Decorate all MWE instances with their types and add the artificial root
--- node.
+-- | Decorate all MWE instances with their types.
 decorate :: MaySent -> Sent
 decorate =
-  (root:) . snd . List.mapAccumL update M.empty
+  -- (root:) .
+  snd . List.mapAccumL update M.empty
   where
     update typMap tok =
       let (typMap', mwe') = List.mapAccumL updateOne typMap (mwe tok)
@@ -364,7 +364,7 @@ preserveOnly mweTyp =
 -- | Inverse of `decorate`.
 abstract :: Sent -> MaySent
 abstract =
-  snd . List.mapAccumL update S.empty . tail
+  snd . List.mapAccumL update S.empty -- . tail
   where
     update idSet tok =
       let (idSet', mwe') = List.mapAccumL updateOne idSet (mwe tok)

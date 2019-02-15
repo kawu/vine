@@ -201,8 +201,8 @@ mkDataSet mweSel path xs = do
 ----------------------------------------------
 
 
-globalDepth :: Int 
-globalDepth = 0 
+-- globalDepth :: Int 
+-- globalDepth = 0 
 
 
 data TrainConfig = TrainConfig
@@ -259,7 +259,9 @@ train
 train cfg tmpDir mweTyp cupt net0 = do
   dataSet <- mkDataSet (== mweTyp) tmpDir cupt
   -- net0 <- Net.new 300 2
-  trainProgSGD sgdCfg dataSet globalDepth net0
+  -- trainProgSGD sgdCfg dataSet globalDepth net0
+  SGD.sgd net0 dataSet
+    (sgdCfg . fromIntegral $ trainDepth cfg)
   where
     sgdCfg depth = SGD.Config
       { iterNum = fromIntegral $ trainIterNum cfg
@@ -273,28 +275,28 @@ train cfg tmpDir mweTyp cupt net0 = do
       }
 
 
--- | Progressive training
-trainProgSGD
-  :: (KnownNat d, KnownNat c)
-  => (Int -> SGD.Config (Net.Param d c) (Elem d c))
-    -- ^ Gradient descent config, depending on the chosen depth
-  -> SGD.DataSet (Elem d c)
-    -- ^ Training dataset
-  -> Int
-    -- ^ Maximum depth
-  -> Net.Param d c
-    -- ^ Initial params
-  -> IO (Net.Param d c)
-trainProgSGD gdCfg dataSet maxDepth =
-  go 0
-  where
-    go depth net
-      | depth > maxDepth =
-          return net
-      | otherwise = do
-          putStrLn $ "# depth = " ++ show depth
-          net' <- SGD.sgd net dataSet (gdCfg depth)
-          go (depth+1) net'
+-- -- | Progressive training
+-- trainProgSGD
+--   :: (KnownNat d, KnownNat c)
+--   => (Int -> SGD.Config (Net.Param d c) (Elem d c))
+--     -- ^ Gradient descent config, depending on the chosen depth
+--   -> SGD.DataSet (Elem d c)
+--     -- ^ Training dataset
+--   -> Int
+--     -- ^ Maximum depth
+--   -> Net.Param d c
+--     -- ^ Initial params
+--   -> IO (Net.Param d c)
+-- trainProgSGD gdCfg dataSet maxDepth =
+--   go 0
+--   where
+--     go depth net
+--       | depth > maxDepth =
+--           return net
+--       | otherwise = do
+--           putStrLn $ "# depth = " ++ show depth
+--           net' <- SGD.sgd net dataSet (gdCfg depth)
+--           go (depth+1) net'
 
 
 ----------------------------------------------
@@ -304,24 +306,26 @@ trainProgSGD gdCfg dataSet maxDepth =
 
 -- | Tag many sentences
 tagMany
-  :: Net.Param 300 2  -- ^ Network parameters
-  -> Cupt.MweTyp      -- ^ MWE type (category) to tag with
+  :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
+  -> Net.Param 300 2  -- ^ Network parameters
+  -> Int              -- ^ Depth (see also `trainDepth`)
   -> [Sent 300]       -- ^ Cupt sentences
   -> IO ()
-tagMany net mweTyp cupt = do
+tagMany mweTyp net depth cupt = do
   forM_ cupt $ \sent -> do
     T.putStr "# "
     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
-    tag net mweTyp sent
+    tag mweTyp net depth sent
 
 
 -- | Tag (output the result on stdin).
 tag
-  :: Net.Param 300 2  -- ^ Network parameters
-  -> Cupt.MweTyp      -- ^ MWE type (category) to tag with
+  :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
+  -> Net.Param 300 2  -- ^ Network parameters
+  -> Int              -- ^ Depth (see also `trainDepth`)
   -> Sent 300         -- ^ Cupt sentence
   -> IO ()
-tag net mweTyp sent = do
+tag mweTyp net depth sent = do
 
   forM_ (M.toList arcMap) $ \(e, v) -> do
     when (isMWE v) (printArc e)
@@ -329,7 +333,7 @@ tag net mweTyp sent = do
   where
 
     (elem, tokMap) = mkElem (const False) sent
-    arcMap = Net.eval net globalDepth (Net.graph elem)
+    arcMap = Net.eval net depth (Net.graph elem)
     isMWE statVect =
       let vect = LA.unwrap statVect
           val = vect `LAD.atIndex` 1

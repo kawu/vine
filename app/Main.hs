@@ -20,7 +20,7 @@ import qualified Data.Text.Lazy.IO as TL
 
 import qualified Dhall as Dhall
 
--- import           System.FilePath (isAbsolute, (</>))
+import           System.FilePath (isAbsolute, (</>))
 
 -- import           System.Environment (getArgs)
 
@@ -51,12 +51,7 @@ data Command
       -- ^ Calculate fasttext embeddings for the individual words in the file
     | Train TrainConfig
       -- ^ Train a model
-    | Tag 
-      { inpCupt  :: FilePath
-      , inpEmbs  :: FilePath
-      , inpModel :: FilePath
-      , mweTyp   :: T.Text
-      }
+    | Tag TagConfig
       -- ^ Tagging
 
 
@@ -74,6 +69,19 @@ data TrainConfig = TrainConfig
     -- ^ Where to store the output model
   , trainCfgPath :: Maybe FilePath
     -- ^ Additional training configuration path
+  }
+
+
+-- | Tagging configuration
+data TagConfig = TagConfig
+  { tagCupt :: FilePath
+  , tagEmbs :: FilePath
+  , tagMweCat :: T.Text
+    -- ^ MWE category (e.g., LVC) to focus on
+  , tagModel   :: FilePath
+    -- ^ Input model (otherwise, random)
+  , tagDepth   :: Int
+    -- ^ Input model (otherwise, random)
   }
 
 
@@ -124,16 +132,18 @@ trainOptions = fmap Train $ TrainConfig
         )
   <*> strOption
         ( long "mwe"
-       <> short 'm'
-       <> help "MWE category to focus on"
+       <> short 't'
+       <> help "MWE category (type) to learn"
         )
   <*> (optional . strOption)
-        ( long "in-model"
+        ( metavar "FILE"
+       <> long "model"
+       <> short 'm'
        <> help "Input model"
         )
   <*> (optional . strOption)
         ( metavar "FILE"
-       <> long "output"
+       <> long "out-model"
        <> short 'o'
        <> help "Output model"
         )
@@ -146,7 +156,7 @@ trainOptions = fmap Train $ TrainConfig
 
 
 tagOptions :: Parser Command
-tagOptions = Tag
+tagOptions = fmap Tag $ TagConfig
   <$> strOption
         ( metavar "FILE"
        <> long "input"
@@ -160,15 +170,20 @@ tagOptions = Tag
        <> help "Input embedding file"
         )
   <*> strOption
-        ( metavar "FILE"
-       <> long "params"
-       <> short 'p'
-       <> help "Input model parameters file"
+        ( long "mwe"
+       <> short 't'
+       <> help "MWE category (type)"
         )
   <*> strOption
-        ( long "mwe"
+        ( metavar "FILE"
+       <> long "model"
        <> short 'm'
-       <> help "MWE category to focus on"
+       <> help "Input model"
+        )
+  <*> option auto
+        ( long "depth"
+       <> short 'd'
+       <> help "Recursion depth"
         )
 
 
@@ -209,24 +224,20 @@ run cmd =
 
     Train TrainConfig{..} -> do
 
---       let configPath' =
---             if isAbsolute configPath
---             then configPath
---             else "./" </> configPath
---           tagConfig = Task.TagConfig
---             { tagBestPath = bestPath
---             , splitMwesOn = splitOn }
+      -- Training configuration
       config <- 
         case trainCfgPath of
           Nothing -> return MWE.defTrainCfg
-          Just configPath -> Dhall.detailed
-            (Dhall.input Dhall.auto $ fromString configPath)
+          Just configPath ->
+            Dhall.input Dhall.auto (dhallPath configPath)
 
       -- Initial network
-      net0 <- Graph.new 300 2
-      -- Read .cupt (ignore paragraph boundaries); need to apply
-      -- `tail.decorate` because we don't want the dummy root!
-      cupt <- map (tail . Cupt.decorate) . concat
+      net0 <- 
+        case trainInModel of
+          Nothing -> Graph.new 300 2
+          Just path -> Graph.loadParam path
+      -- Read .cupt (ignore paragraph boundaries)
+      cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
@@ -242,16 +253,15 @@ run cmd =
           Graph.saveParam path net
       putStrLn "Done!"
 
-    Tag{..} -> do
+    Tag TagConfig{..} -> do
       -- Load the model
-      net <- Graph.loadParam inpModel
-      -- Read .cupt (ignore paragraph boundaries); need to apply
-      -- `tail.decorate` because we don't want the dummy root!
-      cupt <- map (tail . Cupt.decorate) . concat
-        <$> Cupt.readCupt inpCupt
+      net <- Graph.loadParam tagModel
+      -- Read .cupt (ignore paragraph boundaries)
+      cupt <- map Cupt.decorate . concat
+        <$> Cupt.readCupt tagCupt
       -- Read the corresponding embeddings
-      embs <- Emb.readEmbeddings inpEmbs
-      MWE.tagMany net mweTyp
+      embs <- Emb.readEmbeddings tagEmbs
+      MWE.tagMany tagMweCat net tagDepth
         ( map
             (uncurry MWE.Sent)
             (zip cupt embs)
@@ -266,3 +276,15 @@ main =
        ( fullDesc
       <> progDesc "MWE identification tool"
       <> header "galago" )
+
+
+--------------------------------------------------
+-- Utils
+--------------------------------------------------
+
+
+dhallPath :: FilePath -> Dhall.Text
+dhallPath path = fromString $
+  if isAbsolute path
+  then path
+  else "./" </> path

@@ -70,10 +70,12 @@ gradDesc net0 Config{..} =
     go k momentum net
       | k > iterNum = return net
       | otherwise = do
+          let netSize = size net
           when (k `mod` reportEvery == 0) $ do
             putStr . show =<< quality net
-            putStrLn $ " (size = " ++ show (size net) ++ ")"
-          grad <- scale (gain k) <$> gradient net
+            putStrLn $ " (size = " ++ show netSize ++ ")"
+          grad <- netSize `seq`
+            (scale (gain k) <$> gradient net)
           let momentum' = scale gamma momentum `add` grad
               newNet = net `sub` momentum'
           go (k+1) momentum' newNet
