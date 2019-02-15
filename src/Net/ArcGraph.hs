@@ -271,7 +271,7 @@ data Graph a = Graph
     -- ^ Inversed (transposed) `graphStr`
   , labelMap :: M.Map G.Vertex a
     -- ^ Label assigned to a given vertex
-  } deriving (Show, Eq, Ord, Functor)
+  } deriving (Show, Eq, Ord, Functor, Generic, Binary)
 
 
 -- | A graph arc (edge)

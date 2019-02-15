@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 
 -- | Support for the Cupt format -- see
@@ -36,6 +38,10 @@ module Format.Cupt
   , preserveOnly
   , abstract
 
+--     -- * Serialization
+--   , saveSent
+--   , loadSent
+
     -- * Merging
   , mergeCupt
   ) where
@@ -43,12 +49,18 @@ module Format.Cupt
 
 -- import           Control.Arrow (second)
 
+import           GHC.Generics (Generic)
+
+import           Data.Binary (Binary)
+-- import qualified Data.Binary as Bin
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.List as List
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 import qualified Data.Text as T
+-- import qualified Data.ByteString.Lazy as B
+-- import           Codec.Compression.Zlib (compress, decompress)
 
 
 -----------------------------------
@@ -94,7 +106,7 @@ data GenToken mwe = Token
     -- ^ MWE-related annotation. It might be a list, i.e., the token can be a
     -- part of several MWEs. Note that only the first occurrence of an MWE is
     -- supplied with the `MweTyp`e.
-  } deriving (Show, Eq, Ord)
+  } deriving (Show, Eq, Ord, Generic, Binary)
 
 
 -- | Word index, integer starting at 1 for each new sentence; may be a range for
@@ -107,7 +119,7 @@ data TokID
   | TokIDRange Int Int
   | TokIDCopy Int Int
     -- ^ An empty node (marked as `CopyOf` in UD data)
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic, Binary)
 
 
 -- | Sentence-local MWE ID.
@@ -396,6 +408,27 @@ mergeSent =
     go (x:xs) [] = x:xs
     go [] [] = []
     go [] (_:_) = error "Cupt.mergeSent: impossible2 happened"
+
+
+----------------------------------------------
+-- Serialization
+----------------------------------------------
+
+
+-- -- | Encode the sentence in a file.
+-- saveSent :: (Binary mwe) => FilePath -> GenSent mwe -> IO ()
+-- saveSent path
+--   = B.writeFile path
+--   -- . compress
+--   . Bin.encode
+-- 
+-- 
+-- -- | Load the parameters from the given file.
+-- loadSent :: (Binary mwe) => FilePath -> IO (GenSent mwe)
+-- loadSent path
+--   = Bin.decode
+--   -- . decompress
+--   <$> B.readFile path
 
 
 -----------------------------------

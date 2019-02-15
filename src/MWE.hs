@@ -2,6 +2,9 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE LambdaCase #-}
 
 
 module MWE 
@@ -11,9 +14,13 @@ module MWE
   ) where
 
 
+import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
 
 import           Control.Monad (guard, when, forM_)
+
+import qualified System.Directory as D
+import           System.FilePath ((</>))
 
 import           Numeric.LinearAlgebra.Static.Backprop (R)
 import qualified Numeric.LinearAlgebra.Static as LA
@@ -25,6 +32,11 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import           Data.Binary (Binary)
+import qualified Data.Binary as Bin
+import qualified Data.ByteString.Lazy as B
+-- import           Codec.Compression.Zlib (compress, decompress)
+import qualified Data.IORef as R
 
 import qualified Format.Cupt as Cupt
 import qualified Net.ArcGraph as Net
@@ -36,22 +48,29 @@ import qualified GradientDescent.Momentum as Mom
 
 
 ----------------------------------------------
--- Dataset
+-- Data
 ----------------------------------------------
 
 
--- | Dataset element
---
--- TODO: add mapping to original token IDs
---
+-- | Input sentence
+data Sent d = Sent
+  { cuptSent :: Cupt.Sent
+    -- ^ The .cupt sentence
+  , wordEmbs :: [R d]
+    -- ^ The corresponding word embeddings
+  } deriving (Show, Generic, Binary)
+
+
+
+-- | Encoded dataset element
 data Elem d = Elem
   { graph :: Net.Graph (R d)
     -- ^ Input graph
   , labMap :: M.Map Net.Arc (R 2)
     -- ^ Target labels
-  , tokMap :: M.Map Cupt.TokID G.Vertex
-    -- ^ Token ID -> graph vertices mapping
-  } deriving (Show)
+--   , tokMap :: M.Map Cupt.TokID G.Vertex
+--     -- ^ Token ID -> graph vertices mapping
+  } deriving (Show, Generic, Binary)
 
 
 -- | Convert the given Cupt file to a training dataset element.
@@ -60,27 +79,25 @@ mkElem
   :: (KnownNat d)
   => (Cupt.MweTyp -> Bool)
     -- ^ MWE type (category) selection method
-  -> Cupt.Sent
+  -> Sent d
     -- ^ Input sentence
-  -> [R d]
-    -- ^ The corresponding list of embeddings
-  -> Elem d
-mkElem mweSel sent embs =
+  -> (Elem d, M.Map Cupt.TokID G.Vertex)
+mkElem mweSel Sent{..} =
 
-  createElem idMap nodes arcs
+  (createElem nodes arcs, idMap)
 
   where
 
     -- Helpers
     idMap = M.fromList
       [ (Cupt.tokID tok, i)
-      | tok <- sent
+      | tok <- cuptSent
       , let (Cupt.TokID i) = Cupt.tokID tok
       ]
     tokID tok = idMap M.! Cupt.tokID tok
     tokMap = M.fromList
       [ (Cupt.tokID tok, tok)
-      | tok <- sent 
+      | tok <- cuptSent 
       ]
     tokPar tok = tokMap M.! Cupt.dephead tok
     isRoot tok = Cupt.dephead tok == Cupt.TokID 0
@@ -92,10 +109,10 @@ mkElem mweSel sent embs =
 
     -- Graph nodes and labeled arcs
     nodes = do
-      (tok, vec) <- zip sent embs
+      (tok, vec) <- zip cuptSent wordEmbs
       return (tokID tok, vec)
     arcs = do
-      tok <- sent
+      tok <- cuptSent
       -- Check the token is not a root
       guard . not $ isRoot tok
       let par = tokPar tok
@@ -112,13 +129,11 @@ mkElem mweSel sent embs =
 -- | Create a dataset element based on nodes and labeled arcs.
 createElem
   :: (KnownNat d)
-  => M.Map Cupt.TokID G.Vertex
-  -> [(G.Vertex, R d)]
+  => [(G.Vertex, R d)]
   -> [(Net.Arc, Bool)]
   -> Elem d
-createElem idMap nodes arcs = Elem
-  { tokMap = idMap
-  , graph = graph
+createElem nodes arcs = Elem
+  { graph = graph
   , labMap = valMap
   }
   where
@@ -142,6 +157,48 @@ createElem idMap nodes arcs = Elem
 
 
 ----------------------------------------------
+-- Dataset
+----------------------------------------------
+
+
+-- | Encoded dataset stored on a disk
+data DataSet d = DataSet
+  { size :: Int 
+    -- ^ The size of the dataset; the individual indices are
+    -- [0, 1, ..., size - 1]
+  , readElem :: Int -> IO (Elem d)
+    -- ^ Read the sentence with the given identifier
+  }
+
+
+-- | Create a dataset from a list of sentences in a given directory.
+-- TODO: Make it error-safe/aware
+mkDataSet
+  :: (KnownNat d)
+  => (Cupt.MweTyp -> Bool)
+    -- ^ MWE type (category) selection method
+  -> FilePath
+  -> [Sent d]
+  -> IO (DataSet d)
+mkDataSet mweSel path xs = do
+  D.doesDirectoryExist path >>= \case
+    False -> return ()
+    True -> error "Directory already exists!"
+  D.createDirectory path
+
+  nRef <- R.newIORef 0
+  forM_ (zip [0..] xs) $ \(ix, sent) -> do
+    R.modifyIORef' nRef (+1)
+    Bin.encodeFile (path </> show ix) (mkElem mweSel sent)
+
+  n <- R.readIORef nRef
+  return $ DataSet
+    { size = n
+    , readElem = \ix -> Bin.decodeFile (path </> show ix)
+    }
+
+
+----------------------------------------------
 -- Training
 ----------------------------------------------
 
@@ -155,16 +212,15 @@ createElem idMap nodes arcs = Elem
 train
   :: (Cupt.MweTyp -> Bool)
     -- ^ MWE type (category) selection method
-  -> [Cupt.Sent]   -- ^ Cupt
-  -> [[LA.R 300]]  -- ^ Embeddings
+  -> [Sent 300]
   -> IO (Net.Param 300 2)
-train mweSel cupt embss = do
+train mweSel cupt = do
   net0 <- Net.new 300 2
   Net.trainProg (gdCfg trainData) 1 net0
   where
     trainData = do
-      (sent, embs) <- zip cupt embss
-      let Elem{..} = mkElem mweSel sent embs
+      sent <- cupt
+      let (Elem{..}, _) = mkElem mweSel sent
       return (graph, labMap)
     -- Gradient descent configuration
     gdCfg dataSet depth = Mom.Config
@@ -178,6 +234,32 @@ train mweSel cupt embss = do
       }
 
 
+-- -- | Train the MWE identification network.
+-- train'
+--   :: (Cupt.MweTyp -> Bool)
+--     -- ^ MWE type (category) selection method
+--   -> DataSet
+--   -> IO (Net.Param 300 2)
+-- train' mweSel dataSet = do
+--   net0 <- Net.new 300 2
+--   Net.trainProg (gdCfg trainData) 1 net0
+--   where
+--     trainData = do
+--       (sent, embs) <- zip cupt embss
+--       let Elem{..} = mkElem mweSel sent embs
+--       return (graph, labMap)
+--     -- Gradient descent configuration
+--     gdCfg dataSet depth = Mom.Config
+--       { iterNum = 100
+--       , gradient = BP.gradBP (Net.netError dataSet depth)
+--       , quality = BP.evalBP (Net.netError dataSet depth)
+--       , reportEvery = 1
+--       , gain0 = 0.05 / fromIntegral (depth+1)
+--       , tau = 50
+--       , gamma = 0.0 ** fromIntegral (depth+1)
+--       }
+
+
 ----------------------------------------------
 -- Tagging
 ----------------------------------------------
@@ -187,31 +269,29 @@ train mweSel cupt embss = do
 tagMany
   :: Net.Param 300 2  -- ^ Network parameters
   -> Cupt.MweTyp      -- ^ MWE type (category) to tag with
-  -> [Cupt.Sent]      -- ^ Cupt sentence
-  -> [[LA.R 300]]     -- ^ Embeddings
+  -> [Sent 300]       -- ^ Cupt sentences
   -> IO ()
-tagMany net mweTyp cupt embss = do
-  forM_ (zip cupt embss) $ \(sent, embs) -> do
+tagMany net mweTyp cupt = do
+  forM_ cupt $ \sent -> do
     T.putStr "# "
-    T.putStrLn . T.unwords $ map Cupt.orth sent
-    tag net mweTyp sent embs
+    T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
+    tag net mweTyp sent
 
 
 -- | Tag (output the result on stdin).
 tag
   :: Net.Param 300 2  -- ^ Network parameters
   -> Cupt.MweTyp      -- ^ MWE type (category) to tag with
-  -> Cupt.Sent        -- ^ Cupt sentence
-  -> [LA.R 300]       -- ^ Embeddings
+  -> Sent 300         -- ^ Cupt sentence
   -> IO ()
-tag net mweTyp sent embs = do
+tag net mweTyp sent = do
 
   forM_ (M.toList arcMap) $ \(e, v) -> do
     when (isMWE v) (printArc e)
 
   where
 
-    elem = mkElem (const False) sent embs
+    (elem, tokMap) = mkElem (const False) sent
     arcMap = Net.eval net 1 (graph elem)
     isMWE statVect =
       let vect = LA.unwrap statVect
@@ -219,8 +299,8 @@ tag net mweTyp sent embs = do
        in val > 0.5
 
     wordMap = M.fromList $ do
-      tok <- sent
-      return (tokMap elem M.! Cupt.tokID tok, Cupt.orth tok)
+      tok <- cuptSent sent
+      return (tokMap M.! Cupt.tokID tok, Cupt.orth tok)
 
     printArc (p, q) = do
       T.putStr (wordMap M.! p)
