@@ -510,8 +510,8 @@ train embPath depth net0 = do
 -- | Gradient descent configuration
 gdCfg dataSet depth = Mom.Config
   { iterNum = 100
-  , gradient = BP.gradBP (netError dataSet depth)
-  , quality = BP.evalBP (netError dataSet depth)
+  , gradient = pure . BP.gradBP (netError dataSet depth)
+  , quality = pure . BP.evalBP (netError dataSet depth)
   , reportEvery = 10
   , gain0 = 0.05
   , tau = 50

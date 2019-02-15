@@ -8,7 +8,8 @@
 
 
 module MWE 
-  ( train
+  ( Sent(..)
+  , train
   , tag
   , tagMany
   ) where
@@ -43,6 +44,7 @@ import qualified Net.ArcGraph as Net
 import qualified Net.MWE2 as MWE
 import qualified Embedding as Emb
 import qualified GradientDescent.Momentum as Mom
+import qualified SGD as SGD
 
 -- import Debug.Trace (trace)
 
@@ -63,6 +65,9 @@ data Sent d = Sent
 
 
 -- | Encoded dataset element
+--
+-- TODO: Move to `Net.ArcGraph` module.
+--
 data Elem d = Elem
   { graph :: Net.Graph (R d)
     -- ^ Input graph
@@ -161,16 +166,6 @@ createElem nodes arcs = Elem
 ----------------------------------------------
 
 
--- | Encoded dataset stored on a disk
-data DataSet d = DataSet
-  { size :: Int 
-    -- ^ The size of the dataset; the individual indices are
-    -- [0, 1, ..., size - 1]
-  , readElem :: Int -> IO (Elem d)
-    -- ^ Read the sentence with the given identifier
-  }
-
-
 -- | Create a dataset from a list of sentences in a given directory.
 -- TODO: Make it error-safe/aware
 mkDataSet
@@ -178,8 +173,9 @@ mkDataSet
   => (Cupt.MweTyp -> Bool)
     -- ^ MWE type (category) selection method
   -> FilePath
+    -- ^ Path to store temporary results
   -> [Sent d]
-  -> IO (DataSet d)
+  -> IO (SGD.DataSet (Elem d))
 mkDataSet mweSel path xs = do
   D.doesDirectoryExist path >>= \case
     False -> return ()
@@ -192,9 +188,9 @@ mkDataSet mweSel path xs = do
     Bin.encodeFile (path </> show ix) (mkElem mweSel sent)
 
   n <- R.readIORef nRef
-  return $ DataSet
+  return $ SGD.DataSet
     { size = n
-    , readElem = \ix -> Bin.decodeFile (path </> show ix)
+    , elemAt = \ix -> Bin.decodeFile (path </> show ix)
     }
 
 
@@ -208,56 +204,81 @@ mkDataSet mweSel path xs = do
 --   } deriving (Show, Eq, Ord)
 
 
--- | Train the MWE identification network.
-train
-  :: (Cupt.MweTyp -> Bool)
-    -- ^ MWE type (category) selection method
-  -> [Sent 300]
-  -> IO (Net.Param 300 2)
-train mweSel cupt = do
-  net0 <- Net.new 300 2
-  Net.trainProg (gdCfg trainData) 1 net0
-  where
-    trainData = do
-      sent <- cupt
-      let (Elem{..}, _) = mkElem mweSel sent
-      return (graph, labMap)
-    -- Gradient descent configuration
-    gdCfg dataSet depth = Mom.Config
-      { iterNum = 100
-      , gradient = BP.gradBP (Net.netError dataSet depth)
-      , quality = BP.evalBP (Net.netError dataSet depth)
-      , reportEvery = 1
-      , gain0 = 0.05 / fromIntegral (depth+1)
-      , tau = 50
-      , gamma = 0.0 ** fromIntegral (depth+1)
-      }
-
-
 -- -- | Train the MWE identification network.
--- train'
+-- train
 --   :: (Cupt.MweTyp -> Bool)
 --     -- ^ MWE type (category) selection method
---   -> DataSet
+--   -> [Sent 300]
 --   -> IO (Net.Param 300 2)
--- train' mweSel dataSet = do
+-- train mweSel cupt = do
 --   net0 <- Net.new 300 2
 --   Net.trainProg (gdCfg trainData) 1 net0
 --   where
 --     trainData = do
---       (sent, embs) <- zip cupt embss
---       let Elem{..} = mkElem mweSel sent embs
+--       sent <- cupt
+--       let (Elem{..}, _) = mkElem mweSel sent
 --       return (graph, labMap)
 --     -- Gradient descent configuration
 --     gdCfg dataSet depth = Mom.Config
---       { iterNum = 100
---       , gradient = BP.gradBP (Net.netError dataSet depth)
---       , quality = BP.evalBP (Net.netError dataSet depth)
---       , reportEvery = 1
---       , gain0 = 0.05 / fromIntegral (depth+1)
---       , tau = 50
+--       { iterNum = 200
+--       , gradient = pure . BP.gradBP (Net.netError dataSet depth)
+--       , quality = pure . BP.evalBP (Net.netError dataSet depth)
+--       , reportEvery = 10
+--       , gain0 = 0.01 / fromIntegral (depth+1)
+--       , tau = 100
 --       , gamma = 0.0 ** fromIntegral (depth+1)
 --       }
+
+
+-- | Train the MWE identification network.
+train
+  :: (Cupt.MweTyp -> Bool)
+    -- ^ MWE type (category) selection method
+  -> FilePath
+    -- ^ Path to store temporary results
+  -> [Sent 300]
+    -- ^ Training dataset
+  -> IO (Net.Param 300 2)
+train mweSel tmpPath cupt = do
+  dataSet <- mkDataSet mweSel tmpPath cupt
+  net0 <- Net.new 300 2
+  trainProgSGD sgdCfg dataSet 1 net0
+  where
+    sgdCfg depth = SGD.Config
+      { iterNum = 30
+      , batchSize = 1
+      , gradient = \xs net -> BP.gradBP (Net.netError (map unElem xs) depth) net
+      , quality = \x net -> BP.evalBP (Net.netError [unElem x] depth) net
+      , reportEvery = 1
+      , gain0 = 0.01 -- / fromIntegral (depth+1)
+      , tau = 5
+      , gamma = 0.9 -- ** fromIntegral (depth+1)
+      }
+    unElem Elem{..} = (graph, labMap)
+
+
+-- | Progressive training
+trainProgSGD
+  :: (KnownNat d, KnownNat c)
+  => (Int -> SGD.Config (Net.Param d c) (Elem d))
+    -- ^ Gradient descent config, depending on the chosen depth
+  -> SGD.DataSet (Elem d)
+    -- ^ Training dataset
+  -> Int
+    -- ^ Maximum depth
+  -> Net.Param d c
+    -- ^ Initial params
+  -> IO (Net.Param d c)
+trainProgSGD gdCfg dataSet maxDepth =
+  go 0
+  where
+    go depth net
+      | depth > maxDepth =
+          return net
+      | otherwise = do
+          putStrLn $ "# depth = " ++ show depth
+          net' <- SGD.sgd net dataSet (gdCfg depth)
+          go (depth+1) net'
 
 
 ----------------------------------------------

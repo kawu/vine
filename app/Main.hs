@@ -38,13 +38,6 @@ import qualified Embedding as Emb
 import qualified Format.Cupt as Cupt
 
 
--- main :: IO ()
--- main = do
---   path : depth : _ <- getArgs
---   net <- MWE.train path (read depth) =<< Graph.new 300 2
---   return ()
-
-
 --------------------------------------------------
 -- Commands
 --------------------------------------------------
@@ -69,6 +62,8 @@ data Command
 data TrainConfig = TrainConfig
   { trainCupt :: FilePath
   , trainEmbs :: FilePath
+  , trainTmp  :: FilePath
+    -- ^ Directory to store temporary stuff
   , mweCat    :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
   , outModel  :: Maybe FilePath
@@ -114,6 +109,11 @@ trainOptions = fmap Train $ TrainConfig
        <> long "embed"
        <> short 'e'
        <> help "Input embedding file"
+        )
+  <*> strOption
+        ( metavar "DIR"
+       <> long "tmp"
+       <> help "Directory to store temporary stuff"
         )
   <*> strOption
         ( long "mwe"
@@ -195,7 +195,11 @@ run cmd =
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
-      net <- MWE.train (==mweCat) cupt embs
+      net <- MWE.train (==mweCat) trainTmp
+        ( map
+            (uncurry MWE.Sent)
+            (zip cupt embs)
+        )
       case outModel of
         Nothing -> return ()
         Just path -> do
@@ -211,7 +215,11 @@ run cmd =
         <$> Cupt.readCupt inpCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings inpEmbs
-      MWE.tagMany net mweTyp cupt embs
+      MWE.tagMany net mweTyp
+        ( map
+            (uncurry MWE.Sent)
+            (zip cupt embs)
+        )
 
 
 main :: IO ()

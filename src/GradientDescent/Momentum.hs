@@ -16,15 +16,10 @@ data Config net = Config
   { iterNum :: Int
     -- ^ Number of iteration
 
---   , scaleCoef :: Double
---     -- ^ Gradient scaling coefficient
-
-  , gradient :: net -> net
-    -- ^ Net gradient on the training data
---   , substract :: net -> net -> Double -> net
---     -- ^ Multiple the second net by the given scaling factor and
---     -- substract it from the first net
-  , quality :: net -> Double
+  , gradient :: net -> IO net
+    -- ^ Net gradient on the training data; embedded in the IO monad so that
+    -- it can randomly choose a subset of the training data
+  , quality :: net -> IO Double
     -- ^ Net quality measure
   , reportEvery :: Int
     -- ^ How often report the quality
@@ -32,8 +27,7 @@ data Config net = Config
   , gain0     :: Double
   -- ^ Initial gain parameter
   , tau       :: Double
-  -- ^ After how many iterations over the entire dataset
-  -- the gain parameter is halved
+  -- ^ After how many gradient calculations the gain parameter is halved
   , gamma     :: Double
   -- ^ The momentum-related parameter (TODO: explain)
   }
@@ -77,9 +71,9 @@ gradDesc net0 Config{..} =
       | k > iterNum = return net
       | otherwise = do
           when (k `mod` reportEvery == 0) $ do
-            putStr . show $ quality net
+            putStr . show =<< quality net
             putStrLn $ " (size = " ++ show (size net) ++ ")"
-          let grad = scale (gain k) (gradient net)
-              momentum' = scale gamma momentum `add` grad
+          grad <- scale (gain k) <$> gradient net
+          let momentum' = scale gamma momentum `add` grad
               newNet = net `sub` momentum'
           go (k+1) momentum' newNet

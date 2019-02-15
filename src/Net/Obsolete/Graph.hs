@@ -502,8 +502,8 @@ train =
 -- | Gradient descent configuration
 momCfg dataSet depth = Mom.Config
   { iterNum = 1000
-  , gradient = BP.gradBP (netError dataSet depth)
-  , quality = BP.evalBP (netError dataSet depth)
+  , gradient = pure . BP.gradBP (netError dataSet depth)
+  , quality = pure . BP.evalBP (netError dataSet depth)
   , reportEvery = 100
   , gain0 = 0.1
   , tau = 100

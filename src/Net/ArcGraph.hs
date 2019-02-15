@@ -81,6 +81,7 @@ import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
 import qualified GradientDescent.Momentum as Mom
+import qualified SGD
 
 import qualified Embedding.Dict as D
 
