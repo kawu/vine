@@ -41,10 +41,11 @@ import           Lens.Micro ((^.))
 import           Data.Maybe (fromJust)
 import qualified Data.Vector.Storable.Sized as SVS
 import qualified Numeric.Backprop as BP
-import           Numeric.Backprop ((^^.))
+import           Numeric.Backprop
+  (BVar, Reifies, W, (^^.))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
-  (R, L, BVar, Reifies, W, (#))
+  (R, L, (#))
 import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.LinearAlgebra.Static as LA
 import qualified Numeric.LinearAlgebra.Static.Vector as LA

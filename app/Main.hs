@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 
 module Main 
@@ -6,10 +7,13 @@ module Main
   ) where
 
 
-import           Control.Monad (forM_)
-import           Data.Monoid ((<>))
+import           GHC.TypeNats (KnownNat)
+
+import           Control.Monad (forM_, guard)
+
 import           Options.Applicative
--- import           Data.Maybe (mapMaybe)
+import           Data.Monoid ((<>))
+import           Data.Maybe (mapMaybe)
 import           Data.Ord (comparing)
 import           Data.String (fromString)
 import           Data.List (sortBy)
@@ -17,6 +21,8 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy.IO as TL
+
+import qualified Numeric.LinearAlgebra.Static as LA
 
 import qualified Dhall as Dhall
 
@@ -38,6 +44,8 @@ import qualified GradientDescent.Momentum as Mom
 import qualified Embedding.Dict as D
 import qualified Embedding as Emb
 import qualified Format.Cupt as Cupt
+
+import Debug.Trace (trace)
 
 
 --------------------------------------------------
@@ -242,10 +250,7 @@ run cmd =
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
       net <- MWE.train config trainTmpDir trainMweCat
-        ( map
-            (uncurry MWE.Sent)
-            (zip cupt embs)
-        ) net0
+        (mkInput cupt embs) net0
       case trainOutModel of
         Nothing -> return ()
         Just path -> do
@@ -262,10 +267,7 @@ run cmd =
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings tagEmbs
       MWE.tagMany tagMweCat net tagDepth
-        ( map
-            (uncurry MWE.Sent)
-            (zip cupt embs)
-        )
+        (mkInput cupt embs)
 
 
 main :: IO ()
@@ -281,6 +283,34 @@ main =
 --------------------------------------------------
 -- Utils
 --------------------------------------------------
+
+
+mkInput
+  :: (KnownNat d)
+  => [Cupt.Sent]
+  -> [Maybe [LA.R d]]
+  -> [MWE.Sent d]
+mkInput cupt embs =
+  ( map
+      (uncurry MWE.Sent)
+      (mapMaybe clear $ zip cupt embs)
+  ) 
+  where
+    clear (sent, mayEmbs) = report sent $ do
+      embs <- mayEmbs
+      guard $ simpleSent sent
+      return (sent, embs)
+    report sent mayVal = 
+      case mayVal of
+        Just val -> Just val
+        Nothing -> 
+          let sentTxt = T.intercalate " " (map Cupt.orth sent)
+           in trace ("Ignoring sentence: " ++ T.unpack sentTxt) Nothing
+    simpleSent sent = and $ do
+      tok <- sent
+      return $ case Cupt.tokID tok of
+                 Cupt.TokID _ -> True
+                 _ -> False
 
 
 dhallPath :: FilePath -> Dhall.Text

@@ -258,6 +258,7 @@ train
   -> IO (Net.Param 300 2)
 train cfg tmpDir mweTyp cupt net0 = do
   dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+  putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
   -- net0 <- Net.new 300 2
   -- trainProgSGD sgdCfg dataSet globalDepth net0
   SGD.sgd net0 dataSet
