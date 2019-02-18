@@ -83,6 +83,7 @@ mkElem
   -> Sent d
     -- ^ Input sentence
   -> (Elem d 2, M.Map Cupt.TokID G.Vertex)
+--   -> (Elem d, M.Map Cupt.TokID G.Vertex)
 mkElem mweSel Sent{..} =
 
   (createElem nodes arcs, idMap)
@@ -133,6 +134,7 @@ createElem
   => [(G.Vertex, R d)]
   -> [(Net.Arc, Bool)]
   -> Elem d 2
+--   -> Elem d
 createElem nodes arcs = Net.Elem
   { graph = graph
   , labMap = valMap
@@ -151,6 +153,7 @@ createElem nodes arcs = Net.Elem
       (arc, isMwe) <- arcs
       return 
         ( arc
+--         , if isMwe then 1.0 else 0.0
         , if isMwe
              then mwe
              else notMwe
@@ -178,6 +181,7 @@ mkDataSet
     -- ^ Path to store temporary results
   -> [Sent d]
   -> IO (SGD.DataSet (Elem d 2))
+--   -> IO (SGD.DataSet (Elem d))
 mkDataSet mweSel path xs = do
   D.doesDirectoryExist path >>= \case
     False -> return ()
@@ -199,10 +203,6 @@ mkDataSet mweSel path xs = do
 ----------------------------------------------
 -- Training
 ----------------------------------------------
-
-
--- globalDepth :: Int 
--- globalDepth = 0 
 
 
 data TrainConfig = TrainConfig
@@ -254,8 +254,10 @@ train
   -> [Sent 300]
     -- ^ Training dataset
   -> Net.Param 300 2
+--   -> Net.Param 300
     -- ^ Initial network
   -> IO (Net.Param 300 2)
+--   -> IO (Net.Param 300)
 train cfg tmpDir mweTyp cupt net0 = do
   dataSet <- mkDataSet (== mweTyp) tmpDir cupt
   putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
@@ -309,6 +311,7 @@ train cfg tmpDir mweTyp cupt net0 = do
 tagMany
   :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
   -> Net.Param 300 2  -- ^ Network parameters
+--   -> Net.Param 300    -- ^ Network parameters
   -> Int              -- ^ Depth (see also `trainDepth`)
   -> [Sent 300]       -- ^ Cupt sentences
   -> IO ()
@@ -323,6 +326,7 @@ tagMany mweTyp net depth cupt = do
 tag
   :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
   -> Net.Param 300 2  -- ^ Network parameters
+--   -> Net.Param 300    -- ^ Network parameters
   -> Int              -- ^ Depth (see also `trainDepth`)
   -> Sent 300         -- ^ Cupt sentence
   -> IO ()
@@ -339,6 +343,7 @@ tag mweTyp net depth sent = do
       let vect = LA.unwrap statVect
           val = vect `LAD.atIndex` 1
        in val > 0.5
+--     isMWE = (> 0.5)
 
     wordMap = M.fromList $ do
       tok <- cuptSent sent

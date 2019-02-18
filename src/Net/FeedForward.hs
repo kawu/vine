@@ -5,6 +5,10 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeOperators #-}
+-- {-# LANGUAGE ScopedTypeVariables #-}
+
+-- To derive Binary
+{-# LANGUAGE DeriveAnyClass #-}
 
 
 {- Feed-forward network -}
@@ -29,7 +33,10 @@ import           System.Random (randomRIO)
 import           Lens.Micro.TH (makeLenses)
 import           Lens.Micro ((^.))
 
+-- import           Data.Proxy (Proxy(..))
+import           Data.Binary (Binary)
 import           Data.Maybe (fromJust)
+
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop ((^^.))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
@@ -38,9 +45,10 @@ import           Numeric.LinearAlgebra.Static.Backprop
 import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.LinearAlgebra.Static as LA
 import           Numeric.LinearAlgebra.Static.Backprop ((#>))
-import qualified Debug.SimpleReflect as Refl
+-- import qualified Debug.SimpleReflect as Refl
 
 import           Net.Basic
+import qualified GradientDescent.Momentum as Mom
 
 
 ----------------------------------------------
@@ -54,13 +62,36 @@ data FFN idim hdim odim = FFN
   , _nWeights2 :: L odim hdim
   , _nBias2    :: R odim
   }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Binary)
 
 instance (KnownNat idim, KnownNat hdim, KnownNat odim) 
   => BP.Backprop (FFN idim hdim odim)
 
 makeLenses ''FFN
 
+instance (KnownNat i, KnownNat h, KnownNat o)
+  => Mom.ParamSet (FFN i h o) where
+  zero = FFN 0 0 0 0
+  add x y = FFN
+    { _nWeights1 = _nWeights1 x + _nWeights1 y
+    , _nBias1 = _nBias1 x + _nBias1 y
+    , _nWeights2 = _nWeights2 x + _nWeights2 y
+    , _nBias2 = _nBias2 x + _nBias2 y
+    }
+  scale coef x = FFN
+    { _nWeights1 = scaleL $ _nWeights1 x
+    , _nBias1 = scaleR $ _nBias1 x
+    , _nWeights2 = scaleL $ _nWeights2 x
+    , _nBias2 = scaleR $ _nBias2 x
+    } where
+        scaleL = LA.dmmap (*coef)
+        scaleR = LA.dvmap (*coef)
+  size net = sqrt $ sum
+    [ LA.norm_2 (_nWeights1 net) ^ 2
+    , LA.norm_2 (_nBias1 net) ^ 2
+    , LA.norm_2 (_nWeights2 net) ^ 2
+    , LA.norm_2 (_nBias2 net) ^ 2
+    ]
 
 -- | Create a new, random FFN
 new
@@ -81,10 +112,9 @@ run
 run net x = z
   where
     -- run first layer
-    y = logistic $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
+    y = leakyRelu $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
     -- run second layer
-    z = relu $ (net ^^. nWeights2) #> y + (net ^^. nBias2)
-    -- z = (net ^^. nWeights2) #> y + (net ^^. nBias2)
+    z = (net ^^. nWeights2) #> y + (net ^^. nBias2)
 
 
 -- | Substract the second network from the first one.

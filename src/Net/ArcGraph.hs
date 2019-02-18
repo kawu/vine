@@ -20,7 +20,7 @@ module Net.ArcGraph
   ( 
   -- * Network
     Param(..)
-  , size
+  -- , size
   , new
   , Graph(..)
   , Arc
@@ -120,13 +120,15 @@ data Param d c = Param
       c -- Output: probabilities for different categories
       d -- Size of the hidden state
     -- ^ Output probability matrix
---   , _probN :: FFN
---       300   -- Size of the hidden state
---       3   -- Hidden layer size
---       2   -- Output: single value (`2` due to a bug)
---     -- ^ Output probability FFN
     -- WARNING: it might be not enough to use a matrix here, since it is not
     -- able to transform a 0 vector into something which is not 0!
+--   , _potN :: FFN
+--       (d Nats.+ d)
+--       d -- Hidden layer size
+--       d -- Output
+--     -- ^ Potential FFN
+--   , _potR :: R d
+--     -- ^ Potential ,,feature vector''
   , _arcM :: L d (d Nats.+ d)
     -- ^ A matrix to calculate arc embeddings based on node embeddings
   , _arcB :: R d
@@ -140,25 +142,25 @@ makeLenses ''Param
 
 instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
   zero = Param
-    (mat dpar dpar)
-    (vec dpar)
-    (mat dpar dpar)
-    (vec dpar)
-    (mat dpar dpar)
-    (mat dpar dpar)
-    (mat dpar dpar)
-    (mat dpar dpar)
-    (mat dpar dpar)
-    (mat dpar dpar)
-    (mat cpar dpar)
-    (mat dpar (dpar*2))
-    (vec dpar)
-      where
-        mat n m = LA.matrix (take (m*n) [0,0..])
-        vec n   = LA.vector (take n [0,0..])
-        dpar = proxyVal (Proxy :: Proxy d)
-        cpar = proxyVal (Proxy :: Proxy c)
-        proxyVal = fromInteger . toInteger . natVal
+    0 -- (mat dpar dpar)
+    0 -- (vec dpar)
+    0 -- (mat dpar dpar)
+    0 -- (vec dpar)
+    0 -- (mat dpar dpar)
+    0 -- (mat dpar dpar)
+    0 -- (mat dpar dpar)
+    0 -- (mat dpar dpar)
+    0 -- (mat dpar dpar)
+    0 -- (mat dpar dpar)
+    0 -- Mom.zero -- (mat cpar dpar)
+    0 -- (mat dpar (dpar*2))
+    0 -- (vec dpar)
+--       where
+--         mat n m = LA.matrix (take (m*n) [0,0..])
+--         vec n   = LA.vector (take n [0,0..])
+--         dpar = proxyVal (Proxy :: Proxy d)
+--         -- cpar = proxyVal (Proxy :: Proxy c)
+--         proxyVal = fromInteger . toInteger . natVal
   add x y = Param
     { _incM = _incM x + _incM y
     , _incB = _incB x + _incB y
@@ -171,6 +173,8 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     , _finalW = _finalW x + _finalW y
     , _finalU = _finalU x + _finalU y
     , _probM = _probM x + _probM y
+    -- , _potN = _potN x `Mom.add` _potN y
+    -- , _potR = _potR x + _potR y
     , _arcM = _arcM x + _arcM y
     , _arcB = _arcB x + _arcB y
     }
@@ -186,35 +190,54 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     , _finalW = scaleL $ _finalW x
     , _finalU = scaleL $ _finalU x
     , _probM = scaleL $ _probM x
+    -- , _potN = Mom.scale coef $ _potN x
+    -- , _potR = scaleR $ _potR x
     , _arcM = scaleL $ _arcM x
     , _arcB = scaleR $ _arcB x
     } where
         scaleL = LA.dmmap (*coef)
         scaleR = LA.dvmap (*coef)
-  size = BP.evalBP size
-
-
--- | Size (euclidean norm) of the network parameters
-size
-  :: (KnownNat d, KnownNat c, Reifies s W)
-  => BVar s (Param d c)
-  -> BVar s Double
-size net =
-  sqrt $ sum
-    [ LBP.norm_2M (net ^^. incM) ^ 2
-    , LBP.norm_2V (net ^^. incB) ^ 2
-    , LBP.norm_2M (net ^^. outM) ^ 2
-    , LBP.norm_2V (net ^^. outB) ^ 2
-    , LBP.norm_2M (net ^^. updateW) ^ 2
-    , LBP.norm_2M (net ^^. updateU) ^ 2
-    , LBP.norm_2M (net ^^. resetW) ^ 2
-    , LBP.norm_2M (net ^^. resetU) ^ 2
-    , LBP.norm_2M (net ^^. finalW) ^ 2
-    , LBP.norm_2M (net ^^. finalU) ^ 2
-    , LBP.norm_2M (net ^^. probM) ^ 2
-    , LBP.norm_2M (net ^^. arcM) ^ 2
-    , LBP.norm_2V (net ^^. arcB) ^ 2
+--   size = BP.evalBP size
+  size net = sqrt $ sum
+    [ LA.norm_2 (_incM net) ^ 2
+    , LA.norm_2 (_incB net) ^ 2
+    , LA.norm_2 (_outM net) ^ 2
+    , LA.norm_2 (_outB net) ^ 2
+    , LA.norm_2 (_updateW net) ^ 2
+    , LA.norm_2 (_updateU net) ^ 2
+    , LA.norm_2 (_resetW net) ^ 2
+    , LA.norm_2 (_resetU net) ^ 2
+    , LA.norm_2 (_finalW net) ^ 2
+    , LA.norm_2 (_finalU net) ^ 2
+    , LA.norm_2 (_probM net) ^ 2
+    -- , Mom.size (_potN net) ^ 2
+    -- , LA.norm_2 (_potR net) ^ 2
+    , LA.norm_2 (_arcM net) ^ 2
+    , LA.norm_2 (_arcB net) ^ 2
     ]
+
+
+-- -- | Size (euclidean norm) of the network parameters
+-- size
+--   :: (KnownNat d, KnownNat c, Reifies s W)
+--   => BVar s (Param d)
+--   -> BVar s Double
+-- size net =
+--   sqrt $ sum
+--     [ LBP.norm_2M (net ^^. incM) ^ 2
+--     , LBP.norm_2V (net ^^. incB) ^ 2
+--     , LBP.norm_2M (net ^^. outM) ^ 2
+--     , LBP.norm_2V (net ^^. outB) ^ 2
+--     , LBP.norm_2M (net ^^. updateW) ^ 2
+--     , LBP.norm_2M (net ^^. updateU) ^ 2
+--     , LBP.norm_2M (net ^^. resetW) ^ 2
+--     , LBP.norm_2M (net ^^. resetU) ^ 2
+--     , LBP.norm_2M (net ^^. finalW) ^ 2
+--     , LBP.norm_2M (net ^^. finalU) ^ 2
+--     , undefined -- LBP.norm_2M (net ^^. probM) ^ 2
+--     , LBP.norm_2M (net ^^. arcM) ^ 2
+--     , LBP.norm_2V (net ^^. arcB) ^ 2
+--     ]
 
 
 -- | Create a new, random network.
@@ -230,7 +253,8 @@ new d c = Param
   <*> matrix d d
   <*> matrix d d
   <*> matrix d d
-  <*> matrix c d
+  <*> matrix c d -- FFN.new (d*2) d d 
+  -- <*> vector d
   <*> matrix d (d*2)
   <*> vector d
 
@@ -260,7 +284,8 @@ run
   -> Graph (BVar s (R d))
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s (R c))
-    -- ^ Output map with (i) final hidden states and (ii) output values
+--   -> M.Map Arc (BVar s Double)
+    -- ^ Output map with output potential values
 run net depth graph =
   go (labelMap graph) (mkArcMap $ labelMap graph) depth
   where
@@ -275,6 +300,13 @@ run net depth graph =
           he = (net ^^. arcM) #> (hv # hw) + (net ^^. arcB)
       return ((v, w), he)
     go prevNodeMap prevArcMap k
+--       | k <= 0 = M.fromList $ do
+--           (p, q) <- graphArcs graph
+--           let v = prevNodeMap M.! p
+--               w = prevNodeMap M.! q
+--           let x = (net ^^. potR) `dot`
+--                   (FFN.run (net ^^. potN) (v # w))
+--           return ((p, q), logistic x)
       | k <= 0 = M.fromList $ do
           (e, h) <- M.toList prevArcMap
           let x = softmax $ (net ^^. probM) #> h
@@ -347,6 +379,7 @@ eval
   -> Graph (R d)
     -- ^ Input graph labeled with initial hidden states (word embeddings)
   -> M.Map Arc (R c)
+--   -> M.Map Arc Double
 eval net depth graph =
   BP.evalBP0
     ( BP.collectVar
@@ -367,6 +400,7 @@ runTest
 runTest net depth graph =
   forM_ (M.toList $ eval net depth graph) $ \(e, v) ->
     print (e, LA.unwrap v)
+--     print (e, v)
 
 
 ----------------------------------------------
@@ -404,16 +438,13 @@ data Elem d c = Elem
   { graph :: Graph (R d)
     -- ^ Input graph
   , labMap :: M.Map Arc (R c)
+--   , labMap :: M.Map Arc Double
     -- ^ Target labels
   } deriving (Show, Generic, Binary)
 
 
 -- | DataSet: a list of (graph, target value map) pairs.
 type DataSet d c = [Elem d c]
---   [ ( Graph (R d)
---     , M.Map Arc (R c)
---     )
---   ]
 
 
 -- | Create graph from lists of labeled nodes and edges.
@@ -473,6 +504,28 @@ mkSent d ws =
 --   return $ err `dot` err
 
 
+-- -- | Cross entropy between the true and the artificial distributions
+-- crossEntropy
+--   :: (Reifies s W)
+--   => BVar s Double
+--     -- ^ Target ,,true'' MWE probability
+--   -> BVar s Double
+--     -- ^ Output ,,artificial'' MWE probability
+--   -> BVar s Double
+-- crossEntropy p q
+--   | p < 0 || p > 1 || q < 0 || q > 1 =
+--       error "crossEntropy doesn't make sense"
+--   | otherwise = negate
+--       ( p0 * log q0
+--       + p1 * log q1
+--       )
+--   where
+--     p1 = p
+--     p0 = 1 - p1
+--     q1 = q
+--     q0 = 1 - q1
+
+
 -- | Cross entropy between the true and the artificial distributions
 crossEntropy
   :: (KnownNat n, Reifies s W)
@@ -489,8 +542,10 @@ crossEntropy p q =
 errorOne
   :: (Ord a, KnownNat n, Reifies s W)
   => M.Map a (BVar s (R n))
+--   => M.Map a (BVar s Double)
     -- ^ Target values
   -> M.Map a (BVar s (R n))
+--   -> M.Map a (BVar s Double)
     -- ^ Output values
   -> BVar s Double
 errorOne target output = PB.sum . BP.collectVar $ do
@@ -504,6 +559,8 @@ errorMany
   :: (Ord a, KnownNat n, Reifies s W)
   => [M.Map a (BVar s (R n))] -- ^ Targets
   -> [M.Map a (BVar s (R n))] -- ^ Outputs
+--   => [M.Map a (BVar s Double)] -- ^ Targets
+--   -> [M.Map a (BVar s Double)] -- ^ Outputs
   -> BVar s Double
 errorMany targets outputs =
   go targets outputs
@@ -543,14 +600,14 @@ netError dataSet depth net =
 
 -- -- | Progressive training
 -- trainProg 
---   :: (KnownNat d, KnownNat c)
---   => (Int -> Mom.Config (Param d c))
+--   :: (KnownNat d)
+--   => (Int -> Mom.Config (Param d))
 --     -- ^ Gradient descent config, depending on the chosen depth
 --   -> Int
 --     -- ^ Maximum depth
---   -> Param d c
+--   -> Param d
 --     -- ^ Initial params
---   -> IO (Param d c)
+--   -> IO (Param d)
 -- trainProg gdCfg maxDepth =
 --   go 0
 --   where

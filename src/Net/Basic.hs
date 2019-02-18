@@ -13,6 +13,7 @@ module Net.Basic
   ( logistic
   , sigma
   , reluSmooth
+  , leakyRelu
   , relu
   , softmax
   -- * Utils
@@ -74,6 +75,12 @@ reluSmooth x = log(1 + exp(x))
 relu :: Floating a => a -> a
 -- relu x = max 0 x
 relu x = (x + abs x) / 2
+
+
+leakyRelu :: Floating a => a -> a
+leakyRelu x
+  = relu x
+  + 0.01 * relu (-x)
 
 
 -- | Apply the softmax layer to a vector.
