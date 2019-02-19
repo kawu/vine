@@ -15,6 +15,7 @@ import qualified System.Random as R
 import qualified Data.IORef as IO
 
 import qualified GradientDescent.Momentum as Mom
+import qualified GradientDescent.Adam as Adam
 
 
 ----------------------------------------------
@@ -59,6 +60,17 @@ data Config net elem = Config
   -- halved
   , gamma     :: Double
   -- ^ The momentum-related parameter (TODO: explain)
+
+--   , netSize :: net -> Double
+--     -- ^ Net size
+--   , alpha :: Double
+--     -- ^ Step size
+--   , beta1 :: Double
+--     -- ^ 1st exponential moment decay
+--   , beta2 :: Double
+--     -- ^ 1st exponential moment decay
+--   , eps   :: Double
+--     -- ^ Epsilon
   }
 
 
@@ -95,12 +107,49 @@ sgd net0 dataSet Config{..} = do
       , Mom.reportEvery = ceiling
           $ fromIntegral (size dataSet) * reportEvery
           / fromIntegral batchSize
+      -- , Mom.size = netSize
       , Mom.gain0 = gain0
       , Mom.tau
           = fromIntegral (size dataSet) * tau
           / fromIntegral batchSize
       , Mom.gamma = gamma
       }
+
+
+-- -- | Perform stochastic gradient descent with momentum.
+-- sgd
+--   :: (Adam.ParamSet net)
+--   => net
+--   -> DataSet elem
+--   -> Config net elem
+--   -> IO net
+-- sgd net0 dataSet Config{..} = do
+--   Adam.adam net0 cfg
+--   where
+--     cfg = Adam.Config
+--       { Adam.iterNum = ceiling
+--           $ fromIntegral (size dataSet * iterNum)
+--           / fromIntegral batchSize
+--       , Adam.gradient = \net -> do
+--           sample <- randomSample batchSize dataSet
+--           return $ gradient sample net
+--       , Adam.quality = \net -> do
+--           res <- IO.newIORef 0.0
+--           forM_ [0 .. size dataSet - 1] $ \ix -> do
+--             elem <- elemAt dataSet ix
+--             IO.modifyIORef' res (+ quality elem net)
+--           IO.readIORef res
+--       -- TODO: we could repot on a random sample!
+--       -- That could be also done more often!
+--       , Adam.reportEvery = ceiling
+--           $ fromIntegral (size dataSet) * reportEvery
+--           / fromIntegral batchSize
+--       , Adam.size = netSize
+--       , Adam.alpha = alpha
+--       , Adam.beta1 = beta1
+--       , Adam.beta2 = beta2
+--       , Adam.eps = eps
+--       }
 
 
 -- | Random dataset sample

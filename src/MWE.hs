@@ -53,7 +53,7 @@ import qualified Net.ArcGraph as Net
 import           Net.ArcGraph (Elem)
 -- import qualified Net.MWE2 as MWE
 import qualified Embedding as Emb
-import qualified GradientDescent.Momentum as Mom
+-- import qualified GradientDescent.Momentum as Mom
 import qualified SGD as SGD
 
 -- import Debug.Trace (trace)
@@ -220,6 +220,14 @@ data TrainConfig = TrainConfig
     -- ^ For SGD
   , trainGamma :: Double
     -- ^ For SGD
+--   , trainAlpha :: Double
+--     -- ^ For SGD
+--   , trainBeta1 :: Double
+--     -- ^ For SGD
+--   , trainBeta2 :: Double
+--     -- ^ For SGD
+--   , trainEps :: Double
+--     -- ^ For SGD
   } deriving (Show, Eq, Ord, Generic, Interpret)
 
 
@@ -240,6 +248,10 @@ defTrainCfg = TrainConfig
   , trainGain0 = 0.01
   , trainTau = 5
   , trainGamma = 0.9
+--   , trainAlpha = 0.001
+--   , trainBeta1 = 0.9
+--   , trainBeta2 = 0.999
+--   , trainEps = 1.0e-8
   }
 
 
@@ -275,6 +287,11 @@ train cfg tmpDir mweTyp cupt net0 = do
       , gain0 = trainGain0 cfg -- / fromIntegral (depth+1)
       , tau = trainTau cfg
       , gamma = trainGamma cfg -- ** fromIntegral (depth+1)
+--       , netSize = Net.size
+--       , alpha = trainAlpha cfg -- / fromIntegral (depth+1)
+--       , beta1 = trainBeta1 cfg
+--       , beta2 = trainBeta2 cfg
+--       , eps = trainEps cfg
       }
 
 

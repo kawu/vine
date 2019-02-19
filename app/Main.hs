@@ -40,7 +40,7 @@ import qualified Net.ArcGraph as Graph
 import qualified Net.POS as POS
 -- import qualified Net.MWE2 as MWE
 import qualified MWE
-import qualified GradientDescent.Momentum as Mom
+-- import qualified GradientDescent.Momentum as Mom
 import qualified Embedding.Dict as D
 import qualified Embedding as Emb
 import qualified Format.Cupt as Cupt

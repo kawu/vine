@@ -47,8 +47,8 @@ class ParamSet p where
   -- | Substruction
   sub :: p -> p -> p
   sub x y = x `add` neg y
-
-  -- | Size
+ 
+  -- | Net size
   size :: p -> Double
 
 
@@ -61,11 +61,9 @@ gradDesc net0 Config{..} =
   where
 
     -- Gain in the k-th iteration
-    gain k = (gain0 * tau) / (tau + done k)
-
-    -- Number of completed iterations over the full dataset.
-    done :: Int -> Double
-    done k = fromIntegral (iterNum - k)
+    gain k
+      = (gain0 * tau)
+      / (tau + fromIntegral k)
 
     go k momentum net
       | k > iterNum = return net

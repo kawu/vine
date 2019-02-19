@@ -20,7 +20,7 @@ module Net.ArcGraph
   ( 
   -- * Network
     Param(..)
-  -- , size
+  , size
   , new
   , Graph(..)
   , Arc
@@ -82,6 +82,7 @@ import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
 import qualified GradientDescent.Momentum as Mom
+import qualified GradientDescent.Adam as Adam
 import qualified SGD
 
 import qualified Embedding.Dict as D
@@ -138,7 +139,6 @@ data Param d c = Param
 
 instance (KnownNat d, KnownNat c) => BP.Backprop (Param d c)
 makeLenses ''Param
-
 
 instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
   zero = Param
@@ -215,6 +215,76 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     , LA.norm_2 (_arcM net) ^ 2
     , LA.norm_2 (_arcB net) ^ 2
     ]
+
+instance (KnownNat d, KnownNat c) => Adam.ParamSet (Param d c) where
+  zero = Param 0 0 0 0 0 0 0 0 0 0 0 0 0
+  add x y = Param
+    { _incM = _incM x + _incM y
+    , _incB = _incB x + _incB y
+    , _outM = _outM x + _outM y
+    , _outB = _outB x + _outB y
+    , _updateW = _updateW x + _updateW y
+    , _updateU = _updateU x + _updateU y
+    , _resetW = _resetW x + _resetW y
+    , _resetU = _resetU x + _resetU y
+    , _finalW = _finalW x + _finalW y
+    , _finalU = _finalU x + _finalU y
+    , _probM = _probM x + _probM y
+    , _arcM = _arcM x + _arcM y
+    , _arcB = _arcB x + _arcB y
+    }
+  mul x y = Param
+    { _incM = _incM x * _incM y
+    , _incB = _incB x * _incB y
+    , _outM = _outM x * _outM y
+    , _outB = _outB x * _outB y
+    , _updateW = _updateW x * _updateW y
+    , _updateU = _updateU x * _updateU y
+    , _resetW = _resetW x * _resetW y
+    , _resetU = _resetU x * _resetU y
+    , _finalW = _finalW x * _finalW y
+    , _finalU = _finalU x * _finalU y
+    , _probM = _probM x * _probM y
+    , _arcM = _arcM x * _arcM y
+    , _arcB = _arcB x * _arcB y
+    }
+  pmap f x = Param
+    { _incM = scaleL $ _incM x
+    , _incB = scaleR $ _incB x
+    , _outM = scaleL $ _outM x
+    , _outB = scaleR $ _outB x
+    , _updateW = scaleL $ _updateW x
+    , _updateU = scaleL $ _updateU x
+    , _resetW = scaleL $ _resetW x
+    , _resetU = scaleL $ _resetU x
+    , _finalW = scaleL $ _finalW x
+    , _finalU = scaleL $ _finalU x
+    , _probM = scaleL $ _probM x
+    , _arcM = scaleL $ _arcM x
+    , _arcB = scaleR $ _arcB x
+    } where
+        scaleL = LA.dmmap f
+        scaleR = LA.dvmap f
+
+
+size
+  :: (KnownNat d, KnownNat c)
+  => Param d c -> Double
+size net = sqrt $ sum
+  [ LA.norm_2 (_incM net) ^ 2
+  , LA.norm_2 (_incB net) ^ 2
+  , LA.norm_2 (_outM net) ^ 2
+  , LA.norm_2 (_outB net) ^ 2
+  , LA.norm_2 (_updateW net) ^ 2
+  , LA.norm_2 (_updateU net) ^ 2
+  , LA.norm_2 (_resetW net) ^ 2
+  , LA.norm_2 (_resetU net) ^ 2
+  , LA.norm_2 (_finalW net) ^ 2
+  , LA.norm_2 (_finalU net) ^ 2
+  , LA.norm_2 (_probM net) ^ 2
+  , LA.norm_2 (_arcM net) ^ 2
+  , LA.norm_2 (_arcB net) ^ 2
+  ]
 
 
 -- -- | Size (euclidean norm) of the network parameters
