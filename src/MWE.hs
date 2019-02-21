@@ -214,19 +214,19 @@ data TrainConfig = TrainConfig
     -- ^ Batch size (for SGD)
   , trainReportEvery :: Double
     -- ^ For SGD
-  , trainGain0 :: Double
-    -- ^ For SGD
-  , trainTau :: Double
-    -- ^ For SGD
+--   , trainGain0 :: Double
+--     -- ^ For SGD
+--   , trainTau :: Double
+--     -- ^ For SGD
   , trainGamma :: Double
+    -- ^ For SGD
+  , trainEps :: Double
     -- ^ For SGD
 --   , trainAlpha :: Double
 --     -- ^ For SGD
 --   , trainBeta1 :: Double
 --     -- ^ For SGD
 --   , trainBeta2 :: Double
---     -- ^ For SGD
---   , trainEps :: Double
 --     -- ^ For SGD
   } deriving (Show, Eq, Ord, Generic, Interpret)
 
@@ -245,13 +245,13 @@ defTrainCfg = TrainConfig
   , trainIterNum = 10
   , trainBatchSize = 1
   , trainReportEvery = 1
-  , trainGain0 = 0.01
-  , trainTau = 5
+--   , trainGain0 = 0.01
+--   , trainTau = 5
   , trainGamma = 0.9
+  , trainEps = 1.0e-8
 --   , trainAlpha = 0.001
 --   , trainBeta1 = 0.9
 --   , trainBeta2 = 0.999
---   , trainEps = 1.0e-8
   }
 
 
@@ -284,9 +284,12 @@ train cfg tmpDir mweTyp cupt net0 = do
       , gradient = \xs -> BP.gradBP (Net.netError xs depth)
       , quality = \x -> BP.evalBP (Net.netError [x] depth)
       , reportEvery = trainReportEvery cfg
-      , gain0 = trainGain0 cfg -- / fromIntegral (depth+1)
-      , tau = trainTau cfg
-      , gamma = trainGamma cfg -- ** fromIntegral (depth+1)
+--       , gain0 = trainGain0 cfg -- / fromIntegral (depth+1)
+--       , tau = trainTau cfg
+--       , gamma = trainGamma cfg -- ** fromIntegral (depth+1)
+      , netSize = Net.size
+      , gamma = trainGamma cfg
+      , eps = trainEps cfg
 --       , netSize = Net.size
 --       , alpha = trainAlpha cfg -- / fromIntegral (depth+1)
 --       , beta1 = trainBeta1 cfg

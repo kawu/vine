@@ -14,8 +14,9 @@ import qualified System.Random as R
 
 import qualified Data.IORef as IO
 
-import qualified GradientDescent.Momentum as Mom
-import qualified GradientDescent.Adam as Adam
+-- import qualified GradientDescent.Momentum as Mom
+import qualified GradientDescent.Nestorov as Mom
+import qualified GradientDescent.AdaDelta as Ada
 
 
 ----------------------------------------------
@@ -53,24 +54,26 @@ data Config net elem = Config
     -- ^ How often report the quality (with `1` meaning once per pass over the
     -- training data)
 
-  , gain0     :: Double
-  -- ^ Initial gain parameter
-  , tau       :: Double
-  -- ^ After how many passes over the training data the gain parameter is
-  -- halved
-  , gamma     :: Double
-  -- ^ The momentum-related parameter (TODO: explain)
+--   , gain0     :: Double
+--   -- ^ Initial gain parameter
+--   , tau       :: Double
+--   -- ^ After how many passes over the training data the gain parameter is
+--   -- halved
+--   , gamma     :: Double
+--   -- ^ The momentum-related parameter (TODO: explain)
 
---   , netSize :: net -> Double
---     -- ^ Net size
+  , netSize :: net -> Double
+    -- ^ Net size
 --   , alpha :: Double
 --     -- ^ Step size
 --   , beta1 :: Double
 --     -- ^ 1st exponential moment decay
 --   , beta2 :: Double
 --     -- ^ 1st exponential moment decay
---   , eps   :: Double
---     -- ^ Epsilon
+  , gamma :: Double
+    -- ^ Gamma (decaying coefficient)
+  , eps   :: Double
+    -- ^ Epsilon
   }
 
 
@@ -79,24 +82,61 @@ data Config net elem = Config
 ----------------------------------------------
 
 
+-- -- | Perform stochastic gradient descent with momentum.
+-- sgd
+--   :: (Mom.ParamSet net)
+--   => net
+--   -> DataSet elem
+--   -> Config net elem
+--   -> IO net
+-- sgd net0 dataSet Config{..} = do
+--   Mom.gradDesc net0 cfg
+--   where
+--     cfg = Mom.Config
+--       { Mom.iterNum = ceiling
+--           $ fromIntegral (size dataSet * iterNum)
+--           / fromIntegral batchSize
+--       , Mom.gradient = \net -> do
+--           sample <- randomSample batchSize dataSet
+--           return $ gradient sample net
+--       , Mom.quality = \net -> do
+--           res <- IO.newIORef 0.0
+--           forM_ [0 .. size dataSet - 1] $ \ix -> do
+--             elem <- elemAt dataSet ix
+--             IO.modifyIORef' res (+ quality elem net)
+--           IO.readIORef res
+--       -- TODO: we could repot on a random sample!
+--       -- That could be also done more often!
+--       , Mom.reportEvery = ceiling
+--           $ fromIntegral (size dataSet) * reportEvery
+--           / fromIntegral batchSize
+--       -- , Mom.size = netSize
+--       , Mom.gain0 = gain0
+--       , Mom.tau
+--           = fromIntegral (size dataSet) * tau
+--           / fromIntegral batchSize
+--       , Mom.gamma = gamma
+--       }
+
+
 -- | Perform stochastic gradient descent with momentum.
 sgd
-  :: (Mom.ParamSet net)
+  :: (Ada.ParamSet net)
   => net
   -> DataSet elem
   -> Config net elem
   -> IO net
 sgd net0 dataSet Config{..} = do
-  Mom.gradDesc net0 cfg
+  Ada.gradDesc net0 cfg
   where
-    cfg = Mom.Config
-      { Mom.iterNum = ceiling
+    cfg = Ada.Config
+      { Ada.iterNum = ceiling
           $ fromIntegral (size dataSet * iterNum)
           / fromIntegral batchSize
-      , Mom.gradient = \net -> do
+      , Ada.gradient = \net -> do
           sample <- randomSample batchSize dataSet
           return $ gradient sample net
-      , Mom.quality = \net -> do
+      , Ada.quality = \net -> do
           res <- IO.newIORef 0.0
           forM_ [0 .. size dataSet - 1] $ \ix -> do
             elem <- elemAt dataSet ix
@@ -104,15 +144,12 @@ sgd net0 dataSet Config{..} = do
           IO.readIORef res
       -- TODO: we could repot on a random sample!
       -- That could be also done more often!
-      , Mom.reportEvery = ceiling
+      , Ada.reportEvery = ceiling
           $ fromIntegral (size dataSet) * reportEvery
           / fromIntegral batchSize
-      -- , Mom.size = netSize
-      , Mom.gain0 = gain0
-      , Mom.tau
-          = fromIntegral (size dataSet) * tau
-          / fromIntegral batchSize
-      , Mom.gamma = gamma
+      , Ada.size = netSize
+      , Ada.gamma = gamma
+      , Ada.eps = eps
       }
 
 

@@ -81,8 +81,9 @@ import qualified Net.List as NL
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 import qualified GradientDescent as GD
-import qualified GradientDescent.Momentum as Mom
-import qualified GradientDescent.Adam as Adam
+-- import qualified GradientDescent.Momentum as Mom
+import qualified GradientDescent.Nestorov as Mom
+import qualified GradientDescent.AdaDelta as Ada
 import qualified SGD
 
 import qualified Embedding.Dict as D
@@ -216,7 +217,7 @@ instance (KnownNat d, KnownNat c) => Mom.ParamSet (Param d c) where
     , LA.norm_2 (_arcB net) ^ 2
     ]
 
-instance (KnownNat d, KnownNat c) => Adam.ParamSet (Param d c) where
+instance (KnownNat d, KnownNat c) => Ada.ParamSet (Param d c) where
   zero = Param 0 0 0 0 0 0 0 0 0 0 0 0 0
   add x y = Param
     { _incM = _incM x + _incM y

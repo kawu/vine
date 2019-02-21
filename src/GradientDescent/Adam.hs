@@ -57,10 +57,10 @@ class ParamSet p where
 
   -- | Element-wise multiplication
   mul :: p -> p -> p
-  mul x y = x `div` pmap (/1.0) y
+  mul x y = x `div` pmap (1.0/) y
   -- | Element-wise division
   div :: p -> p -> p
-  div x y = x `mul` pmap (/1.0) y
+  div x y = x `mul` pmap (1.0/) y
 
 
 -- | Perform simple gradient descent with momentum.
