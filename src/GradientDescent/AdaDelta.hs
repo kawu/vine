@@ -28,7 +28,9 @@ data Config net = Config
     -- ^ How often report the quality
 
   , gamma :: Double
+    -- ^ Decay parameter
   , eps   :: Double
+    -- ^ Epsilon value
   }
 
 

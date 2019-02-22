@@ -54,7 +54,9 @@ import           Net.ArcGraph (Elem)
 -- import qualified Net.MWE2 as MWE
 import qualified Embedding as Emb
 -- import qualified GradientDescent.Momentum as Mom
-import qualified SGD as SGD
+import qualified Numeric.SGD as SGD
+import qualified Numeric.SGD.AdaDelta as Ada
+-- import qualified SGD as SGD
 
 -- import Debug.Trace (trace)
 
@@ -275,51 +277,62 @@ train cfg tmpDir mweTyp cupt net0 = do
   putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
   -- net0 <- Net.new 300 2
   -- trainProgSGD sgdCfg dataSet globalDepth net0
-  SGD.sgd net0 dataSet
-    (sgdCfg . fromIntegral $ trainDepth cfg)
+  SGD.sgd sgdCfg (sgdDyna . fromIntegral $ trainDepth cfg) dataSet net0
   where
-    sgdCfg depth = SGD.Config
+    sgdDyna depth = SGD.Dyna
+      { gradient = \xs -> BP.gradBP (Net.netError xs depth)
+      , quality = \x -> BP.evalBP (Net.netError [x] depth)
+      }
+    sgdCfg = SGD.Config
       { iterNum = fromIntegral $ trainIterNum cfg
       , batchSize = fromIntegral $ trainBatchSize cfg
-      , gradient = \xs -> BP.gradBP (Net.netError xs depth)
-      , quality = \x -> BP.evalBP (Net.netError [x] depth)
+      , method = Ada.Config
+          { decay = trainGamma cfg
+          , eps = trainEps cfg
+          }
       , reportEvery = trainReportEvery cfg
---       , gain0 = trainGain0 cfg -- / fromIntegral (depth+1)
---       , tau = trainTau cfg
---       , gamma = trainGamma cfg -- ** fromIntegral (depth+1)
-      , netSize = Net.size
-      , gamma = trainGamma cfg
-      , eps = trainEps cfg
---       , netSize = Net.size
---       , alpha = trainAlpha cfg -- / fromIntegral (depth+1)
---       , beta1 = trainBeta1 cfg
---       , beta2 = trainBeta2 cfg
---       , eps = trainEps cfg
       }
 
 
--- -- | Progressive training
--- trainProgSGD
---   :: (KnownNat d, KnownNat c)
---   => (Int -> SGD.Config (Net.Param d c) (Elem d c))
---     -- ^ Gradient descent config, depending on the chosen depth
---   -> SGD.DataSet (Elem d c)
+-- -- | Train the MWE identification network.
+-- train
+--   :: TrainConfig
+--     -- ^ General training confiration
+--   -> FilePath
+--     -- ^ Directory for temporary storage
+--   -> Cupt.MweTyp
+--     -- ^ Selected MWE type (category)
+--   -> [Sent 300]
 --     -- ^ Training dataset
---   -> Int
---     -- ^ Maximum depth
---   -> Net.Param d c
---     -- ^ Initial params
---   -> IO (Net.Param d c)
--- trainProgSGD gdCfg dataSet maxDepth =
---   go 0
+--   -> Net.Param 300 2
+-- --   -> Net.Param 300
+--     -- ^ Initial network
+--   -> IO (Net.Param 300 2)
+-- --   -> IO (Net.Param 300)
+-- train cfg tmpDir mweTyp cupt net0 = do
+--   dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+--   putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
+--   SGD.sgd net0 dataSet
+--     (sgdCfg . fromIntegral $ trainDepth cfg)
 --   where
---     go depth net
---       | depth > maxDepth =
---           return net
---       | otherwise = do
---           putStrLn $ "# depth = " ++ show depth
---           net' <- SGD.sgd net dataSet (gdCfg depth)
---           go (depth+1) net'
+--     sgdCfg depth = SGD.Config
+--       { iterNum = fromIntegral $ trainIterNum cfg
+--       , batchSize = fromIntegral $ trainBatchSize cfg
+--       , gradient = \xs -> BP.gradBP (Net.netError xs depth)
+--       , quality = \x -> BP.evalBP (Net.netError [x] depth)
+--       , reportEvery = trainReportEvery cfg
+-- --       , gain0 = trainGain0 cfg -- / fromIntegral (depth+1)
+-- --       , tau = trainTau cfg
+-- --       , gamma = trainGamma cfg -- ** fromIntegral (depth+1)
+--       , netSize = Net.size
+--       , gamma = trainGamma cfg
+--       , eps = trainEps cfg
+-- --       , netSize = Net.size
+-- --       , alpha = trainAlpha cfg -- / fromIntegral (depth+1)
+-- --       , beta1 = trainBeta1 cfg
+-- --       , beta2 = trainBeta2 cfg
+-- --       , eps = trainEps cfg
+--       }
 
 
 ----------------------------------------------
