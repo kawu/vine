@@ -67,16 +67,16 @@ data Command
 data TrainConfig = TrainConfig
   { trainCupt :: FilePath
   , trainEmbs :: FilePath
-  , trainTmpDir :: FilePath
-    -- ^ For temporary storage
   , trainMweCat :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
+  , trainCfgPath :: FilePath
+    -- ^ Additional training configuration path
+  , trainDepth :: Int
+    -- ^ Graph net recursion depth
   , trainInModel   :: Maybe FilePath
     -- ^ Input model (otherwise, random)
   , trainOutModel  :: Maybe FilePath
     -- ^ Where to store the output model
-  , trainCfgPath :: Maybe FilePath
-    -- ^ Additional training configuration path
   }
 
 
@@ -134,14 +134,20 @@ trainOptions = fmap Train $ TrainConfig
        <> help "Input embedding file"
         )
   <*> strOption
-        ( metavar "DIR"
-       <> long "tmp"
-       <> help "Directory to store temporary stuff"
-        )
-  <*> strOption
         ( long "mwe"
        <> short 't'
        <> help "MWE category (type) to learn"
+        )
+  <*> strOption
+        ( metavar "FILE"
+       <> long "config"
+       <> short 'c'
+       <> help "SGD configuration"
+        )
+  <*> option auto
+        ( long "depth"
+       <> short 'd'
+       <> help "Recursion depth"
         )
   <*> (optional . strOption)
         ( metavar "FILE"
@@ -154,12 +160,6 @@ trainOptions = fmap Train $ TrainConfig
        <> long "out-model"
        <> short 'o'
        <> help "Output model"
-        )
-  <*> (optional . strOption)
-        ( metavar "FILE"
-       <> long "config"
-       <> short 'c'
-       <> help "Additional training configuration"
         )
 
 
@@ -234,10 +234,11 @@ run cmd =
 
       -- Training configuration
       config <- 
-        case trainCfgPath of
-          Nothing -> return MWE.defTrainCfg
-          Just configPath ->
-            Dhall.input Dhall.auto (dhallPath configPath)
+        Dhall.input Dhall.auto (dhallPath trainCfgPath)
+--         case trainCfgPath of
+--           Nothing -> return MWE.defTrainCfg
+--           Just configPath ->
+--             Dhall.input Dhall.auto (dhallPath configPath)
 
       -- Initial network
       net0 <- 
@@ -249,7 +250,7 @@ run cmd =
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
-      net <- MWE.train config trainTmpDir trainMweCat
+      net <- MWE.train config trainDepth trainMweCat
         (mkInput cupt embs) net0
       case trainOutModel of
         Nothing -> return ()

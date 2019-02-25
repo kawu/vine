@@ -11,8 +11,6 @@ module MWE
   ( Sent(..)
 
   -- * Training
-  , TrainConfig(..)
-  , defTrainCfg
   , train
 
   -- * Tagging
@@ -173,33 +171,32 @@ mwe = LA.vector [0, 1]
 ----------------------------------------------
 
 
--- | Create a dataset from a list of sentences in a given directory.
--- TODO: Make it error-safe/aware
-mkDataSet
-  :: (KnownNat d)
-  => (Cupt.MweTyp -> Bool)
-    -- ^ MWE type (category) selection method
-  -> FilePath
-    -- ^ Path to store temporary results
-  -> [Sent d]
-  -> IO (SGD.DataSet (Elem d 2))
---   -> IO (SGD.DataSet (Elem d))
-mkDataSet mweSel path xs = do
-  D.doesDirectoryExist path >>= \case
-    False -> return ()
-    True -> error "Directory already exists!"
-  D.createDirectory path
-
-  nRef <- R.newIORef 0
-  forM_ (zip [0..] xs) $ \(ix, sent) -> do
-    R.modifyIORef' nRef (+1)
-    Bin.encodeFile (path </> show ix) (mkElem mweSel sent)
-
-  n <- R.readIORef nRef
-  return $ SGD.DataSet
-    { size = n
-    , elemAt = \ix -> Bin.decodeFile (path </> show ix)
-    }
+-- -- | Create a dataset from a list of sentences in a given directory.
+-- -- TODO: Make it error-safe/aware
+-- mkDataSet
+--   :: (KnownNat d)
+--   => (Cupt.MweTyp -> Bool)
+--     -- ^ MWE type (category) selection method
+--   -> FilePath
+--     -- ^ Path to store temporary results
+--   -> [Sent d]
+--   -> IO (SGD.DataSet (Elem d 2))
+-- mkDataSet mweSel path xs = do
+--   D.doesDirectoryExist path >>= \case
+--     False -> return ()
+--     True -> error "Directory already exists!"
+--   D.createDirectory path
+-- 
+--   nRef <- R.newIORef 0
+--   forM_ (zip [0..] xs) $ \(ix, sent) -> do
+--     R.modifyIORef' nRef (+1)
+--     Bin.encodeFile (path </> show ix) (mkElem mweSel sent)
+-- 
+--   n <- R.readIORef nRef
+--   return $ SGD.DataSet
+--     { size = n
+--     , elemAt = \ix -> Bin.decodeFile (path </> show ix)
+--     }
 
 
 ----------------------------------------------
@@ -207,62 +204,73 @@ mkDataSet mweSel path xs = do
 ----------------------------------------------
 
 
-data TrainConfig = TrainConfig
-  { trainDepth :: Integer
-    -- ^ Graph net recursion depth
-  , trainIterNum :: Integer
-    -- ^ Number of iterations (for SGD)
-  , trainBatchSize :: Integer
-    -- ^ Batch size (for SGD)
-  , trainReportEvery :: Double
-    -- ^ For SGD
---   , trainGain0 :: Double
+-- data TrainConfig = TrainConfig
+--   { trainDepth :: Integer
+--     -- ^ Graph net recursion depth
+--   , trainIterNum :: Integer
+--     -- ^ Number of iterations (for SGD)
+--   , trainBatchSize :: Integer
+--     -- ^ Batch size (for SGD)
+--   , trainReportEvery :: Double
 --     -- ^ For SGD
---   , trainTau :: Double
+-- --   , trainGain0 :: Double
+-- --     -- ^ For SGD
+-- --   , trainTau :: Double
+-- --     -- ^ For SGD
+--   , trainGamma :: Double
 --     -- ^ For SGD
-  , trainGamma :: Double
-    -- ^ For SGD
-  , trainEps :: Double
-    -- ^ For SGD
---   , trainAlpha :: Double
+--   , trainEps :: Double
 --     -- ^ For SGD
---   , trainBeta1 :: Double
---     -- ^ For SGD
---   , trainBeta2 :: Double
---     -- ^ For SGD
-  } deriving (Show, Eq, Ord, Generic, Interpret)
+-- --   , trainAlpha :: Double
+-- --     -- ^ For SGD
+-- --   , trainBeta1 :: Double
+-- --     -- ^ For SGD
+-- --   , trainBeta2 :: Double
+-- --     -- ^ For SGD
+--   } deriving (Show, Eq, Ord, Generic, Interpret)
+-- 
+-- 
+-- -- instance Interpret TrainConfig
+-- 
+-- instance JSON.FromJSON TrainConfig
+-- instance JSON.ToJSON TrainConfig where
+--   toEncoding = JSON.genericToEncoding JSON.defaultOptions
+-- 
+-- 
+-- -- | Default training configuration
+-- defTrainCfg :: TrainConfig
+-- defTrainCfg = TrainConfig
+--   { trainDepth = 0
+--   , trainIterNum = 10
+--   , trainBatchSize = 1
+--   , trainReportEvery = 1
+-- --   , trainGain0 = 0.01
+-- --   , trainTau = 5
+--   , trainGamma = 0.9
+--   , trainEps = 1.0e-8
+-- --   , trainAlpha = 0.001
+-- --   , trainBeta1 = 0.9
+-- --   , trainBeta2 = 0.999
+--   }
 
 
--- instance Interpret TrainConfig
-
-instance JSON.FromJSON TrainConfig
-instance JSON.ToJSON TrainConfig where
+instance JSON.FromJSON SGD.Method
+instance JSON.ToJSON SGD.Method where
   toEncoding = JSON.genericToEncoding JSON.defaultOptions
+instance Interpret SGD.Method
 
-
--- | Default training configuration
-defTrainCfg :: TrainConfig
-defTrainCfg = TrainConfig
-  { trainDepth = 0
-  , trainIterNum = 10
-  , trainBatchSize = 1
-  , trainReportEvery = 1
---   , trainGain0 = 0.01
---   , trainTau = 5
-  , trainGamma = 0.9
-  , trainEps = 1.0e-8
---   , trainAlpha = 0.001
---   , trainBeta1 = 0.9
---   , trainBeta2 = 0.999
-  }
+instance JSON.FromJSON SGD.Config
+instance JSON.ToJSON SGD.Config where
+  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+instance Interpret SGD.Config
 
 
 -- | Train the MWE identification network.
 train
-  :: TrainConfig
+  :: SGD.Config
     -- ^ General training confiration
-  -> FilePath
-    -- ^ Directory for temporary storage
+  -> Int
+    -- ^ Graph net recursion depth
   -> Cupt.MweTyp
     -- ^ Selected MWE type (category)
   -> [Sent 300]
@@ -272,26 +280,26 @@ train
     -- ^ Initial network
   -> IO (Net.Param 300 2)
 --   -> IO (Net.Param 300)
-train cfg tmpDir mweTyp cupt net0 = do
-  dataSet <- mkDataSet (== mweTyp) tmpDir cupt
-  putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
-  -- net0 <- Net.new 300 2
-  -- trainProgSGD sgdCfg dataSet globalDepth net0
-  SGD.sgd sgdCfg (sgdDyna . fromIntegral $ trainDepth cfg) dataSet net0
+train sgdCfg depth mweTyp cupt net0 = do
+  -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+  let cupt' = map (fst . mkElem (== mweTyp)) cupt
+  SGD.withDisk cupt' $ \dataSet -> do
+    putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
+    -- net0 <- Net.new 300 2
+    -- trainProgSGD sgdCfg dataSet globalDepth net0
+    SGD.sgd sgdCfg dataSet gradient quality net0
   where
-    sgdDyna depth = SGD.Dyna
-      { gradient = \xs -> BP.gradBP (Net.netError xs depth)
-      , quality = \x -> BP.evalBP (Net.netError [x] depth)
-      }
-    sgdCfg = SGD.Config
-      { iterNum = fromIntegral $ trainIterNum cfg
-      , batchSize = fromIntegral $ trainBatchSize cfg
-      , method = Ada.Config
-          { decay = trainGamma cfg
-          , eps = trainEps cfg
-          }
-      , reportEvery = trainReportEvery cfg
-      }
+    gradient xs = BP.gradBP (Net.netError xs $ fromIntegral depth)
+    quality x = BP.evalBP (Net.netError [x] $ fromIntegral depth)
+--     sgdCfg = SGD.Config
+--       { iterNum = fromIntegral $ trainIterNum cfg
+--       , batchSize = fromIntegral $ trainBatchSize cfg
+--       , method = SGD.AdaDelta
+--           { decay = trainGamma cfg
+--           , eps = trainEps cfg
+--           }
+--       , reportEvery = trainReportEvery cfg
+--       }
 
 
 -- -- | Train the MWE identification network.
