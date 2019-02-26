@@ -117,8 +117,10 @@ data GenToken mwe = Token
 data TokID
   = TokID Int
   | TokIDRange Int Int
-  | TokIDCopy Int Int
-    -- ^ An empty node (marked as `CopyOf` in UD data)
+  -- | TokIDCopy Int Int
+  --   -- ^ An empty node (marked as `CopyOf` in UD data)
+  -- NOTE: `TokIDCopy` was commented out because it is very rare and makes data
+  -- processing much harder at the same time.
   deriving (Show, Eq, Ord, Generic, Binary)
 
 
@@ -166,7 +168,7 @@ parsePar
     tokLE tx ty = fstPos (tokID tx) <= fstPos (tokID ty)
     fstPos (TokID x) = x
     fstPos (TokIDRange x _) = x
-    fstPos (TokIDCopy x _) = x
+    -- fstPos (TokIDCopy x _) = x
     -- tokDiff tx ty = tokID tx /= tokID ty
 
 
@@ -198,10 +200,11 @@ parseTokID txt
       case map (read . T.unpack) . T.split (=='-') $ txt of
         [x, y] -> TokIDRange x y
         _ -> error "Cupt.parseTokID: invalid token ID with -"
-  | T.isInfixOf "." txt =
-      case map (read . T.unpack) . T.split (=='.') $ txt of
-        [x, y] -> TokIDCopy x y
-        _ -> error "Cupt.parseTokID: invalid token ID with ."
+  | T.isInfixOf "." txt = error
+      -- case map (read . T.unpack) . T.split (=='.') $ txt of
+      --   [x, y] -> TokIDCopy x y
+      --   _ -> error "Cupt.parseTokID: invalid token ID with ."
+      "Cupt.parseTokID: invalid token ID with . (token copies not supported!)"
   | otherwise =
       TokID $ read (T.unpack txt)
 
@@ -278,8 +281,8 @@ renderTokID tid =
       "_"
     TokIDRange x y ->
       L.intercalate "-" [psh x, psh y]
-    TokIDCopy x y ->
-      L.intercalate "." [psh x, psh y]
+    -- TokIDCopy x y ->
+    --   L.intercalate "." [psh x, psh y]
   where
     psh = L.pack . show
 
