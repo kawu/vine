@@ -161,10 +161,9 @@ data Param d c = Param
   , _arcB :: R d
     -- ^ Arc bias
 
-  -- , _wordAff :: Maybe (L d d)
+  -- , _wordAff :: Maybe (L d d) -- `Nothing` meaning that not used
   , _wordAff :: L d d
-    -- ^ Word affinity (NEW 27.02.2019); `Nothing` means that it is not
-    -- actually used.
+    -- ^ (Single) word affinity (NEW 27.02.2019)
 
 --   , _arcA :: L d 10
 --     -- ^ NEW 26.02.2019: An arc label-dependent bias
@@ -178,26 +177,6 @@ instance (KnownNat d, KnownNat c) => BP.Backprop (Param d c)
 makeLenses ''Param
 
 instance (KnownNat d, KnownNat c) => ParamSet (Param d c)
-
-
--- size
---   :: (KnownNat d, KnownNat c)
---   => Param d c -> Double
--- size net = sqrt . sum $
---   [ LA.norm_2 (_incM net) ^ 2
---   , LA.norm_2 (_incB net) ^ 2
---   , LA.norm_2 (_outM net) ^ 2
---   , LA.norm_2 (_outB net) ^ 2
---   , LA.norm_2 (_updateW net) ^ 2
---   , LA.norm_2 (_updateU net) ^ 2
---   , LA.norm_2 (_resetW net) ^ 2
---   , LA.norm_2 (_resetU net) ^ 2
---   , LA.norm_2 (_finalW net) ^ 2
---   , LA.norm_2 (_finalU net) ^ 2
---   , LA.norm_2 (_probM net) ^ 2
---   , LA.norm_2 (_arcM net) ^ 2
---   , LA.norm_2 (_arcB net) ^ 2
---   ] ++ map ((^2) . LA.norm_2) (M.elems $ _arcLabelE net)
 
 
 -- | Create a new, random network.
@@ -218,7 +197,7 @@ new d c = Param
   -- <*> vector d
   <*> matrix d (d*2)
   <*> vector d
-  <*> matrix d d -- <*> (Just <$> matrix d d)
+  <*> matrix d d -- <*> (Just <$> matrix d d) (word affinity)
 --   <*> matrix d 10
 --   <*> pure M.empty
 
