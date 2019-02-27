@@ -150,7 +150,7 @@ createElem nodes arcs = Net.Elem
     graph = Net.Graph
       { Net.graphStr = gStr
       , Net.graphInv = G.transposeG gStr
-      , Net.labelMap = lbMap }
+      , Net.nodeLabelMap = lbMap }
     valMap = M.fromList $ do
       (arc, isMwe) <- arcs
       return 

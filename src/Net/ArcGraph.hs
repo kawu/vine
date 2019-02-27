@@ -138,12 +138,16 @@ data Param d c = Param
     -- ^ Final matrix W
   , _finalU :: L d d
     -- ^ Final matrix U
+
+  -- Only the fields that follow are actually important in case when depth = 0.
+
   , _probM :: L
       c -- Output: probabilities for different categories
       d -- Size of the hidden state
     -- ^ Output probability matrix
     -- WARNING: it might be not enough to use a matrix here, since it is not
     -- able to transform a 0 vector into something which is not 0!
+
 --   , _potN :: FFN
 --       (d Nats.+ d)
 --       d -- Hidden layer size
@@ -151,15 +155,22 @@ data Param d c = Param
 --     -- ^ Potential FFN
 --   , _potR :: R d
 --     -- ^ Potential ,,feature vector''
+
   , _arcM :: L d (d Nats.+ d)
     -- ^ A matrix to calculate arc embeddings based on node embeddings
   , _arcB :: R d
-    -- ^ Bias for `arcM`
-  , _arcA :: L d 10
-    -- ^ An arc label-dependent bias
-  , _arcLabelE :: M.Map T.Text (R 10)
-    -- ^ NEW 26.02.2019: Arc label (UD dependency relation) embedding vectors
-    -- TODO: Make `10` a parameter
+    -- ^ Arc bias
+
+  -- , _wordAff :: Maybe (L d d)
+  , _wordAff :: L d d
+    -- ^ Word affinity (NEW 27.02.2019); `Nothing` means that it is not
+    -- actually used.
+
+--   , _arcA :: L d 10
+--     -- ^ NEW 26.02.2019: An arc label-dependent bias
+--   , _arcLabelE :: M.Map T.Text (R 10)
+--     -- ^ NEW 26.02.2019: Arc label (UD dependency relation) embedding vectors
+--     -- TODO: Make `10` a parameter
   } deriving (Generic, Binary)
   -- NOTE: automatically deriving `Show` does not work 
 
@@ -207,8 +218,9 @@ new d c = Param
   -- <*> vector d
   <*> matrix d (d*2)
   <*> vector d
-  <*> matrix d 10
-  <*> pure M.empty
+  <*> matrix d d -- <*> (Just <$> matrix d d)
+--   <*> matrix d 10
+--   <*> pure M.empty
 
 
 -- | Local graph type
@@ -217,7 +229,7 @@ data Graph a = Graph
     -- ^ The underlying directed graph
   , graphInv :: G.Graph
     -- ^ Inversed (transposed) `graphStr`
-  , labelMap :: M.Map G.Vertex a
+  , nodeLabelMap :: M.Map G.Vertex a
     -- ^ Label assigned to a given vertex
   } deriving (Show, Eq, Ord, Functor, Generic, Binary)
 
@@ -239,7 +251,7 @@ run
 --   -> M.Map Arc (BVar s Double)
     -- ^ Output map with output potential values
 run net depth graph =
-  go (labelMap graph) (mkArcMap $ labelMap graph) depth
+  go (nodeLabelMap graph) (mkArcMap $ nodeLabelMap graph) depth
   where
     mkArcMap nodeMap = M.fromList $ do
       (v, w) <- graphArcs graph
@@ -249,14 +261,20 @@ run net depth graph =
           -- TODO: apply `arcA`
           -- NOTE: with `logistic` training didn't go well, but maybe you can
           --   try it again later
-          he = case net ^^. arcLabelE ^^? ixAt (error "TODO: label") of
-                 Nothing ->
-                    (net ^^. arcM) #> (hv # hw)
-                  + (net ^^. arcB)
-                 Just labelEmb ->
-                    (net ^^. arcM) #> (hv # hw)
-                  + (net ^^. arcA) #> labelEmb
-                  + (net ^^. arcB)
+--           he = case net ^^. arcLabelE ^^? ixAt (error "TODO: label") of
+--                  Nothing ->
+--                     (net ^^. arcM) #> (hv # hw)
+--                   + (net ^^. arcB)
+--                  Just labelEmb ->
+--                     (net ^^. arcM) #> (hv # hw)
+--                   + (net ^^. arcA) #> labelEmb
+--                   + (net ^^. arcB)
+          he = (net ^^. arcM) #> (hv # hw)
+             + (net ^^. wordAff) #> hv
+             -- + maybe 0 (#> hv) (BP.sequenceVar $ net ^^. wordAff)
+             + (net ^^. wordAff) #> hw
+             -- + maybe 0 (#> hw) (BP.sequenceVar $ net ^^. wordAff)
+             + (net ^^. arcB)
       return ((v, w), he)
     go prevNodeMap prevArcMap k
 --       | k <= 0 = M.fromList $ do
@@ -423,7 +441,7 @@ mkGraph nodes arcs =
     graph = Graph
       { graphStr = gStr
       , graphInv = G.transposeG gStr
-      , labelMap = lbMap }
+      , nodeLabelMap = lbMap }
 
 
 -- | Create an input sentence consisting of the given embedding vectors.
