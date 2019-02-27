@@ -103,9 +103,9 @@ instance (Ord k, ParamSet a) => ParamSet (M.Map k a) where
   zero = M.empty
   pmap f = fmap (SGD.pmap f)
   add = M.unionWith SGD.add
-  sub = M.unionWith SGD.sub
-  mul = M.unionWith SGD.mul
-  div = M.unionWith SGD.div
+  sub = undefined -- M.unionWith SGD.sub -- TODO: this is incorrect!
+  mul = undefined -- M.unionWith SGD.mul -- TODO: is this correct?
+  div = undefined -- M.unionWith SGD.div -- TODO: this is incorrect!
   norm_2 = sqrt . sum . map ((^2) . SGD.norm_2)  . M.elems
 
 
