@@ -69,8 +69,10 @@ data TrainConfig = TrainConfig
   , trainEmbs :: FilePath
   , trainMweCat :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
-  , trainCfgPath :: FilePath
-    -- ^ Additional training configuration path
+  , trainSgdCfgPath :: FilePath
+    -- ^ SGD configuration path
+  , trainNetCfgPath :: FilePath
+    -- ^ Net configuration path
   , trainDepth :: Int
     -- ^ Graph net recursion depth
   , trainInModel   :: Maybe FilePath
@@ -140,9 +142,15 @@ trainOptions = fmap Train $ TrainConfig
         )
   <*> strOption
         ( metavar "FILE"
-       <> long "config"
-       <> short 'c'
+       <> long "sgd"
+       <> short 's'
        <> help "SGD configuration"
+        )
+  <*> strOption
+        ( metavar "FILE"
+       <> long "net"
+       <> short 'n'
+       <> help "Network configuration"
         )
   <*> option auto
         ( long "depth"
@@ -232,25 +240,32 @@ run cmd =
 
     Train TrainConfig{..} -> do
 
-      -- Training configuration
-      config <- 
-        Dhall.input Dhall.auto (dhallPath trainCfgPath)
---         case trainCfgPath of
+      -- SGD configuration
+      sgdCfg <- Dhall.input Dhall.auto (dhallPath trainSgdCfgPath)
+--         case trainSgdCfgPath of
 --           Nothing -> return MWE.defTrainCfg
 --           Just configPath ->
 --             Dhall.input Dhall.auto (dhallPath configPath)
+      -- Network configuration
+      netCfg <- Dhall.input Dhall.auto (dhallPath trainNetCfgPath)
 
       -- Initial network
       net0 <- 
         case trainInModel of
-          Nothing -> Graph.new 300 2
+          Nothing -> do
+            -- Extract the set of dependency labels
+            depRelSet <- MWE.depRelsIn . concat
+              <$> Cupt.readCupt trainCupt
+            posTagSet <- MWE.posTagsIn . concat
+              <$> Cupt.readCupt trainCupt
+            Graph.new 300 2 posTagSet depRelSet netCfg
           Just path -> Graph.loadParam path
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
-      net <- MWE.train config trainDepth trainMweCat
+      net <- MWE.train sgdCfg trainDepth trainMweCat
         (mkInput cupt embs) net0
       case trainOutModel of
         Nothing -> return ()

@@ -12,6 +12,8 @@ module MWE
 
   -- * Training
   , train
+  , depRelsIn
+  , posTagsIn
 
   -- * Tagging
   , tag
@@ -19,13 +21,15 @@ module MWE
   ) where
 
 
+import           Prelude hiding (elem)
+
 import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
 
-import           Control.Monad (guard, when, forM_)
+import           Control.Monad (guard, forM_)
 
-import qualified System.Directory as D
-import           System.FilePath ((</>))
+-- import qualified System.Directory as D
+-- import           System.FilePath ((</>))
 
 import           Numeric.LinearAlgebra.Static.Backprop (R)
 import qualified Numeric.LinearAlgebra.Static as LA
@@ -44,22 +48,22 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy.IO as L
 import           Data.Binary (Binary)
-import qualified Data.Binary as Bin
-import qualified Data.ByteString.Lazy as B
+-- import qualified Data.Binary as Bin
+-- import qualified Data.ByteString.Lazy as B
 -- import           Codec.Compression.Zlib (compress, decompress)
-import qualified Data.IORef as R
+-- import qualified Data.IORef as R
 
 import qualified Format.Cupt as Cupt
 import qualified Net.ArcGraph as Net
 import           Net.ArcGraph (Elem)
 -- import qualified Net.MWE2 as MWE
-import qualified Embedding as Emb
+-- import qualified Embedding as Emb
 -- import qualified GradientDescent.Momentum as Mom
 import qualified Numeric.SGD as SGD
-import qualified Numeric.SGD.AdaDelta as Ada
+-- import qualified Numeric.SGD.AdaDelta as Ada
 -- import qualified SGD as SGD
 
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 
 
 ----------------------------------------------
@@ -88,7 +92,7 @@ mkElem
     -- ^ MWE type (category) selection method
   -> Sent d
     -- ^ Input sentence
-  -> Elem d 2
+  -> Elem d 2 DepRel POS
 mkElem mweSel Sent{..} =
 
   createElem nodes arcs
@@ -114,45 +118,48 @@ mkElem mweSel Sent{..} =
     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
     nodes = do
       (tok, vec) <- zip cuptSent wordEmbs
-      return (tokID tok, vec)
+      return (tokID tok, vec, Cupt.upos tok)
     -- Labeled arcs of the graph
     arcs = do
       tok <- cuptSent
       -- Check the token is not a root
       guard . not $ isRoot tok
       let par = tokPar tok
-          -- The arc label is `True` if the token and its parent are annoted as
+          -- The arc value is `True` if the token and its parent are annoted as
           -- a part of the same MWE of the appropriate MWE category
-          arcLabel =
+          arcVal =
             if (not . S.null)
                  ((getMweIDs tok) `S.intersection` (getMweIDs par))
                then True
                else False
-      return ((tokID tok, tokID par), arcLabel)
+      return ((tokID tok, tokID par), Cupt.deprel tok, arcVal)
 
 
 -- | Create a dataset element based on nodes and labeled arcs.
 createElem
   :: (KnownNat d)
-  => [(G.Vertex, R d)]
-  -> [(Net.Arc, Bool)]
-  -> Elem d 2
+  => [(G.Vertex, R d, POS)]
+  -> [(Net.Arc, DepRel, Bool)]
+  -> Elem d 2 DepRel POS
 createElem nodes arcs = Net.Elem
   { graph = graph
   , labMap = valMap
   }
   where
-    vertices = [v | (v, _) <- nodes]
+    vertices = [v | (v, _, _) <- nodes]
     gStr = G.buildG
       (minimum vertices, maximum vertices)
-      (map fst arcs)
-    lbMap = M.fromList nodes
+      (map _1 arcs)
     graph = Net.Graph
       { Net.graphStr = gStr
       , Net.graphInv = G.transposeG gStr
-      , Net.nodeLabelMap = lbMap }
+      , Net.nodeLabelMap = M.fromList $
+          map (\(x, e, pos) -> (x, Net.Node e pos)) nodes
+      , Net.arcLabelMap = M.fromList $
+          map (\(x, y, _) -> (x, y)) arcs
+      }
     valMap = M.fromList $ do
-      (arc, isMwe) <- arcs
+      (arc, _arcLab, isMwe) <- arcs
       return 
         ( arc
 --         , if isMwe then 1.0 else 0.0
@@ -160,6 +167,9 @@ createElem nodes arcs = Net.Elem
              then mwe
              else notMwe
         )
+    _1 (x, _, _) = x
+    -- _2 (_, y, _) = y
+    -- _3 (_, _, z) = z
 
 
 -- | Is MWE or not?
@@ -193,6 +203,14 @@ instance JSON.ToJSON SGD.Config where
 instance Interpret SGD.Config
 
 
+-- | Depdency relation
+type DepRel = T.Text
+
+
+-- | POS tag
+type POS = T.Text
+
+
 -- | Train the MWE identification network.
 train
   :: SGD.Config
@@ -203,10 +221,10 @@ train
     -- ^ Selected MWE type (category)
   -> [Sent 300]
     -- ^ Training dataset
-  -> Net.Param 300 2
+  -> Net.Param 300 2 DepRel POS
 --   -> Net.Param 300
     -- ^ Initial network
-  -> IO (Net.Param 300 2)
+  -> IO (Net.Param 300 2 DepRel POS)
 --   -> IO (Net.Param 300)
 train sgdCfg depth mweTyp cupt net0 = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
@@ -221,6 +239,22 @@ train sgdCfg depth mweTyp cupt net0 = do
     quality x = BP.evalBP (Net.netError [x] $ fromIntegral depth)
 
 
+-- | Extract dependeny relations present in the given dataset.
+depRelsIn :: [Cupt.GenSent mwe] -> S.Set DepRel
+depRelsIn =
+  S.fromList . concatMap extract 
+  where
+    extract = map Cupt.deprel
+
+
+-- | Extract dependeny relations present in the given dataset.
+posTagsIn :: [Cupt.GenSent mwe] -> S.Set POS
+posTagsIn =
+  S.fromList . concatMap extract 
+  where
+    extract = map Cupt.upos
+
+
 ----------------------------------------------
 -- Tagging
 ----------------------------------------------
@@ -229,8 +263,8 @@ train sgdCfg depth mweTyp cupt net0 = do
 -- | Tag many sentences
 tagMany
   :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
-  -> Net.Param 300 2  -- ^ Network parameters
---   -> Net.Param 300    -- ^ Network parameters
+  -> Net.Param 300 2 DepRel POS
+                      -- ^ Network parameters
   -> Int              -- ^ Depth (see also `trainDepth`)
   -> [Sent 300]       -- ^ Cupt sentences
   -> IO ()
@@ -277,7 +311,8 @@ tagMany mweTyp net depth cupt = do
 -- | Tag (output the result on stdin).
 tag
   :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
-  -> Net.Param 300 2  -- ^ Network parameters
+  -> Net.Param 300 2 DepRel POS
+                      -- ^ Network parameters
   -> Int              -- ^ Depth (see also `trainDepth`)
   -> Sent 300         -- ^ Cupt sentence
   -> IO ()
@@ -315,8 +350,8 @@ annotate mweTyp cupt arcMap =
       case M.lookup (tokID tok) mweIdMap of
         Nothing -> tok
         Just mweId ->
-          let mwe = (mweId, mweTyp)
-           in tok {Cupt.mwe = mwe : Cupt.mwe tok}
+          let newMwe = (mweId, mweTyp)
+           in tok {Cupt.mwe = newMwe : Cupt.mwe tok}
 
     -- Determine the set of MWE arcs
     arcSet = S.fromList $ do

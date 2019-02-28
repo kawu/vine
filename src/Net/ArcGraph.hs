@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveFunctor #-}
+-- {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- {-# LANGUAGE OverloadedStrings #-}
 -- {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TupleSections #-}
 
 -- To derive Binary for `Param`
 {-# LANGUAGE DeriveAnyClass #-}
@@ -20,14 +21,16 @@
 module Net.ArcGraph
   ( 
   -- * Network
-    Param(..)
+    Config(..)
+  , Param(..)
   -- , size
   , new
   , Graph(..)
+  , Node(..)
   , Arc
   , run
   , eval
-  , runTest
+  -- , runTest
 
   -- * Storage
   , saveParam
@@ -36,8 +39,8 @@ module Net.ArcGraph
   -- * Data set
   , DataSet
   , Elem(..)
-  , mkGraph
-  , mkSent
+  -- , mkGraph
+  -- , mkSent
 
   -- * Error
   , netError
@@ -48,19 +51,20 @@ module Net.ArcGraph
 
 
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat, natVal)
+import           GHC.TypeNats (KnownNat) -- , natVal)
 -- import           GHC.Natural (naturalToInt)
 import qualified GHC.TypeNats as Nats
 
-import           Control.Monad (guard, forM_)
+import           Control.Monad (forM_, forM)
 
 import           Lens.Micro.TH (makeLenses)
-import           Lens.Micro ((^.))
+-- import           Lens.Micro ((^.))
 
-import           Data.Proxy (Proxy(..))
-import           Data.Ord (comparing)
-import qualified Data.List as L
-import qualified Data.Text as T
+-- import           Data.Proxy (Proxy(..))
+-- import           Data.Ord (comparing)
+-- import qualified Data.List as L
+-- import qualified Data.Text as T
+import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
 import qualified Data.Array as A
@@ -72,6 +76,9 @@ import           Codec.Compression.Zlib (compress, decompress)
 -- import qualified Data.Map.Lens as ML
 import           Control.Lens.At (ixAt)
 
+import           Dhall (Interpret)
+import qualified Data.Aeson as JSON
+
 import qualified Prelude.Backprop as PB
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop ((^^.), (^^?))
@@ -81,32 +88,17 @@ import           Numeric.LinearAlgebra.Static.Backprop
 import qualified Numeric.LinearAlgebra.Static as LA
 
 import           Net.Basic
-import qualified Net.List as NL
-import qualified Net.FeedForward as FFN
-import           Net.FeedForward (FFN(..))
-import qualified GradientDescent as GD
+-- import qualified Net.List as NL
+-- import qualified Net.FeedForward as FFN
+-- import           Net.FeedForward (FFN(..))
+-- import qualified GradientDescent as GD
 -- import qualified GradientDescent.Momentum as Mom
 -- import qualified GradientDescent.Nestorov as Mom
-import qualified GradientDescent.AdaDelta as Ada
+-- import qualified GradientDescent.AdaDelta as Ada
 import           Numeric.SGD.ParamSet (ParamSet)
 import qualified Numeric.SGD.ParamSet as SGD
 
-import qualified Embedding.Dict as D
-
-
-----------------------------------------------
--- Parameter Map
-----------------------------------------------
-
-
-instance (Ord k, ParamSet a) => ParamSet (M.Map k a) where
-  zero = M.empty
-  pmap f = fmap (SGD.pmap f)
-  add = M.unionWith SGD.add
-  sub = undefined -- M.unionWith SGD.sub -- TODO: this is incorrect!
-  mul = undefined -- M.unionWith SGD.mul -- TODO: is this correct?
-  div = undefined -- M.unionWith SGD.div -- TODO: this is incorrect!
-  norm_2 = sqrt . sum . map ((^2) . SGD.norm_2)  . M.elems
+-- import qualified Embedding.Dict as D
 
 
 ----------------------------------------------
@@ -114,10 +106,28 @@ instance (Ord k, ParamSet a) => ParamSet (M.Map k a) where
 ----------------------------------------------
 
 
+-- | Network configuration
+data Config = Config
+  { useWordAff :: Bool
+    -- ^ Use single word affinity
+  , useArcLabels :: Bool
+    -- ^ `Nothing` if not to be used
+  , useNodeLabels :: Bool
+    -- ^ `Nothing` if not to be used
+  } deriving (Generic)
+
+instance JSON.FromJSON Config
+instance JSON.ToJSON Config where
+  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+instance Interpret Config
+
+
 -- | Parameters of the graph-structured network
 --   * d -- embedding dimention size
 --   * c -- number of classes
-data Param d c = Param
+--   * b -- arc label
+--   * node -- node label
+data Param d c b node = Param
   { _incM :: L d d
     -- ^ Incoming edges matrix
   , _incB :: R d
@@ -161,28 +171,35 @@ data Param d c = Param
   , _arcB :: R d
     -- ^ Arc bias
 
-  -- , _wordAff :: Maybe (L d d) -- `Nothing` meaning that not used
-  , _wordAff :: L d d
+  , _wordAff :: Maybe (L d d) -- `Nothing` means that not used
     -- ^ (Single) word affinity (NEW 27.02.2019)
 
---   , _arcA :: L d 10
---     -- ^ NEW 26.02.2019: An arc label-dependent bias
---   , _arcLabelE :: M.Map T.Text (R 10)
---     -- ^ NEW 26.02.2019: Arc label (UD dependency relation) embedding vectors
---     -- TODO: Make `10` a parameter
+  , _arcLabelB :: Maybe (M.Map b (R d))
+    -- ^ Arc label (UD dependency relation) induced bias (NEW 28.02.2019)
+
+  , _nodeLabelB :: Maybe (M.Map (node, node) (R d))
+    -- ^ Arc label (UD dependency relation) induced bias (NEW 28.02.2019)
   } deriving (Generic, Binary)
   -- NOTE: automatically deriving `Show` does not work 
 
-instance (KnownNat d, KnownNat c) => BP.Backprop (Param d c)
+instance (KnownNat d, KnownNat c, Ord b, Ord node)
+  => BP.Backprop (Param d c b node)
 makeLenses ''Param
 
-instance (KnownNat d, KnownNat c) => ParamSet (Param d c)
+instance (KnownNat d, KnownNat c, Ord b, Ord node)
+  => ParamSet (Param d c b node)
 
 
 -- | Create a new, random network.
--- TODO: The set of arc labels is needed.
-new :: (KnownNat d, KnownNat c) => Int -> Int -> IO (Param d c)
-new d c = Param
+new
+  :: (KnownNat d, KnownNat c, Ord b, Ord node)
+  => Int
+  -> Int
+  -> S.Set node
+  -> S.Set b
+  -> Config
+  -> IO (Param d c b node)
+new d c nodeLabelSet arcLabelSet Config{..} = Param
   <$> matrix d d
   <*> vector d
   <*> matrix d d
@@ -197,63 +214,112 @@ new d c = Param
   -- <*> vector d
   <*> matrix d (d*2)
   <*> vector d
-  <*> matrix d d -- <*> (Just <$> matrix d d) (word affinity)
---   <*> matrix d 10
---   <*> pure M.empty
+  <*> ( if useWordAff
+           then Just <$> matrix d d
+           else pure Nothing
+      )
+  <*> ( if useArcLabels
+           then Just <$> mkMap arcLabelSet (vector d)
+           else pure Nothing
+      )
+  <*> ( if useNodeLabels
+           then Just <$> mkMap (cart nodeLabelSet) (vector d)
+           else pure Nothing
+      )
+  where
+    mkMap keySet mkVal = fmap M.fromList .
+      forM (S.toList keySet) $ \key -> do
+        (key,) <$> mkVal
+    -- cartesian product
+    cart s = S.fromList $ do
+      x <- S.toList s
+      y <- S.toList s
+      return (x, y)
 
 
 -- | Local graph type
-data Graph a = Graph
+data Graph a b = Graph
   { graphStr :: G.Graph
     -- ^ The underlying directed graph
   , graphInv :: G.Graph
     -- ^ Inversed (transposed) `graphStr`
   , nodeLabelMap :: M.Map G.Vertex a
     -- ^ Label assigned to a given vertex
-  } deriving (Show, Eq, Ord, Functor, Generic, Binary)
+  , arcLabelMap :: M.Map Arc b
+    -- ^ Label assigned to a given arc
+  } deriving (Show, Eq, Ord, Generic, Binary)
+
+
+-- | Node label mapping
+nmap :: (a -> c) -> Graph a b -> Graph c b
+nmap f g =
+  g {nodeLabelMap = fmap f (nodeLabelMap g)}
+
+
+-- | Arc label mapping
+amap :: (b -> c) -> Graph a b -> Graph a c
+amap f g =
+  g {arcLabelMap = fmap f (arcLabelMap g)}
 
 
 -- | A graph arc (edge)
 type Arc = (G.Vertex, G.Vertex)
 
 
--- | Run the network over a DAG labeled with input word embeddings.
+-- | Structured node
+data Node dim a = Node
+  { nodeEmb :: R dim
+    -- ^ Node embedding vector
+  , nodeLab :: a
+    -- ^ Node label (e.g., POS tag)
+  } deriving (Show, Binary, Generic)
+
+
+-- | Run the network over a graph labeled with input word embeddings.
 run
-  :: (KnownNat d, KnownNat c, Reifies s W)
-  => BVar s (Param d c)
+  :: (KnownNat d, KnownNat c, Ord b, Ord node, Reifies s W)
+  => BVar s (Param d c b node)
     -- ^ Graph network / params
   -> Int
     -- ^ Recursion depth
-  -> Graph (BVar s (R d))
+  -- -> Graph (BVar s (R d)) b
+  -- -> Graph (R d) b
+  -> Graph (Node d node) b
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s (R c))
 --   -> M.Map Arc (BVar s Double)
     -- ^ Output map with output potential values
 run net depth graph =
-  go (nodeLabelMap graph) (mkArcMap $ nodeLabelMap graph) depth
+  let nodeMap =
+        fmap (BP.constVar . nodeEmb) (nodeLabelMap graph)
+   in go nodeMap (mkArcMap nodeMap) depth
   where
     mkArcMap nodeMap = M.fromList $ do
       (v, w) <- graphArcs graph
       let hv = nodeMap M.! v
           hw = nodeMap M.! w
-          -- TODO: consider using feed-forward network
-          -- TODO: apply `arcA`
+          -- NOTE: consider using feed-forward network?
           -- NOTE: with `logistic` training didn't go well, but maybe you can
           --   try it again later
---           he = case net ^^. arcLabelE ^^? ixAt (error "TODO: label") of
---                  Nothing ->
---                     (net ^^. arcM) #> (hv # hw)
---                   + (net ^^. arcB)
---                  Just labelEmb ->
---                     (net ^^. arcM) #> (hv # hw)
---                   + (net ^^. arcA) #> labelEmb
---                   + (net ^^. arcB)
-          he = (net ^^. arcM) #> (hv # hw)
-             + (net ^^. wordAff) #> hv
-             -- + maybe 0 (#> hv) (BP.sequenceVar $ net ^^. wordAff)
-             + (net ^^. wordAff) #> hw
-             -- + maybe 0 (#> hw) (BP.sequenceVar $ net ^^. wordAff)
-             + (net ^^. arcB)
+          biAff = (net ^^. arcM) #> (hv # hw)
+          siAff = maybe 0 id $ do
+            aff <- BP.sequenceVar (net ^^. wordAff)
+            return $ (aff #> hv) + (aff #> hw)
+          arcBias = maybe 0 id $ do
+            arcBiasMap <- BP.sequenceVar (net ^^. arcLabelB)
+            let err = error "ArcGraph.run: undefined arc label bias"
+            return . maybe err id $ do
+              arcLabel <- M.lookup (v, w) (arcLabelMap graph)
+              arcBiasMap ^^? ixAt arcLabel
+          nodePairBias = maybe 0 id $ do
+            nodeBiasMap <- BP.sequenceVar (net ^^. nodeLabelB)
+            let err = error "ArcGraph.run: undefined node label bias"
+            return . maybe err id $ do
+              vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+              wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+              nodeBiasMap ^^? ixAt (vLabel, wLabel)
+          bias = net ^^. arcB
+          he = biAff + siAff + arcBias + nodePairBias + bias
       return ((v, w), he)
     go prevNodeMap prevArcMap k
 --       | k <= 0 = M.fromList $ do
@@ -327,12 +393,13 @@ run net depth graph =
 -- | Evaluate the network over a graph labeled with input word embeddings.
 -- User-friendly (and without back-propagation) version of `run`.
 eval
-  :: (KnownNat d, KnownNat c)
-  => Param d c
+  :: (KnownNat d, KnownNat c, Ord b, Ord node)
+  => Param d c b node
     -- ^ Graph network / params
   -> Int
     -- ^ Recursion depth
-  -> Graph (R d)
+  -- -> Graph (R d) b
+  -> Graph (Node d node) b
     -- ^ Input graph labeled with initial hidden states (word embeddings)
   -> M.Map Arc (R c)
 --   -> M.Map Arc Double
@@ -342,21 +409,22 @@ eval net depth graph =
     $ run
         (BP.constVar net)
         depth
-        (fmap BP.constVar graph)
+        graph -- (nmap BP.constVar graph)
     )
 
 
--- | Run the network on the test graph and print the resulting label map.
-runTest
-  :: (KnownNat d, KnownNat c)
-  => Param d c
-  -> Int
-  -> Graph (R d)
-  -> IO ()
-runTest net depth graph =
-  forM_ (M.toList $ eval net depth graph) $ \(e, v) ->
-    print (e, LA.unwrap v)
---     print (e, v)
+-- -- | Run the network on the test graph and print the resulting label map.
+-- runTest
+--   :: (KnownNat d, KnownNat c, Ord b)
+--   => Param d c b
+--   -> Int
+--   -- -> Graph (R d) b
+--   -> Graph (Node d ()) b
+--   -> IO ()
+-- runTest net depth graph =
+--   forM_ (M.toList $ eval net depth graph) $ \(e, v) ->
+--     print (e, LA.unwrap v)
+-- --     print (e, v)
 
 
 ----------------------------------------------
@@ -366,9 +434,9 @@ runTest net depth graph =
 
 -- | Save the parameters in the given file.
 saveParam
-  :: (KnownNat d, KnownNat c)
+  :: (KnownNat d, KnownNat c, Binary b, Binary node)
   => FilePath
-  -> Param d c
+  -> Param d c b node
   -> IO ()
 saveParam path =
   B.writeFile path . compress . Bin.encode
@@ -376,9 +444,9 @@ saveParam path =
 
 -- | Load the parameters from the given file.
 loadParam
-  :: (KnownNat d, KnownNat c)
+  :: (KnownNat d, KnownNat c, Binary b, Binary node)
   => FilePath
-  -> IO (Param d c)
+  -> IO (Param d c b node)
 loadParam path =
   Bin.decode . decompress <$> B.readFile path
   -- B.writeFile path . compress . Bin.encode
@@ -390,8 +458,8 @@ loadParam path =
 
 
 -- | Dataset element
-data Elem d c = Elem
-  { graph :: Graph (R d)
+data Elem dim c arc node = Elem
+  { graph :: Graph (Node dim node) arc
     -- ^ Input graph
   , labMap :: M.Map Arc (R c)
 --   , labMap :: M.Map Arc Double
@@ -400,44 +468,48 @@ data Elem d c = Elem
 
 
 -- | DataSet: a list of (graph, target value map) pairs.
-type DataSet d c = [Elem d c]
+type DataSet d c b node = [Elem d c b node]
 
 
--- | Create graph from lists of labeled nodes and edges.
-mkGraph
-  :: (KnownNat d)
-  => [(G.Vertex, R d)]
-    -- ^ Nodes with input vectors
-  -> [(G.Vertex, G.Vertex)]
-    -- ^ Edges
-  -> Graph (R d)
-mkGraph nodes arcs =
-  graph
-  where
-    vertices = [v | (v, _) <- nodes]
-    gStr = G.buildG (minimum vertices, maximum vertices) arcs
-    lbMap = M.fromList nodes
-    graph = Graph
-      { graphStr = gStr
-      , graphInv = G.transposeG gStr
-      , nodeLabelMap = lbMap }
+-- -- | Create graph from lists of labeled nodes and edges.
+-- mkGraph
+--   :: (KnownNat d, Ord b)
+--   => [(G.Vertex, R d)]
+--     -- ^ Nodes with input vectors
+--   -> [(Arc, b)]
+--     -- ^ Edges with labels
+--   -> Graph (R d) b
+-- mkGraph nodes arcs =
+--   graph
+--   where
+--     vertices = [v | (v, _) <- nodes]
+--     gStr = G.buildG
+--       (minimum vertices, maximum vertices) 
+--       (map fst arcs)
+--     lbMap = M.fromList nodes
+--     graph = Graph
+--       { graphStr = gStr
+--       , graphInv = G.transposeG gStr
+--       , nodeLabelMap = lbMap
+--       , arcLabelMap = M.fromList arcs
+--       }
 
 
--- | Create an input sentence consisting of the given embedding vectors.
-mkSent
-  :: (KnownNat d)
-  => D.Dict d
-    -- ^ Embedding dictionary
-  -> [T.Text]
-    -- ^ Input words
-  -> Graph (R d)
-mkSent d ws =
-  mkGraph
-    [(i, vec w) | (i, w) <- zip [0..] ws]
-    [(i, i+1) | i <- is]
-  where
-    vec = (d M.!)
-    is = [0 .. length ws - 2]
+-- -- | Create an input sentence consisting of the given embedding vectors.
+-- mkSent
+--   :: (KnownNat d)
+--   => D.Dict d
+--     -- ^ Embedding dictionary
+--   -> [T.Text]
+--     -- ^ Input words
+--   -> Graph (R d) ()
+-- mkSent d ws =
+--   mkGraph
+--     [(i, vec w) | (i, w) <- zip [0..] ws]
+--     [(i, i+1) | i <- is]
+--   where
+--     vec = (d M.!)
+--     is = [0 .. length ws - 2]
 
 
 ----------------------------------------------
@@ -530,15 +602,16 @@ errorMany targets outputs =
 
 -- | Network error on a given dataset.
 netError
-  :: (Reifies s W, KnownNat d, KnownNat c)
-  => DataSet d c
+  :: (Reifies s W, KnownNat d, KnownNat c, Ord b, Ord node)
+  => DataSet d c b node
   -> Int -- ^ Recursion depth
-  -> BVar s (Param d c)
+  -> BVar s (Param d c b node)
   -> BVar s Double
 netError dataSet depth net =
   let
     inputs = map graph dataSet
-    outputs = map (run net depth . fmap BP.auto) inputs
+    -- outputs = map (run net depth . nmap BP.auto) inputs
+    outputs = map (run net depth) inputs
     targets = map (fmap BP.auto . labMap) dataSet
   in  
     errorMany targets outputs -- + (size net * 0.01)
@@ -582,22 +655,76 @@ netError dataSet depth net =
 
 
 -- | Return the list of vertives in the graph.
-graphNodes :: Graph a -> [G.Vertex]
+graphNodes :: Graph a b -> [G.Vertex]
 graphNodes = G.vertices . graphStr
 
 
 -- | Return the list of vertives in the graph.
-graphArcs :: Graph a -> [Arc]
+graphArcs :: Graph a b -> [Arc]
 graphArcs = G.edges . graphStr
 
 
 -- | Return the list of outgoing vertices.
-outgoing :: G.Vertex -> Graph a -> [G.Vertex]
+outgoing :: G.Vertex -> Graph a b -> [G.Vertex]
 outgoing v Graph{..} =
   graphStr A.! v
 
 
 -- | Return the list of incoming vertices.
-incoming :: G.Vertex -> Graph a -> [G.Vertex]
+incoming :: G.Vertex -> Graph a b -> [G.Vertex]
 incoming v Graph{..} =
   graphInv A.! v
+
+
+----------------------------------------------
+-- Maybe param
+----------------------------------------------
+
+
+-- instance (ParamSet a) => ParamSet (Maybe a) where
+--   zero = fmap SGD.zero
+--   pmap f = fmap (SGD.pmap f)
+--   add x y
+--     | keySetEq x y = M.unionWith SGD.add x y
+--     | otherwise = error "ArcGraph: different key set"
+--   sub x y
+--     | keySetEq x y = M.unionWith SGD.sub x y
+--     | otherwise = error "ArcGraph: different key set"
+--   mul x y
+--     | keySetEq x y = M.unionWith SGD.mul x y
+--     | otherwise = error "ArcGraph: different key set"
+--   div x y
+--     | keySetEq x y = M.unionWith SGD.div x y
+--     | otherwise = error "ArcGraph: different key set"
+--   norm_2 = sqrt . sum . map ((^2) . SGD.norm_2)  . M.elems
+
+
+----------------------------------------------
+-- Parameter Map
+----------------------------------------------
+
+
+instance (Ord k, ParamSet a) => ParamSet (M.Map k a) where
+  zero = fmap SGD.zero
+  pmap f = fmap (SGD.pmap f)
+  add x y
+    | keySetEq x y = M.unionWith SGD.add x y
+    | otherwise = error "ArcGraph: different key set"
+  sub x y
+    | keySetEq x y = M.unionWith SGD.sub x y
+    | otherwise = error "ArcGraph: different key set"
+  mul x y
+    | keySetEq x y = M.unionWith SGD.mul x y
+    | otherwise = error "ArcGraph: different key set"
+  div x y
+    | keySetEq x y = M.unionWith SGD.div x y
+    | otherwise = error "ArcGraph: different key set"
+  norm_2 = sqrt . sum . map ((^2) . SGD.norm_2)  . M.elems
+
+
+-- | The two maps have equal sets?
+keySetEq :: (Eq k) => M.Map k v -> M.Map k v' -> Bool
+keySetEq x y =
+  M.keys x == M.keys y
+
+
