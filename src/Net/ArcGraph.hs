@@ -100,6 +100,8 @@ import qualified Numeric.SGD.ParamSet as SGD
 
 -- import qualified Embedding.Dict as D
 
+import           Debug.Trace (trace)
+
 
 ----------------------------------------------
 -- Network Parameters
@@ -109,11 +111,11 @@ import qualified Numeric.SGD.ParamSet as SGD
 -- | Network configuration
 data Config = Config
   { useWordAff :: Bool
-    -- ^ Use single word affinity
+    -- ^ Use word affinities
   , useArcLabels :: Bool
-    -- ^ `Nothing` if not to be used
+    -- ^ Use arc labels (UD dep rels)
   , useNodeLabels :: Bool
-    -- ^ `Nothing` if not to be used
+    -- ^ Use node labels (POS tags)
   } deriving (Generic)
 
 instance JSON.FromJSON Config
@@ -171,8 +173,16 @@ data Param d c b node = Param
   , _arcB :: R d
     -- ^ Arc bias
 
-  , _wordAff :: Maybe (L d d) -- `Nothing` means that not used
-    -- ^ (Single) word affinity (NEW 27.02.2019)
+  -- NOTE: We replace the single `_wordAff` with two word-related affinities.
+  -- This is because the affinity of a word being a VMWE head will typically be
+  -- different from the affinity of this word being a MWE dependent.
+  --
+  -- , _wordAff :: Maybe (L d d) -- `Nothing` means that not used
+  -- -- ^ (Single) word affinity (NEW 27.02.2019)
+  , _sourceAff :: Maybe (L d d) -- `Nothing` means that not used
+    -- ^ Source word affinity (NEW 01.03.2019)
+  , _targetAff :: Maybe (L d d) -- `Nothing` means that not used
+    -- ^ Target word affinity (NEW 01.03.2019)
 
   , _arcLabelB :: Maybe (M.Map b (R d))
     -- ^ Arc label (UD dependency relation) induced bias (NEW 28.02.2019)
@@ -214,6 +224,10 @@ new d c nodeLabelSet arcLabelSet Config{..} = Param
   -- <*> vector d
   <*> matrix d (d*2)
   <*> vector d
+  <*> ( if useWordAff
+           then Just <$> matrix d d
+           else pure Nothing
+      )
   <*> ( if useWordAff
            then Just <$> matrix d d
            else pure Nothing
@@ -277,7 +291,11 @@ data Node dim a = Node
 
 -- | Run the network over a graph labeled with input word embeddings.
 run
-  :: (KnownNat d, KnownNat c, Ord b, Ord node, Reifies s W)
+  :: ( KnownNat d, KnownNat c
+    , Ord b, Ord node
+    , Show b, Show node
+    , Reifies s W 
+     )
   => BVar s (Param d c b node)
     -- ^ Graph network / params
   -> Int
@@ -302,24 +320,42 @@ run net depth graph =
           -- NOTE: with `logistic` training didn't go well, but maybe you can
           --   try it again later
           biAff = (net ^^. arcM) #> (hv # hw)
-          siAff = maybe 0 id $ do
-            aff <- BP.sequenceVar (net ^^. wordAff)
-            return $ (aff #> hv) + (aff #> hw)
+          -- siAff = maybe 0 id $ do
+          --   aff <- BP.sequenceVar (net ^^. wordAff)
+          --   return $ (aff #> hv) + (aff #> hw)
+          srcAff = maybe 0 id $ do
+            aff <- BP.sequenceVar (net ^^. sourceAff)
+            return $ aff #> hv
+          trgAff = maybe 0 id $ do
+            aff <- BP.sequenceVar (net ^^. targetAff)
+            return $ aff #> hw
           arcBias = maybe 0 id $ do
             arcBiasMap <- BP.sequenceVar (net ^^. arcLabelB)
-            let err = error "ArcGraph.run: undefined arc label bias"
+            let err = trace
+                  ( "ArcGraph.run: unknown arc label ("
+                  ++ show (M.lookup (v, w) (arcLabelMap graph))
+                  ++ ")" ) 0
             return . maybe err id $ do
               arcLabel <- M.lookup (v, w) (arcLabelMap graph)
               arcBiasMap ^^? ixAt arcLabel
           nodePairBias = maybe 0 id $ do
             nodeBiasMap <- BP.sequenceVar (net ^^. nodeLabelB)
-            let err = error "ArcGraph.run: undefined node label bias"
+            -- Construct the node labels here for the sake of error reporting
+            let nodeLabels = do
+                  vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+                  wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+                  return (vLabel, wLabel)
+                err = trace
+                  ( "ArcGraph.run: undefined node label(s) ("
+                  ++ show nodeLabels
+                  ++ ")" ) 0
             return . maybe err id $ do
               vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
               wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
               nodeBiasMap ^^? ixAt (vLabel, wLabel)
           bias = net ^^. arcB
-          he = biAff + siAff + arcBias + nodePairBias + bias
+          -- he = biAff + siAff + arcBias + nodePairBias + bias
+          he = biAff + srcAff + trgAff + arcBias + nodePairBias + bias
       return ((v, w), he)
     go prevNodeMap prevArcMap k
 --       | k <= 0 = M.fromList $ do
@@ -393,7 +429,7 @@ run net depth graph =
 -- | Evaluate the network over a graph labeled with input word embeddings.
 -- User-friendly (and without back-propagation) version of `run`.
 eval
-  :: (KnownNat d, KnownNat c, Ord b, Ord node)
+  :: (KnownNat d, KnownNat c, Ord b, Show b, Ord node, Show node)
   => Param d c b node
     -- ^ Graph network / params
   -> Int
@@ -602,7 +638,9 @@ errorMany targets outputs =
 
 -- | Network error on a given dataset.
 netError
-  :: (Reifies s W, KnownNat d, KnownNat c, Ord b, Ord node)
+  :: ( Reifies s W, KnownNat d, KnownNat c
+     , Ord b, Show b, Ord node, Show node
+     )
   => DataSet d c b node
   -> Int -- ^ Recursion depth
   -> BVar s (Param d c b node)
