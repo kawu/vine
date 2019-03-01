@@ -37,7 +37,7 @@ import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.Backprop as BP
 
 import           Dhall -- (Interpret)
-import qualified Data.Aeson as JSON
+-- import qualified Data.Aeson as JSON
 
 import qualified Data.Foldable as Fold
 import           Data.Semigroup (Max(..))
@@ -200,24 +200,24 @@ tokID tok =
 ----------------------------------------------
 
 
-instance JSON.FromJSON Mom.Config
-instance JSON.ToJSON Mom.Config where
-  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+-- instance JSON.FromJSON Mom.Config
+-- instance JSON.ToJSON Mom.Config where
+--   toEncoding = JSON.genericToEncoding JSON.defaultOptions
 instance Interpret Mom.Config
 
-instance JSON.FromJSON Ada.Config
-instance JSON.ToJSON Ada.Config where
-  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+-- instance JSON.FromJSON Ada.Config
+-- instance JSON.ToJSON Ada.Config where
+--   toEncoding = JSON.genericToEncoding JSON.defaultOptions
 instance Interpret Ada.Config
 
-instance JSON.FromJSON SGD.Method
-instance JSON.ToJSON SGD.Method where
-  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+-- instance JSON.FromJSON SGD.Method
+-- instance JSON.ToJSON SGD.Method where
+--   toEncoding = JSON.genericToEncoding JSON.defaultOptions
 instance Interpret SGD.Method
 
-instance JSON.FromJSON SGD.Config
-instance JSON.ToJSON SGD.Config where
-  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+-- instance JSON.FromJSON SGD.Config
+-- instance JSON.ToJSON SGD.Config where
+--   toEncoding = JSON.genericToEncoding JSON.defaultOptions
 instance Interpret SGD.Config
 
 
