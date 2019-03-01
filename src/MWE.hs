@@ -60,7 +60,8 @@ import           Net.ArcGraph (Elem)
 -- import qualified Embedding as Emb
 -- import qualified GradientDescent.Momentum as Mom
 import qualified Numeric.SGD as SGD
--- import qualified Numeric.SGD.AdaDelta as Ada
+import qualified Numeric.SGD.AdaDelta as Ada
+import qualified Numeric.SGD.Momentum as Mom
 -- import qualified SGD as SGD
 
 -- import Debug.Trace (trace)
@@ -118,7 +119,13 @@ mkElem mweSel Sent{..} =
     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
     nodes = do
       (tok, vec) <- zip cuptSent wordEmbs
-      return (tokID tok, vec, Cupt.upos tok)
+      let node = Net.Node
+            { nodeEmb = vec
+            , nodeLab = Cupt.upos tok
+            -- | TODO: could be lemma?
+            , nodeLex = Cupt.orth tok
+            }
+      return (tokID tok, node)
     -- Labeled arcs of the graph
     arcs = do
       tok <- cuptSent
@@ -138,7 +145,8 @@ mkElem mweSel Sent{..} =
 -- | Create a dataset element based on nodes and labeled arcs.
 createElem
   :: (KnownNat d)
-  => [(G.Vertex, R d, POS)]
+  -- => [(G.Vertex, R d, POS)]
+  => [(G.Vertex, Net.Node d POS)]
   -> [(Net.Arc, DepRel, Bool)]
   -> Elem d 2 DepRel POS
 createElem nodes arcs = Net.Elem
@@ -146,15 +154,15 @@ createElem nodes arcs = Net.Elem
   , labMap = valMap
   }
   where
-    vertices = [v | (v, _, _) <- nodes]
+    vertices = [v | (v, _) <- nodes]
     gStr = G.buildG
       (minimum vertices, maximum vertices)
       (map _1 arcs)
     graph = Net.Graph
       { Net.graphStr = gStr
       , Net.graphInv = G.transposeG gStr
-      , Net.nodeLabelMap = M.fromList $
-          map (\(x, e, pos) -> (x, Net.Node e pos)) nodes
+      , Net.nodeLabelMap = M.fromList $ nodes
+          -- map (\(x, e, pos) -> (x, Net.Node e pos)) nodes
       , Net.arcLabelMap = M.fromList $
           map (\(x, y, _) -> (x, y)) arcs
       }
@@ -191,6 +199,16 @@ tokID tok =
 -- Training
 ----------------------------------------------
 
+
+instance JSON.FromJSON Mom.Config
+instance JSON.ToJSON Mom.Config where
+  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+instance Interpret Mom.Config
+
+instance JSON.FromJSON Ada.Config
+instance JSON.ToJSON Ada.Config where
+  toEncoding = JSON.genericToEncoding JSON.defaultOptions
+instance Interpret Ada.Config
 
 instance JSON.FromJSON SGD.Method
 instance JSON.ToJSON SGD.Method where
@@ -235,7 +253,7 @@ train sgdCfg depth mweTyp cupt net0 = do
     -- trainProgSGD sgdCfg dataSet globalDepth net0
     SGD.sgd sgdCfg dataSet gradient quality net0
   where
-    gradient xs = BP.gradBP (Net.netError xs $ fromIntegral depth)
+    gradient x = BP.gradBP (Net.netError [x] $ fromIntegral depth)
     quality x = BP.evalBP (Net.netError [x] $ fromIntegral depth)
 
 
