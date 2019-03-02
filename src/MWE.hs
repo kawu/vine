@@ -59,7 +59,8 @@ import           Net.ArcGraph (Elem)
 -- import qualified Net.MWE2 as MWE
 -- import qualified Embedding as Emb
 -- import qualified GradientDescent.Momentum as Mom
-import qualified Numeric.SGD as SGD
+import qualified Numeric.SGD.Pipe as SGD
+import qualified Numeric.SGD.DataSet as SGD
 import qualified Numeric.SGD.AdaDelta as Ada
 import qualified Numeric.SGD.Momentum as Mom
 -- import qualified SGD as SGD
