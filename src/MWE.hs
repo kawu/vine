@@ -397,12 +397,11 @@ annotate mweTyp cupt arcMap =
   where
 
     -- Enrich the token with new MWE information
-    enrich tok =
-      case M.lookup (tokID tok) mweIdMap of
-        Nothing -> tok
-        Just mweId ->
-          let newMwe = (mweId, mweTyp)
-           in tok {Cupt.mwe = newMwe : Cupt.mwe tok}
+    enrich tok = Prelude.maybe tok id $ do
+      Cupt.TokID i <- return (Cupt.tokID tok)
+      mweId <- M.lookup i mweIdMap
+      let newMwe = (mweId, mweTyp)
+      return tok {Cupt.mwe = newMwe : Cupt.mwe tok}
 
     -- Determine the set of MWE arcs
     arcSet = S.fromList $ do
