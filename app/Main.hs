@@ -314,7 +314,7 @@ mkInput cupt embs =
   where
     clear (sent, mayEmbs) = report sent $ do
       embs <- mayEmbs
-      guard $ simpleSent sent
+      -- guard $ simpleSent sent
       return (sent, embs)
     report sent mayVal = 
       case mayVal of
@@ -322,11 +322,11 @@ mkInput cupt embs =
         Nothing -> 
           let sentTxt = T.intercalate " " (map Cupt.orth sent)
            in trace ("Ignoring sentence: " ++ T.unpack sentTxt) Nothing
-    simpleSent sent = and $ do
-      tok <- sent
-      return $ case Cupt.tokID tok of
-                 Cupt.TokID _ -> True
-                 _ -> False
+--     simpleSent sent = and $ do
+--       tok <- sent
+--       return $ case Cupt.tokID tok of
+--                  Cupt.TokID _ -> True
+--                  _ -> False
 
 
 dhallPath :: FilePath -> Dhall.Text

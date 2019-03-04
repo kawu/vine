@@ -102,16 +102,24 @@ mkElem
   -> Sent d
     -- ^ Input sentence
   -> Elem d 2 DepRel POS
-mkElem mweSel Sent{..} =
+mkElem mweSel sent =
 
   createElem nodes arcs
 
   where
 
+    -- Cupt sentence with ID range tokens removed
+    cuptSentF = filter
+      (\tok -> case Cupt.tokID tok of
+                 Cupt.TokID _ -> True
+                 _ -> False
+      )
+      (cuptSent sent)
+
     -- A map from token IDs to tokens
     tokMap = M.fromList
       [ (Cupt.tokID tok, tok)
-      | tok <- cuptSent 
+      | tok <- cuptSentF 
       ]
     -- The parent of the given token
     tokPar tok = tokMap M.! Cupt.dephead tok
@@ -126,7 +134,7 @@ mkElem mweSel Sent{..} =
 
     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
     nodes = do
-      (tok, vec) <- zip cuptSent wordEmbs
+      (tok, vec) <- zip cuptSentF (wordEmbs sent)
       let node = Net.Node
             { nodeEmb = vec
             , nodeLab = Cupt.upos tok
@@ -136,7 +144,7 @@ mkElem mweSel Sent{..} =
       return (tokID tok, node)
     -- Labeled arcs of the graph
     arcs = do
-      tok <- cuptSent
+      tok <- cuptSentF
       -- Check the token is not a root
       guard . not $ isRoot tok
       let par = tokPar tok
