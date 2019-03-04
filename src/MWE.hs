@@ -5,12 +5,15 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE LambdaCase #-}
+-- {-# LANGUAGE ScopedTypeVariables #-}
 
 
 module MWE 
   ( Sent(..)
 
   -- * Training
+  , Config(..)
+  , Method(..)
   , train
   , depRelsIn
   , posTagsIn
@@ -37,6 +40,8 @@ import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.Backprop as BP
 
 import           Dhall -- (Interpret)
+import           Dhall.Core (Expr(..))
+import qualified Dhall.Map as Map
 -- import qualified Data.Aeson as JSON
 
 import qualified Data.Foldable as Fold
@@ -59,7 +64,9 @@ import           Net.ArcGraph (Elem)
 -- import qualified Net.MWE2 as MWE
 -- import qualified Embedding as Emb
 -- import qualified GradientDescent.Momentum as Mom
-import qualified Numeric.SGD.Pipe as SGD
+import qualified Numeric.SGD as SGD
+import qualified Numeric.SGD.Type as SGD
+import qualified Numeric.SGD.ParamSet as SGD
 import qualified Numeric.SGD.DataSet as SGD
 import qualified Numeric.SGD.AdaDelta as Ada
 import qualified Numeric.SGD.Momentum as Mom
@@ -201,25 +208,42 @@ tokID tok =
 ----------------------------------------------
 
 
--- instance JSON.FromJSON Mom.Config
--- instance JSON.ToJSON Mom.Config where
---   toEncoding = JSON.genericToEncoding JSON.defaultOptions
+-- Some orphan `Interpret` instances
 instance Interpret Mom.Config
-
--- instance JSON.FromJSON Ada.Config
--- instance JSON.ToJSON Ada.Config where
---   toEncoding = JSON.genericToEncoding JSON.defaultOptions
 instance Interpret Ada.Config
-
--- instance JSON.FromJSON SGD.Method
--- instance JSON.ToJSON SGD.Method where
---   toEncoding = JSON.genericToEncoding JSON.defaultOptions
-instance Interpret SGD.Method
-
--- instance JSON.FromJSON SGD.Config
--- instance JSON.ToJSON SGD.Config where
---   toEncoding = JSON.genericToEncoding JSON.defaultOptions
 instance Interpret SGD.Config
+-- instance Interpret SGD.Method
+
+
+data Method
+  = Momentum Mom.Config
+  | AdaDelta Ada.Config
+  deriving (Generic)
+
+instance Interpret Method where
+  autoWith _ = rmUnion_1 genericAuto
+
+
+data Config = Config
+  { sgd :: SGD.Config
+  , method :: Method
+  } deriving (Generic)
+
+instance Interpret Config
+
+
+-- | Select the sgd method
+toSGD
+  :: (SGD.ParamSet p)
+  => Method
+    -- ^ SGD method
+  -> (e -> p -> p)
+    -- ^ Gradient
+  -> SGD.SGD IO e p
+toSGD method grad =
+  case method of
+    Momentum cfg -> Mom.momentum cfg grad
+    AdaDelta cfg -> Ada.adaDelta cfg grad
 
 
 -- | Depdency relation
@@ -232,7 +256,7 @@ type POS = T.Text
 
 -- | Train the MWE identification network.
 train
-  :: SGD.Config
+  :: Config
     -- ^ General training confiration
   -> Int
     -- ^ Graph net recursion depth
@@ -245,14 +269,14 @@ train
     -- ^ Initial network
   -> IO (Net.Param 300 2 DepRel POS)
 --   -> IO (Net.Param 300)
-train sgdCfg depth mweTyp cupt net0 = do
+train Config{..} depth mweTyp cupt net0 = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
   let cupt' = map (mkElem (== mweTyp)) cupt
   SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     -- net0 <- Net.new 300 2
-    -- trainProgSGD sgdCfg dataSet globalDepth net0
-    SGD.sgd sgdCfg dataSet gradient quality net0
+    -- trainProgSGD sgd dataSet globalDepth net0
+    SGD.runIO sgd (toSGD method gradient) quality dataSet net0
   where
     gradient x = BP.gradBP (Net.netError [x] $ fromIntegral depth)
     quality x = BP.evalBP (Net.netError [x] $ fromIntegral depth)
@@ -444,3 +468,54 @@ maxMweID =
 
 
 -- report x = trace (show x) x
+
+
+----------------------------------------------
+-- Dhall Utils
+----------------------------------------------
+
+
+-- | Remove the top-level _1 fields from the given union type.
+rmUnion_1 :: Type a -> Type a
+rmUnion_1 typ = typ
+  { extract = \expr -> extract typ (add1 expr)
+  , expected = rm1 (expected typ)
+  }
+  where
+    -- Add _1 to union expression
+    add1 expr =
+      case expr of
+        Union m -> Union (fmap addField_1 m)
+        UnionLit key val m -> UnionLit key (addField_1 val) (fmap addField_1 m)
+        _ -> expr
+    -- Remove _1 from union epxression
+    rm1 expr =
+      case expr of
+        Union m -> Union (fmap rmField_1 m)
+        UnionLit key val m -> UnionLit key (rmField_1 val) (fmap rmField_1 m)
+        _ -> expr
+
+
+-- | Add _1 in the given record expression.
+addField_1 :: Expr s a -> Expr s a
+addField_1 expr =
+  case expr of
+    RecordLit m -> RecordLit (Map.singleton "_1" (RecordLit m))
+    Record m -> Record (Map.singleton "_1" (Record m))
+    _ -> expr
+
+
+
+-- | Remove _1 from the given record expression.
+rmField_1 :: Expr s a -> Expr s a
+rmField_1 expr =
+  case expr of
+    RecordLit m -> Prelude.maybe (RecordLit m) id $ do
+      guard $ Map.keys m == ["_1"]
+      RecordLit m' <- Map.lookup "_1" m
+      return (RecordLit m')
+    Record m -> Prelude.maybe (Record m) id $ do
+      guard $ Map.keys m == ["_1"]
+      Record m' <- Map.lookup "_1" m
+      return (Record m')
+    _ -> expr
