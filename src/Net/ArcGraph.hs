@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 -- {-# LANGUAGE DeriveFunctor #-}
@@ -141,7 +142,9 @@ instance Interpret Config
 --   * alb -- arc label
 --   * nlb -- node label
 data Param d c alb nlb = Param
-  { _incM :: L d d
+  {
+#ifdef Recursive
+    _incM :: L d d
     -- ^ Incoming edges matrix
   , _incB :: R d
     -- ^ Incoming edges bias
@@ -159,12 +162,13 @@ data Param d c alb nlb = Param
     -- ^ Reset matrix U
   , _finalW :: L d d
     -- ^ Final matrix W
-  , _finalU :: L d d
+  , _finalU :: L d d,
     -- ^ Final matrix U
+#endif
 
   -- Only the fields that follow are actually important in case when depth = 0.
 
-  , _probM :: L
+    _probM :: L
       c -- Output: probabilities for different categories
       d -- Size of the hidden state
     -- ^ Output probability matrix
@@ -225,8 +229,9 @@ new
     -- ^ Set of arc labels
   -> Config
   -> IO (Param d c alb nlb)
-new d c nodeLabelSet arcLabelSet Config{..} = Param
-  <$> matrix d d
+new d c nodeLabelSet arcLabelSet Config{..} = Param <$>
+#ifdef Recursive
+      matrix d d
   <*> vector d
   <*> matrix d d
   <*> vector d
@@ -235,8 +240,9 @@ new d c nodeLabelSet arcLabelSet Config{..} = Param
   <*> matrix d d
   <*> matrix d d
   <*> matrix d d
-  <*> matrix d d
-  <*> matrix c d -- FFN.new (d*2) d d 
+  <*> matrix d d <*>
+#endif
+      matrix c d -- FFN.new (d*2) d d 
   -- <*> vector d
   <*> ( if useBiaff
            then Just <$> matrix d (d*2)
@@ -347,9 +353,6 @@ run net depth graph =
           biAff = do
             biaff <- BP.sequenceVar (net ^^. arcBiaff)
             return $ biaff #> (hv # hw)
-          -- siAff = do
-          --   aff <- BP.sequenceVar (net ^^. wordAff)
-          --   return $ (aff #> hv) + (aff #> hw)
           unordBiAff = do
             biaff <- BP.sequenceVar (net ^^. arcUnordBiaff)
             vLex <- nodeLex <$> M.lookup v (nodeLabelMap graph)
@@ -406,6 +409,7 @@ run net depth graph =
           let x = softmax $ (net ^^. probM) #> h
           -- let x = elem0 $ FFN.run (net ^^. probN) h
           return (e, x)
+#ifdef Recursive
       | otherwise =
           let
             attMap = M.fromList $ do
@@ -460,6 +464,7 @@ run net depth graph =
               return (v, result)
           in
             go newHidden (mkArcMap newHidden) (k-1)
+#endif
 
 
 -- | Evaluate the network over a graph labeled with input word embeddings.

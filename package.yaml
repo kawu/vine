@@ -47,6 +47,7 @@ dependencies:
 
 library:
   source-dirs: src
+  # cpp-options: -DRecursive
 
 executables:
   bpfun-exe:
