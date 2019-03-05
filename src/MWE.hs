@@ -270,8 +270,6 @@ type POS = T.Text
 train
   :: Config
     -- ^ General training confiration
-  -> Int
-    -- ^ Graph net recursion depth
   -> Cupt.MweTyp
     -- ^ Selected MWE type (category)
   -> [Sent 300]
@@ -281,7 +279,7 @@ train
     -- ^ Initial network
   -> IO (Net.Param 300 2 DepRel POS)
 --   -> IO (Net.Param 300)
-train Config{..} depth mweTyp cupt net0 = do
+train Config{..} mweTyp cupt net0 = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
   let cupt' = map (mkElem (== mweTyp)) cupt
   SGD.withDisk cupt' $ \dataSet -> do
@@ -290,8 +288,8 @@ train Config{..} depth mweTyp cupt net0 = do
     -- trainProgSGD sgd dataSet globalDepth net0
     SGD.runIO sgd (toSGD method gradient) quality dataSet net0
   where
-    gradient x = BP.gradBP (Net.netError [x] $ fromIntegral depth)
-    quality x = BP.evalBP (Net.netError [x] $ fromIntegral depth)
+    gradient x = BP.gradBP (Net.netError [x])
+    quality x = BP.evalBP (Net.netError [x])
 
 
 -- | Extract dependeny relations present in the given dataset.
@@ -320,14 +318,13 @@ tagMany
   :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
   -> Net.Param 300 2 DepRel POS
                       -- ^ Network parameters
-  -> Int              -- ^ Depth (see also `trainDepth`)
   -> [Sent 300]       -- ^ Cupt sentences
   -> IO ()
-tagMany mweTyp net depth cupt = do
+tagMany mweTyp net cupt = do
   forM_ cupt $ \sent -> do
     T.putStr "# "
     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
-    tag mweTyp net depth sent
+    tag mweTyp net sent
 
 
 -- -- | Tag (output the result on stdin).
@@ -368,14 +365,13 @@ tag
   :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
   -> Net.Param 300 2 DepRel POS
                       -- ^ Network parameters
-  -> Int              -- ^ Depth (see also `trainDepth`)
   -> Sent 300         -- ^ Cupt sentence
   -> IO ()
-tag mweTyp net depth sent = do
+tag mweTyp net sent = do
   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
   where
     elem = mkElem (const False) sent
-    arcMap = Net.eval net depth (Net.graph elem)
+    arcMap = Net.eval net (Net.graph elem)
     sent' = annotate mweTyp (cuptSent sent) arcMap
 
 

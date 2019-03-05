@@ -73,8 +73,6 @@ data TrainConfig = TrainConfig
     -- ^ SGD configuration path
   , trainNetCfgPath :: FilePath
     -- ^ Net configuration path
-  , trainDepth :: Int
-    -- ^ Graph net recursion depth
   , trainInModel   :: Maybe FilePath
     -- ^ Input model (otherwise, random)
   , trainOutModel  :: Maybe FilePath
@@ -89,8 +87,6 @@ data TagConfig = TagConfig
   , tagMweCat :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
   , tagModel   :: FilePath
-    -- ^ Input model (otherwise, random)
-  , tagDepth   :: Int
     -- ^ Input model (otherwise, random)
   }
 
@@ -152,11 +148,6 @@ trainOptions = fmap Train $ TrainConfig
        <> short 'n'
        <> help "Network configuration"
         )
-  <*> option auto
-        ( long "depth"
-       <> short 'd'
-       <> help "Recursion depth"
-        )
   <*> (optional . strOption)
         ( metavar "FILE"
        <> long "model"
@@ -195,11 +186,6 @@ tagOptions = fmap Tag $ TagConfig
        <> long "model"
        <> short 'm'
        <> help "Input model"
-        )
-  <*> option auto
-        ( long "depth"
-       <> short 'd'
-       <> help "Recursion depth"
         )
 
 
@@ -265,7 +251,7 @@ run cmd =
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
-      net <- MWE.train sgdCfg trainDepth trainMweCat
+      net <- MWE.train sgdCfg trainMweCat
         (mkInput cupt embs) net0
       case trainOutModel of
         Nothing -> return ()
@@ -282,7 +268,7 @@ run cmd =
         <$> Cupt.readCupt tagCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings tagEmbs
-      MWE.tagMany tagMweCat net tagDepth
+      MWE.tagMany tagMweCat net
         (mkInput cupt embs)
 
 

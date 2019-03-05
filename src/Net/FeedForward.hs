@@ -18,7 +18,7 @@ module Net.FeedForward
   ( FFN (..)
   , new
   , run
-  , substract
+  -- , substract
   ) where
 
 import           GHC.Generics (Generic)
@@ -47,8 +47,10 @@ import qualified Numeric.LinearAlgebra.Static as LA
 import           Numeric.LinearAlgebra.Static.Backprop ((#>))
 -- import qualified Debug.SimpleReflect as Refl
 
+import           Numeric.SGD.ParamSet (ParamSet)
+
 import           Net.Basic
-import qualified GradientDescent.Momentum as Mom
+-- import qualified GradientDescent.Momentum as Mom
 
 
 ----------------------------------------------
@@ -70,28 +72,31 @@ instance (KnownNat idim, KnownNat hdim, KnownNat odim)
 makeLenses ''FFN
 
 instance (KnownNat i, KnownNat h, KnownNat o)
-  => Mom.ParamSet (FFN i h o) where
-  zero = FFN 0 0 0 0
-  add x y = FFN
-    { _nWeights1 = _nWeights1 x + _nWeights1 y
-    , _nBias1 = _nBias1 x + _nBias1 y
-    , _nWeights2 = _nWeights2 x + _nWeights2 y
-    , _nBias2 = _nBias2 x + _nBias2 y
-    }
-  scale coef x = FFN
-    { _nWeights1 = scaleL $ _nWeights1 x
-    , _nBias1 = scaleR $ _nBias1 x
-    , _nWeights2 = scaleL $ _nWeights2 x
-    , _nBias2 = scaleR $ _nBias2 x
-    } where
-        scaleL = LA.dmmap (*coef)
-        scaleR = LA.dvmap (*coef)
-  size net = sqrt $ sum
-    [ LA.norm_2 (_nWeights1 net) ^ 2
-    , LA.norm_2 (_nBias1 net) ^ 2
-    , LA.norm_2 (_nWeights2 net) ^ 2
-    , LA.norm_2 (_nBias2 net) ^ 2
-    ]
+  => ParamSet (FFN i h o)
+
+-- instance (KnownNat i, KnownNat h, KnownNat o)
+--   => Mom.ParamSet (FFN i h o) where
+--   zero = FFN 0 0 0 0
+--   add x y = FFN
+--     { _nWeights1 = _nWeights1 x + _nWeights1 y
+--     , _nBias1 = _nBias1 x + _nBias1 y
+--     , _nWeights2 = _nWeights2 x + _nWeights2 y
+--     , _nBias2 = _nBias2 x + _nBias2 y
+--     }
+--   scale coef x = FFN
+--     { _nWeights1 = scaleL $ _nWeights1 x
+--     , _nBias1 = scaleR $ _nBias1 x
+--     , _nWeights2 = scaleL $ _nWeights2 x
+--     , _nBias2 = scaleR $ _nBias2 x
+--     } where
+--         scaleL = LA.dmmap (*coef)
+--         scaleR = LA.dvmap (*coef)
+--   size net = sqrt $ sum
+--     [ LA.norm_2 (_nWeights1 net) ^ 2
+--     , LA.norm_2 (_nBias1 net) ^ 2
+--     , LA.norm_2 (_nWeights2 net) ^ 2
+--     , LA.norm_2 (_nBias2 net) ^ 2
+--     ]
 
 -- | Create a new, random FFN
 new
@@ -112,27 +117,27 @@ run
 run net x = z
   where
     -- run first layer
-    y = leakyRelu $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
+    y = relu $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
     -- run second layer
     z = (net ^^. nWeights2) #> y + (net ^^. nBias2)
 
 
--- | Substract the second network from the first one.
-substract 
-  :: (KnownNat idim, KnownNat hdim, KnownNat odim)
-  => FFN idim hdim odim
-  -> FFN idim hdim odim
-  -> Double 
-  -> FFN idim hdim odim
-substract x y coef = FFN
-  { _nWeights1 = _nWeights1 x - scale (_nWeights1 y)
-  , _nBias1 = _nBias1 x - scale (_nBias1 y)
-  , _nWeights2 = _nWeights2 x - scale (_nWeights2 y)
-  , _nBias2 = _nBias2 x - scale (_nBias2 y)
-  }
-  where
-    scale x
-      = fromJust
-      . LA.create
-      . LAD.scale coef
-      $ LA.unwrap x
+-- -- | Substract the second network from the first one.
+-- substract 
+--   :: (KnownNat idim, KnownNat hdim, KnownNat odim)
+--   => FFN idim hdim odim
+--   -> FFN idim hdim odim
+--   -> Double 
+--   -> FFN idim hdim odim
+-- substract x y coef = FFN
+--   { _nWeights1 = _nWeights1 x - scale (_nWeights1 y)
+--   , _nBias1 = _nBias1 x - scale (_nBias1 y)
+--   , _nWeights2 = _nWeights2 x - scale (_nWeights2 y)
+--   , _nBias2 = _nBias2 x - scale (_nBias2 y)
+--   }
+--   where
+--     scale x
+--       = fromJust
+--       . LA.create
+--       . LAD.scale coef
+--       $ LA.unwrap x

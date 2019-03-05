@@ -91,8 +91,8 @@ import qualified Numeric.LinearAlgebra.Static as LA
 
 import           Net.Basic
 -- import qualified Net.List as NL
--- import qualified Net.FeedForward as FFN
--- import           Net.FeedForward (FFN(..))
+import qualified Net.FeedForward as FFN
+import           Net.FeedForward (FFN(..))
 -- import qualified GradientDescent as GD
 -- import qualified GradientDescent.Momentum as Mom
 -- import qualified GradientDescent.Nestorov as Mom
@@ -143,43 +143,25 @@ instance Interpret Config
 --   * nlb -- node label
 data Param d c alb nlb = Param
   {
-#ifdef Recursive
-    _incM :: L d d
-    -- ^ Incoming edges matrix
-  , _incB :: R d
-    -- ^ Incoming edges bias
-  , _outM :: L d d
-    -- ^ Outgoing edges matrix
-  , _outB :: R d
-    -- ^ Outgoing edges bias
-  , _updateW :: L d d
-    -- ^ Update matrix W
-  , _updateU :: L d d
-    -- ^ Update matrix U
-  , _resetW :: L d d
-    -- ^ Reset matrix W
-  , _resetU :: L d d
-    -- ^ Reset matrix U
-  , _finalW :: L d d
-    -- ^ Final matrix W
-  , _finalU :: L d d,
-    -- ^ Final matrix U
-#endif
+--     _probM :: L
+--       c -- Output: probabilities for different categories
+--       d -- Size of the hidden state
+--     -- ^ Output probability matrix
+--     -- WARNING: it might be not enough to use a matrix here, since it is not
+--     -- able to transform a 0 vector into something which is not 0!
 
-  -- Only the fields that follow are actually important in case when depth = 0.
-
-    _probM :: L
-      c -- Output: probabilities for different categories
-      d -- Size of the hidden state
-    -- ^ Output probability matrix
-    -- WARNING: it might be not enough to use a matrix here, since it is not
-    -- able to transform a 0 vector into something which is not 0!
+    _probN :: FFN
+      d -- Hidden arc representation
+      d -- Hidden layer size
+      c -- Output
+    -- ^ Potential FFN
 
 --   , _potN :: FFN
 --       (d Nats.+ d)
 --       d -- Hidden layer size
 --       d -- Output
 --     -- ^ Potential FFN
+
 --   , _potR :: R d
 --     -- ^ Potential ,,feature vector''
 
@@ -229,20 +211,8 @@ new
     -- ^ Set of arc labels
   -> Config
   -> IO (Param d c alb nlb)
-new d c nodeLabelSet arcLabelSet Config{..} = Param <$>
-#ifdef Recursive
-      matrix d d
-  <*> vector d
-  <*> matrix d d
-  <*> vector d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix d d
-  <*> matrix d d <*>
-#endif
-      matrix c d -- FFN.new (d*2) d d 
+new d c nodeLabelSet arcLabelSet Config{..} = Param
+  <$> FFN.new d d c -- matrix c d
   -- <*> vector d
   <*> ( if useBiaff
            then Just <$> matrix d (d*2)
@@ -325,78 +295,72 @@ run
   :: ( KnownNat d, KnownNat c
     , Ord alb, Show alb
     , Ord nlb, Show nlb
-    , Reifies s W 
+    , Reifies s W
      )
   => BVar s (Param d c alb nlb)
     -- ^ Graph network / params
-  -> Int
-    -- ^ Recursion depth
-  -- -> Graph (BVar s (R d)) b
-  -- -> Graph (R d) b
   -> Graph (Node d nlb) alb
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s (R c))
 --   -> M.Map Arc (BVar s Double)
     -- ^ Output map with output potential values
-run net depth graph =
-  let nodeMap =
-        fmap (BP.constVar . nodeEmb) (nodeLabelMap graph)
-   in go nodeMap (mkArcMap nodeMap) depth
-  where
-    mkArcMap nodeMap = M.fromList $ do
-      (v, w) <- graphArcs graph
-      let hv = nodeMap M.! v
-          hw = nodeMap M.! w
-          -- NOTE: consider using feed-forward network?
-          -- NOTE: with `logistic` training didn't go well, but maybe you can
-          --   try it again later
-          biAff = do
-            biaff <- BP.sequenceVar (net ^^. arcBiaff)
-            return $ biaff #> (hv # hw)
-          unordBiAff = do
-            biaff <- BP.sequenceVar (net ^^. arcUnordBiaff)
-            vLex <- nodeLex <$> M.lookup v (nodeLabelMap graph)
-            wLex <- nodeLex <$> M.lookup w (nodeLabelMap graph)
-            return $ if vLex <= wLex
-               then biaff #> (hv # hw)
-               else biaff #> (hw # hv)
-          srcAff = do
-            aff <- BP.sequenceVar (net ^^. sourceAff)
-            return $ aff #> hv
-          trgAff = do
-            aff <- BP.sequenceVar (net ^^. targetAff)
-            return $ aff #> hw
-          arcBias = do
-            arcBiasMap <- BP.sequenceVar (net ^^. arcLabelB)
-            let err = trace
-                  ( "ArcGraph.run: unknown arc label ("
-                  ++ show (M.lookup (v, w) (arcLabelMap graph))
-                  ++ ")" ) 0
-            return . maybe err id $ do
-              arcLabel <- M.lookup (v, w) (arcLabelMap graph)
-              arcBiasMap ^^? ixAt arcLabel
-          nodePairBias = do
-            nodeBiasMap <- BP.sequenceVar (net ^^. nodeLabelB)
-            -- Construct the node labels here for the sake of error reporting
-            let nodeLabels = do
-                  vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
-                  wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
-                  return (vLabel, wLabel)
-                err = trace
-                  ( "ArcGraph.run: undefined node label(s) ("
-                  ++ show nodeLabels
-                  ++ ")" ) 0
-            return . maybe err id $ do
+run net graph = M.fromList $ do
+  (v, w) <- graphArcs graph
+  let nodeMap = fmap (BP.constVar . nodeEmb) (nodeLabelMap graph)
+      hv = nodeMap M.! v
+      hw = nodeMap M.! w
+      -- NOTE: consider using feed-forward network?
+      -- NOTE: with `logistic` training didn't go well, but maybe you can
+      --   try it again later
+      biAff = do
+        biaff <- BP.sequenceVar (net ^^. arcBiaff)
+        return $ biaff #> (hv # hw)
+      unordBiAff = do
+        biaff <- BP.sequenceVar (net ^^. arcUnordBiaff)
+        vLex <- nodeLex <$> M.lookup v (nodeLabelMap graph)
+        wLex <- nodeLex <$> M.lookup w (nodeLabelMap graph)
+        return $ if vLex <= wLex
+           then biaff #> (hv # hw)
+           else biaff #> (hw # hv)
+      srcAff = do
+        aff <- BP.sequenceVar (net ^^. sourceAff)
+        return $ aff #> hv
+      trgAff = do
+        aff <- BP.sequenceVar (net ^^. targetAff)
+        return $ aff #> hw
+      arcBias = do
+        arcBiasMap <- BP.sequenceVar (net ^^. arcLabelB)
+        let err = trace
+              ( "ArcGraph.run: unknown arc label ("
+              ++ show (M.lookup (v, w) (arcLabelMap graph))
+              ++ ")" ) 0
+        return . maybe err id $ do
+          arcLabel <- M.lookup (v, w) (arcLabelMap graph)
+          arcBiasMap ^^? ixAt arcLabel
+      nodePairBias = do
+        nodeBiasMap <- BP.sequenceVar (net ^^. nodeLabelB)
+        -- Construct the node labels here for the sake of error reporting
+        let nodeLabels = do
               vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
               wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
-              nodeBiasMap ^^? ixAt (vLabel, wLabel)
-          bias = Just $ net ^^. arcB
-          he = sum . catMaybes $
-            [ biAff, unordBiAff, srcAff, trgAff
-            , arcBias, nodePairBias, bias
-            ]
-      return ((v, w), he)
-    go prevNodeMap prevArcMap k
+              return (vLabel, wLabel)
+            err = trace
+              ( "ArcGraph.run: undefined node label(s) ("
+              ++ show nodeLabels
+              ++ ")" ) 0
+        return . maybe err id $ do
+          vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+          wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+          nodeBiasMap ^^? ixAt (vLabel, wLabel)
+      bias = Just $ net ^^. arcB
+      he = sum . catMaybes $
+        [ biAff, unordBiAff, srcAff, trgAff
+        , arcBias, nodePairBias, bias
+        ]
+      -- x = softmax $ (net ^^. probM) #> he
+      x = softmax $ FFN.run (net ^^. probN) he
+  return ((v, w), x)
+--     go prevNodeMap prevArcMap
 --       | k <= 0 = M.fromList $ do
 --           (p, q) <- graphArcs graph
 --           let v = prevNodeMap M.! p
@@ -404,67 +368,6 @@ run net depth graph =
 --           let x = (net ^^. potR) `dot`
 --                   (FFN.run (net ^^. potN) (v # w))
 --           return ((p, q), logistic x)
-      | k <= 0 = M.fromList $ do
-          (e, h) <- M.toList prevArcMap
-          let x = softmax $ (net ^^. probM) #> h
-          -- let x = elem0 $ FFN.run (net ^^. probN) h
-          return (e, x)
-#ifdef Recursive
-      | otherwise =
-          let
-            attMap = M.fromList $ do
-              v <- graphNodes graph
-              let inc = sum $ do
-                    w <- incoming v graph
-                    let hw = prevArcMap M.! (w, v)
-                        -- TODO: perhaps bias should not be included for each
-                        -- adjacent edge, just once?
-                        x = (net ^^. incM) #> hw + (net ^^. incB)
-                    return x
-              let out = sum $ do
-                    w <- outgoing v graph
-                    let hw = prevArcMap M.! (v, w)
-                        -- TODO: perhaps bias should not be included for each
-                        -- adjacent edge, just once?
-                        x = (net ^^. outM) #> hw + (net ^^. outB)
-                    return x
-              -- TODO: here something different then sum (maybe concatenation?)
-              -- could be possibly used
-              return (v, inc + out)
-            updateMap = M.fromList $ do
-              v <- graphNodes graph
-              let att = attMap M.! v
-                  upd = sigma
-                      $ (net ^^. updateW) #> att
-                      + (net ^^. updateU) #> (prevNodeMap M.! v)
-              return (v, upd)
-            resetMap = M.fromList $ do
-              v <- graphNodes graph
-              let att = attMap M.! v
-                  res = sigma
-                      $ (net ^^. resetW) #> att
-                      + (net ^^. resetU) #> (prevNodeMap M.! v)
-              return (v, res)
-            newHiddenTilda = M.fromList $ do
-              v <- graphNodes graph
-              let att = attMap M.! v
-                  res = resetMap M.! v
-                  hidPrev = prevNodeMap M.! v
-                  result = tanh
-                    ( (net ^^. finalW) #> att +
-                      (net ^^. finalU) #> (res * hidPrev)
-                    )
-              return (v, result)
-            newHidden = M.fromList $ do
-              v <- graphNodes graph
-              let upd = updateMap M.! v
-                  hidPrev = prevNodeMap M.! v
-                  hidTilda = newHiddenTilda M.! v
-                  result = ((1 - upd)*hidPrev) + (upd*hidTilda)
-              return (v, result)
-          in
-            go newHidden (mkArcMap newHidden) (k-1)
-#endif
 
 
 -- | Evaluate the network over a graph labeled with input word embeddings.
@@ -475,19 +378,16 @@ eval
      , Ord nlb, Show nlb )
   => Param d c alb nlb
     -- ^ Graph network / params
-  -> Int
-    -- ^ Recursion depth
   -- -> Graph (R d) b
   -> Graph (Node d nlb) alb
     -- ^ Input graph labeled with initial hidden states (word embeddings)
   -> M.Map Arc (R c)
 --   -> M.Map Arc Double
-eval net depth graph =
+eval net graph =
   BP.evalBP0
     ( BP.collectVar
     $ run
         (BP.constVar net)
-        depth
         graph -- (nmap BP.constVar graph)
     )
 
@@ -685,14 +585,13 @@ netError
      , Ord alb, Show alb, Ord nlb, Show nlb
      )
   => DataSet d c alb nlb
-  -> Int -- ^ Recursion depth
   -> BVar s (Param d c alb nlb)
   -> BVar s Double
-netError dataSet depth net =
+netError dataSet net =
   let
     inputs = map graph dataSet
-    -- outputs = map (run net depth . nmap BP.auto) inputs
-    outputs = map (run net depth) inputs
+    -- outputs = map (run net . nmap BP.auto) inputs
+    outputs = map (run net) inputs
     targets = map (fmap BP.auto . labMap) dataSet
   in  
     errorMany targets outputs -- + (size net * 0.01)
