@@ -68,8 +68,9 @@ import qualified Numeric.SGD as SGD
 import qualified Numeric.SGD.Type as SGD
 import qualified Numeric.SGD.ParamSet as SGD
 import qualified Numeric.SGD.DataSet as SGD
-import qualified Numeric.SGD.AdaDelta as Ada
 import qualified Numeric.SGD.Momentum as Mom
+import qualified Numeric.SGD.AdaDelta as Ada
+import qualified Numeric.SGD.Adam as Adam
 -- import qualified SGD as SGD
 
 -- import Debug.Trace (trace)
@@ -219,6 +220,7 @@ tokID tok =
 -- Some orphan `Interpret` instances
 instance Interpret Mom.Config
 instance Interpret Ada.Config
+instance Interpret Adam.Config
 instance Interpret SGD.Config
 -- instance Interpret SGD.Method
 
@@ -226,6 +228,7 @@ instance Interpret SGD.Config
 data Method
   = Momentum Mom.Config
   | AdaDelta Ada.Config
+  | Adam Adam.Config
   deriving (Generic)
 
 instance Interpret Method where
@@ -252,6 +255,7 @@ toSGD method grad =
   case method of
     Momentum cfg -> Mom.momentum cfg grad
     AdaDelta cfg -> Ada.adaDelta cfg grad
+    Adam cfg -> Adam.adam cfg grad
 
 
 -- | Depdency relation
