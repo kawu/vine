@@ -286,7 +286,9 @@ train Config{..} mweTyp cupt net0 = do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     -- net0 <- Net.new 300 2
     -- trainProgSGD sgd dataSet globalDepth net0
-    SGD.runIO sgd (toSGD method gradient) quality dataSet net0
+    SGD.runIO sgd
+      (toSGD method $ SGD.batchGrad gradient)
+      quality dataSet net0
   where
     gradient x = BP.gradBP (Net.netError [x])
     quality x = BP.evalBP (Net.netError [x])
