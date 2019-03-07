@@ -44,6 +44,7 @@ dependencies:
 - aeson >= 1.2 && < 1.5
 - sgd >= 0.7 && < 0.8
 - lens >= 4.16 && < 4.18
+- deepseq >= 1.4 && < 1.5
 
 library:
   source-dirs: src

@@ -26,6 +26,7 @@ import           GHC.TypeNats (KnownNat)
 import qualified GHC.TypeNats as Nats
 
 import           Control.Monad (forM, forM_)
+import           Control.DeepSeq (NFData)
 
 import           System.Random (randomRIO)
 
@@ -59,10 +60,10 @@ import           Net.Basic
 
 
 data FFN idim hdim odim = FFN
-  { _nWeights1 :: L hdim idim
-  , _nBias1    :: R hdim
-  , _nWeights2 :: L odim hdim
-  , _nBias2    :: R odim
+  { _nWeights1 :: !(L hdim idim)
+  , _nBias1    :: !(R hdim)
+  , _nWeights2 :: !(L odim hdim)
+  , _nBias2    :: !(R odim)
   }
   deriving (Show, Generic, Binary)
 
@@ -73,6 +74,9 @@ makeLenses ''FFN
 
 instance (KnownNat i, KnownNat h, KnownNat o)
   => ParamSet (FFN i h o)
+
+instance (KnownNat i, KnownNat h, KnownNat o)
+  => NFData (FFN i h o)
 
 -- instance (KnownNat i, KnownNat h, KnownNat o)
 --   => Mom.ParamSet (FFN i h o) where

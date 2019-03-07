@@ -77,6 +77,7 @@ import           Codec.Compression.Zlib (compress, decompress)
 
 -- import qualified Data.Map.Lens as ML
 import           Control.Lens.At (ixAt)
+import           Control.DeepSeq (NFData)
 
 import           Dhall (Interpret)
 import qualified Data.Aeson as JSON
@@ -199,6 +200,9 @@ makeLenses ''Param
 instance (KnownNat d, KnownNat c, Ord alb, Ord nlb)
   => ParamSet (Param d c alb nlb)
 
+instance (KnownNat d, KnownNat c, NFData alb, NFData nlb)
+  => NFData (Param d c alb nlb)
+
 
 -- | Create a new, random network.
 new
@@ -218,6 +222,7 @@ new d c nodeLabelSet arcLabelSet Config{..} = Param
            then Just <$> matrix d (d*2)
            else pure Nothing
       )
+--   <*> matrix d (d*2)
   <*> ( if useUnordBiaff
            then Just <$> matrix d (d*2)
            else pure Nothing
@@ -315,6 +320,7 @@ run net graph = M.fromList $ do
       biAff = do
         biaff <- BP.sequenceVar (net ^^. arcBiaff)
         return $ biaff #> (hv # hw)
+      -- biAff = Just $ (net ^^. arcBiaff) #> (hv # hw)
       unordBiAff = do
         biaff <- BP.sequenceVar (net ^^. arcUnordBiaff)
         vLex <- nodeLex <$> M.lookup v (nodeLabelMap graph)
