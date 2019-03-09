@@ -71,8 +71,8 @@ data TrainConfig = TrainConfig
     -- ^ MWE category (e.g., LVC) to focus on
   , trainSgdCfgPath :: FilePath
     -- ^ SGD configuration path
-  , trainNetCfgPath :: FilePath
-    -- ^ Net configuration path
+--   , trainNetCfgPath :: FilePath
+--     -- ^ Net configuration path
   , trainInModel   :: Maybe FilePath
     -- ^ Input model (otherwise, random)
   , trainOutModel  :: Maybe FilePath
@@ -142,12 +142,12 @@ trainOptions = fmap Train $ TrainConfig
        <> short 's'
        <> help "SGD configuration"
         )
-  <*> strOption
-        ( metavar "FILE"
-       <> long "net"
-       <> short 'n'
-       <> help "Network configuration"
-        )
+--   <*> strOption
+--         ( metavar "FILE"
+--        <> long "net"
+--        <> short 'n'
+--        <> help "Network configuration"
+--         )
   <*> (optional . strOption)
         ( metavar "FILE"
        <> long "model"
@@ -232,8 +232,8 @@ run cmd =
 --           Nothing -> return MWE.defTrainCfg
 --           Just configPath ->
 --             Dhall.input Dhall.auto (dhallPath configPath)
-      -- Network configuration
-      netCfg <- Dhall.input Dhall.auto (dhallPath trainNetCfgPath)
+--       -- Network configuration
+--       netCfg <- Dhall.input Dhall.auto (dhallPath trainNetCfgPath)
 
       -- Initial network
       net0 <- 
@@ -244,7 +244,7 @@ run cmd =
               <$> Cupt.readCupt trainCupt
             posTagSet <- MWE.posTagsIn . concat
               <$> Cupt.readCupt trainCupt
-            Graph.new 300 posTagSet depRelSet netCfg
+            Graph.new 300 posTagSet depRelSet -- netCfg
           Just path -> Graph.loadParam path
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
