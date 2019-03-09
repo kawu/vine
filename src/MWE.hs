@@ -102,7 +102,7 @@ mkElem
     -- ^ MWE type (category) selection method
   -> Sent d
     -- ^ Input sentence
-  -> Elem d 2 DepRel POS
+  -> Elem d DepRel POS
 mkElem mweSel sent =
 
   createElem nodes arcs
@@ -165,7 +165,7 @@ createElem
   -- => [(G.Vertex, R d, POS)]
   => [(G.Vertex, Net.Node d POS)]
   -> [(Net.Arc, DepRel, Bool)]
-  -> Elem d 2 DepRel POS
+  -> Elem d DepRel POS
 createElem nodes arcs = Net.Elem
   { graph = graph
   , labMap = valMap
@@ -187,10 +187,10 @@ createElem nodes arcs = Net.Elem
       (arc, _arcLab, isMwe) <- arcs
       return 
         ( arc
---         , if isMwe then 1.0 else 0.0
-        , if isMwe
-             then mwe
-             else notMwe
+        , if isMwe then 1.0 else 0.0
+--         , if isMwe
+--              then mwe
+--              else notMwe
         )
     _1 (x, _, _) = x
     -- _2 (_, y, _) = y
@@ -274,10 +274,10 @@ train
     -- ^ Selected MWE type (category)
   -> [Sent 300]
     -- ^ Training dataset
-  -> Net.Param 300 2 DepRel POS
+  -> Net.Param 300 DepRel POS
 --   -> Net.Param 300
     -- ^ Initial network
-  -> IO (Net.Param 300 2 DepRel POS)
+  -> IO (Net.Param 300 DepRel POS)
 --   -> IO (Net.Param 300)
 train Config{..} mweTyp cupt net0 = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
@@ -318,7 +318,7 @@ posTagsIn =
 -- | Tag many sentences
 tagMany
   :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
-  -> Net.Param 300 2 DepRel POS
+  -> Net.Param 300 DepRel POS
                       -- ^ Network parameters
   -> [Sent 300]       -- ^ Cupt sentences
   -> IO ()
@@ -365,7 +365,7 @@ tagMany mweTyp net cupt = do
 -- | Tag (output the result on stdin).
 tag
   :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
-  -> Net.Param 300 2 DepRel POS
+  -> Net.Param 300 DepRel POS
                       -- ^ Network parameters
   -> Sent 300         -- ^ Cupt sentence
   -> IO ()
@@ -389,7 +389,8 @@ annotate
     -- ^ MWE category
   -> Cupt.Sent
     -- ^ Input .cupt sentence
-  -> M.Map Net.Arc (R 2)
+  -- -> M.Map Net.Arc (R 2)
+  -> M.Map Net.Arc Double
     -- ^ Net evaluation results
   -> Cupt.Sent
 annotate mweTyp cupt arcMap =
@@ -411,10 +412,11 @@ annotate mweTyp cupt arcMap =
       guard $ isMWE v
       return arc
 
-    isMWE statVect =
-      let vect = LA.unwrap statVect
-          val = vect `LAD.atIndex` 1
-       in val > 0.5
+    isMWE = (>= 0.5)
+--     isMWE statVect =
+--       let vect = LA.unwrap statVect
+--           val = vect `LAD.atIndex` 1
+--        in val > 0.5
 
     -- Determine the mapping from nodes to new MWE id's
     ccs = findConnectedComponents arcSet

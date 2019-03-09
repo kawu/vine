@@ -142,7 +142,8 @@ instance Interpret Config
 --   * c -- number of classes
 --   * alb -- arc label
 --   * nlb -- node label
-data Param d c alb nlb = Param
+-- data Param d c alb nlb = Param
+data Param d alb nlb = Param
   {
 --     _probM :: L
 --       c -- Output: probabilities for different categories
@@ -151,99 +152,115 @@ data Param d c alb nlb = Param
 --     -- WARNING: it might be not enough to use a matrix here, since it is not
 --     -- able to transform a 0 vector into something which is not 0!
 
-    _probN :: FFN
-      d -- Hidden arc representation
-      d -- Hidden layer size
-      c -- Output
-    -- ^ Potential FFN
-
---   , _potN :: FFN
---       (d Nats.+ d)
+--     _probN :: FFN
+--       d -- Hidden arc representation
 --       d -- Hidden layer size
---       d -- Output
+--       c -- Output
 --     -- ^ Potential FFN
 
---   , _potR :: R d
---     -- ^ Potential ,,feature vector''
+    _potN :: FFN
+      (d Nats.+ d)
+      -- TODO: make hidden layer larger?  The example with the grenade library
+      -- suggests this.
+      d -- Hidden layer size
+      d -- Output
+    -- ^ Potential FFN
+  , _potR :: R d
+    -- ^ Potential ,,feature vector''
 
-  , _arcBiaff :: Maybe (L d (d Nats.+ d))
-    -- ^ Biaffine bias
-  , _arcUnordBiaff :: Maybe (L d (d Nats.+ d))
-    -- ^ Unordered biaffine bias
+--   , _arcBiaff :: Maybe (L d (d Nats.+ d))
+--     -- ^ Biaffine bias
+--   , _arcUnordBiaff :: Maybe (L d (d Nats.+ d))
+--     -- ^ Unordered biaffine bias
 
-  , _arcB :: R d
+--   , _arcB :: R d
+--     -- ^ Default bias
+
+  , _arcB :: Double
     -- ^ Default bias
 
-  -- NOTE: We replace the single `_wordAff` with two word-related affinities.
-  -- This is because the affinity of a word being a VMWE head will typically be
-  -- different from the affinity of this word being a MWE dependent.
-  --
-  -- , _wordAff :: Maybe (L d d) -- `Nothing` means that not used
-  -- -- ^ (Single) word affinity (NEW 27.02.2019)
-  , _sourceAff :: Maybe (L d d) -- `Nothing` means that not used
-    -- ^ Source word affinity (NEW 01.03.2019)
-  , _targetAff :: Maybe (L d d) -- `Nothing` means that not used
-    -- ^ Target word affinity (NEW 01.03.2019)
+--   -- NOTE: We replace the single `_wordAff` with two word-related affinities.
+--   -- This is because the affinity of a word being a VMWE head will typically be
+--   -- different from the affinity of this word being a MWE dependent.
+--   --
+--   -- , _wordAff :: Maybe (L d d) -- `Nothing` means that not used
+--   -- -- ^ (Single) word affinity (NEW 27.02.2019)
+--   , _sourceAff :: Maybe (L d d) -- `Nothing` means that not used
+--     -- ^ Source word affinity (NEW 01.03.2019)
+--   , _targetAff :: Maybe (L d d) -- `Nothing` means that not used
+--     -- ^ Target word affinity (NEW 01.03.2019)
 
-  , _arcLabelB :: Maybe (M.Map alb (R d))
+  , _arcLabelB :: Maybe (M.Map alb Double)
     -- ^ Arc label (UD dependency relation) induced bias (NEW 28.02.2019)
 
-  , _nodeLabelB :: Maybe (M.Map (nlb, nlb) (R d))
-    -- ^ Arc label (UD dependency relation) induced bias (NEW 28.02.2019)
+--   , _nodeLabelB :: Maybe (M.Map (nlb, nlb) Double)
+--     -- ^ Arc label (UD dependency relation) induced bias (NEW 28.02.2019)
+
+--   , _nodeLabelB :: Maybe (M.Map (nlb, nlb) (R d))
+--     -- ^ Arc label (UD dependency relation) induced bias (NEW 28.02.2019)
   } deriving (Generic, Binary)
   -- NOTE: automatically deriving `Show` does not work 
 
-instance (KnownNat d, KnownNat c, Ord alb, Ord nlb)
-  => BP.Backprop (Param d c alb nlb)
+instance (KnownNat d, Ord alb, Ord nlb)
+  => BP.Backprop (Param d alb nlb)
 makeLenses ''Param
 
-instance (KnownNat d, KnownNat c, Ord alb, Ord nlb)
-  => ParamSet (Param d c alb nlb)
+instance (KnownNat d, Ord alb, Ord nlb)
+  => ParamSet (Param d alb nlb)
 
-instance (KnownNat d, KnownNat c, NFData alb, NFData nlb)
-  => NFData (Param d c alb nlb)
+instance (KnownNat d, NFData alb, NFData nlb)
+  => NFData (Param d alb nlb)
 
 
 -- | Create a new, random network.
 new
-  :: (KnownNat d, KnownNat c, Ord alb, Ord nlb)
+  :: (KnownNat d, Ord alb, Ord nlb)
   => Int
-  -> Int
   -> S.Set nlb
     -- ^ Set of node labels
   -> S.Set alb
     -- ^ Set of arc labels
   -> Config
-  -> IO (Param d c alb nlb)
-new d c nodeLabelSet arcLabelSet Config{..} = Param
-  <$> FFN.new d d c -- matrix c d
-  -- <*> vector d
-  <*> ( if useBiaff
-           then Just <$> matrix d (d*2)
-           else pure Nothing
-      )
---   <*> matrix d (d*2)
-  <*> ( if useUnordBiaff
-           then Just <$> matrix d (d*2)
-           else pure Nothing
-      )
+  -> IO (Param d alb nlb)
+new d nodeLabelSet arcLabelSet Config{..} = Param
+  -- <$> FFN.new d d c -- matrix c d
+  <$> FFN.new (d*2) d d
   <*> vector d
-  <*> ( if useWordAff
-           then Just <$> matrix d d
-           else pure Nothing
-      )
-  <*> ( if useWordAff
-           then Just <$> matrix d d
-           else pure Nothing
-      )
+  <*> pure 0
+--   <*> ( if useBiaff
+--            then Just <$> matrix d (d*2)
+--            else pure Nothing
+--       )
+-- --   <*> matrix d (d*2)
+--   <*> ( if useUnordBiaff
+--            then Just <$> matrix d (d*2)
+--            else pure Nothing
+--       )
+--   <*> vector d
+--   <*> ( if useWordAff
+--            then Just <$> matrix d d
+--            else pure Nothing
+--       )
+--   <*> ( if useWordAff
+--            then Just <$> matrix d d
+--            else pure Nothing
+--       )
+--   <*> ( if useArcLabels
+--            then Just <$> mkMap arcLabelSet (vector d)
+--            else pure Nothing
+--       )
   <*> ( if useArcLabels
-           then Just <$> mkMap arcLabelSet (vector d)
+           then Just <$> mkMap arcLabelSet (pure 0)
            else pure Nothing
       )
-  <*> ( if useNodeLabels
-           then Just <$> mkMap (cart nodeLabelSet) (vector d)
-           else pure Nothing
-      )
+-- --   <*> ( if useNodeLabels
+-- --            then Just <$> mkMap (cart nodeLabelSet) (vector d)
+-- --            else pure Nothing
+-- --       )
+--   <*> ( if useNodeLabels
+--            then Just <$> mkMap (cart nodeLabelSet) (pure 0)
+--            else pure Nothing
+--       )
   where
     mkMap keySet mkVal = fmap M.fromList .
       forM (S.toList keySet) $ \key -> do
@@ -297,43 +314,42 @@ data Node dim nlb = Node
 
 -- | Run the network over a graph labeled with input word embeddings.
 run
-  :: ( KnownNat d, KnownNat c
+  :: ( KnownNat d
     , Ord alb, Show alb
     , Ord nlb, Show nlb
     , Reifies s W
      )
-  => BVar s (Param d c alb nlb)
+  => BVar s (Param d alb nlb)
     -- ^ Graph network / params
   -> Graph (Node d nlb) alb
     -- ^ Input graph labeled with initial hidden states
-  -> M.Map Arc (BVar s (R c))
---   -> M.Map Arc (BVar s Double)
+  -> M.Map Arc (BVar s Double)
     -- ^ Output map with output potential values
 run net graph = M.fromList $ do
   (v, w) <- graphArcs graph
   let nodeMap = fmap (BP.constVar . nodeEmb) (nodeLabelMap graph)
       hv = nodeMap M.! v
       hw = nodeMap M.! w
-      -- NOTE: consider using feed-forward network?
-      -- NOTE: with `logistic` training didn't go well, but maybe you can
-      --   try it again later
-      biAff = do
-        biaff <- BP.sequenceVar (net ^^. arcBiaff)
-        return $ biaff #> (hv # hw)
-      -- biAff = Just $ (net ^^. arcBiaff) #> (hv # hw)
-      unordBiAff = do
-        biaff <- BP.sequenceVar (net ^^. arcUnordBiaff)
-        vLex <- nodeLex <$> M.lookup v (nodeLabelMap graph)
-        wLex <- nodeLex <$> M.lookup w (nodeLabelMap graph)
-        return $ if vLex <= wLex
-           then biaff #> (hv # hw)
-           else biaff #> (hw # hv)
-      srcAff = do
-        aff <- BP.sequenceVar (net ^^. sourceAff)
-        return $ aff #> hv
-      trgAff = do
-        aff <- BP.sequenceVar (net ^^. targetAff)
-        return $ aff #> hw
+      biPot = Just
+            $ (net ^^. potR) `dot`
+              (FFN.run (net ^^. potN) (hv # hw))
+--       biAff = do
+--         biaff <- BP.sequenceVar (net ^^. arcBiaff)
+--         return $ biaff #> (hv # hw)
+--       -- biAff = Just $ (net ^^. arcBiaff) #> (hv # hw)
+--       unordBiAff = do
+--         biaff <- BP.sequenceVar (net ^^. arcUnordBiaff)
+--         vLex <- nodeLex <$> M.lookup v (nodeLabelMap graph)
+--         wLex <- nodeLex <$> M.lookup w (nodeLabelMap graph)
+--         return $ if vLex <= wLex
+--            then biaff #> (hv # hw)
+--            else biaff #> (hw # hv)
+--       srcAff = do
+--         aff <- BP.sequenceVar (net ^^. sourceAff)
+--         return $ aff #> hv
+--       trgAff = do
+--         aff <- BP.sequenceVar (net ^^. targetAff)
+--         return $ aff #> hw
       arcBias = do
         arcBiasMap <- BP.sequenceVar (net ^^. arcLabelB)
         let err = trace
@@ -343,29 +359,41 @@ run net graph = M.fromList $ do
         return . maybe err id $ do
           arcLabel <- M.lookup (v, w) (arcLabelMap graph)
           arcBiasMap ^^? ixAt arcLabel
-      nodePairBias = do
-        nodeBiasMap <- BP.sequenceVar (net ^^. nodeLabelB)
-        -- Construct the node labels here for the sake of error reporting
-        let nodeLabels = do
-              vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
-              wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
-              return (vLabel, wLabel)
-            err = trace
-              ( "ArcGraph.run: undefined node label(s) ("
-              ++ show nodeLabels
-              ++ ")" ) 0
-        return . maybe err id $ do
-          vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
-          wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
-          nodeBiasMap ^^? ixAt (vLabel, wLabel)
+--       arcBias = do
+--         arcBiasMap <- BP.sequenceVar (net ^^. arcLabelB)
+--         let err = trace
+--               ( "ArcGraph.run: unknown arc label ("
+--               ++ show (M.lookup (v, w) (arcLabelMap graph))
+--               ++ ")" ) 0
+--         return . maybe err id $ do
+--           arcLabel <- M.lookup (v, w) (arcLabelMap graph)
+--           arcBiasMap ^^? ixAt arcLabel
+--       nodePairBias = do
+--         nodeBiasMap <- BP.sequenceVar (net ^^. nodeLabelB)
+--         -- Construct the node labels here for the sake of error reporting
+--         let nodeLabels = do
+--               vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+--               wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+--               return (vLabel, wLabel)
+--             err = trace
+--               ( "ArcGraph.run: undefined node label(s) ("
+--               ++ show nodeLabels
+--               ++ ")" ) 0
+--         return . maybe err id $ do
+--           vLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+--           wLabel <- nodeLab <$> M.lookup v (nodeLabelMap graph)
+--           nodeBiasMap ^^? ixAt (vLabel, wLabel)
       bias = Just $ net ^^. arcB
-      he = sum . catMaybes $
-        [ biAff, unordBiAff, srcAff, trgAff
-        , arcBias, nodePairBias, bias
+--       he = sum . catMaybes $
+--         [ biAff, unordBiAff, srcAff, trgAff
+--         , arcBias, nodePairBias, bias
+--         ]
+--       -- x = softmax $ (net ^^. probM) #> he
+--       x = softmax $ FFN.run (net ^^. probN) he
+      x = sum . catMaybes $
+        [ biPot, arcBias, bias
         ]
-      -- x = softmax $ (net ^^. probM) #> he
-      x = softmax $ FFN.run (net ^^. probN) he
-  return ((v, w), x)
+  return ((v, w), logistic x)
 --     go prevNodeMap prevArcMap
 --       | k <= 0 = M.fromList $ do
 --           (p, q) <- graphArcs graph
@@ -379,16 +407,15 @@ run net graph = M.fromList $ do
 -- | Evaluate the network over a graph labeled with input word embeddings.
 -- User-friendly (and without back-propagation) version of `run`.
 eval
-  :: ( KnownNat d, KnownNat c
+  :: ( KnownNat d
      , Ord alb, Show alb
      , Ord nlb, Show nlb )
-  => Param d c alb nlb
+  => Param d alb nlb
     -- ^ Graph network / params
   -- -> Graph (R d) b
   -> Graph (Node d nlb) alb
     -- ^ Input graph labeled with initial hidden states (word embeddings)
-  -> M.Map Arc (R c)
---   -> M.Map Arc Double
+  -> M.Map Arc Double
 eval net graph =
   BP.evalBP0
     ( BP.collectVar
@@ -419,9 +446,9 @@ eval net graph =
 
 -- | Save the parameters in the given file.
 saveParam
-  :: (KnownNat d, KnownNat c, Binary alb, Binary nlb)
+  :: (KnownNat d, Binary alb, Binary nlb)
   => FilePath
-  -> Param d c alb nlb
+  -> Param d alb nlb
   -> IO ()
 saveParam path =
   B.writeFile path . compress . Bin.encode
@@ -429,9 +456,9 @@ saveParam path =
 
 -- | Load the parameters from the given file.
 loadParam
-  :: (KnownNat d, KnownNat c, Binary alb, Binary nlb)
+  :: (KnownNat d, Binary alb, Binary nlb)
   => FilePath
-  -> IO (Param d c alb nlb)
+  -> IO (Param d alb nlb)
 loadParam path =
   Bin.decode . decompress <$> B.readFile path
   -- B.writeFile path . compress . Bin.encode
@@ -443,58 +470,16 @@ loadParam path =
 
 
 -- | Dataset element
-data Elem dim c arc nlb = Elem
+data Elem dim arc nlb = Elem
   { graph :: Graph (Node dim nlb) arc
     -- ^ Input graph
-  , labMap :: M.Map Arc (R c)
---   , labMap :: M.Map Arc Double
-    -- ^ Target labels
+  , labMap :: M.Map Arc Double
+    -- ^ Target probabilities
   } deriving (Show, Generic, Binary)
 
 
 -- | DataSet: a list of (graph, target value map) pairs.
-type DataSet d c alb nlb = [Elem d c alb nlb]
-
-
--- -- | Create graph from lists of labeled nodes and edges.
--- mkGraph
---   :: (KnownNat d, Ord b)
---   => [(G.Vertex, R d)]
---     -- ^ Nodes with input vectors
---   -> [(Arc, b)]
---     -- ^ Edges with labels
---   -> Graph (R d) b
--- mkGraph nodes arcs =
---   graph
---   where
---     vertices = [v | (v, _) <- nodes]
---     gStr = G.buildG
---       (minimum vertices, maximum vertices) 
---       (map fst arcs)
---     lbMap = M.fromList nodes
---     graph = Graph
---       { graphStr = gStr
---       , graphInv = G.transposeG gStr
---       , nodeLabelMap = lbMap
---       , arcLabelMap = M.fromList arcs
---       }
-
-
--- -- | Create an input sentence consisting of the given embedding vectors.
--- mkSent
---   :: (KnownNat d)
---   => D.Dict d
---     -- ^ Embedding dictionary
---   -> [T.Text]
---     -- ^ Input words
---   -> Graph (R d) ()
--- mkSent d ws =
---   mkGraph
---     [(i, vec w) | (i, w) <- zip [0..] ws]
---     [(i, i+1) | i <- is]
---   where
---     vec = (d M.!)
---     is = [0 .. length ws - 2]
+type DataSet d alb nlb = [Elem d alb nlb]
 
 
 ----------------------------------------------
@@ -517,48 +502,48 @@ type DataSet d c alb nlb = [Elem d c alb nlb]
 --   return $ err `dot` err
 
 
--- -- | Cross entropy between the true and the artificial distributions
--- crossEntropy
---   :: (Reifies s W)
---   => BVar s Double
---     -- ^ Target ,,true'' MWE probability
---   -> BVar s Double
---     -- ^ Output ,,artificial'' MWE probability
---   -> BVar s Double
--- crossEntropy p q
---   | p < 0 || p > 1 || q < 0 || q > 1 =
---       error "crossEntropy doesn't make sense"
---   | otherwise = negate
---       ( p0 * log q0
---       + p1 * log q1
---       )
---   where
---     p1 = p
---     p0 = 1 - p1
---     q1 = q
---     q0 = 1 - q1
-
-
 -- | Cross entropy between the true and the artificial distributions
 crossEntropy
-  :: (KnownNat n, Reifies s W)
-  => BVar s (R n)
-    -- ^ Target ,,true'' distribution
-  -> BVar s (R n)
-    -- ^ Output ,,artificial'' distribution
+  :: (Reifies s W)
+  => BVar s Double
+    -- ^ Target ,,true'' MWE probability
   -> BVar s Double
-crossEntropy p q =
-  negate (p `dot` LBP.vmap' log q)
+    -- ^ Output ,,artificial'' MWE probability
+  -> BVar s Double
+crossEntropy p q
+  | p < 0 || p > 1 || q < 0 || q > 1 =
+      error "crossEntropy doesn't make sense"
+  | otherwise = negate
+      ( p0 * log q0
+      + p1 * log q1
+      )
+  where
+    p1 = p
+    p0 = 1 - p1
+    q1 = q
+    q0 = 1 - q1
+
+
+-- -- | Cross entropy between the true and the artificial distributions
+-- crossEntropy
+--   :: (KnownNat n, Reifies s W)
+--   => BVar s (R n)
+--     -- ^ Target ,,true'' distribution
+--   -> BVar s (R n)
+--     -- ^ Output ,,artificial'' distribution
+--   -> BVar s Double
+-- crossEntropy p q =
+--   negate (p `dot` LBP.vmap' log q)
 
 
 -- | Cross entropy between the target and the output values
 errorOne
-  :: (Ord a, KnownNat n, Reifies s W)
-  => M.Map a (BVar s (R n))
---   => M.Map a (BVar s Double)
+  :: (Ord a, Reifies s W)
+--   => M.Map a (BVar s (R n))
+  => M.Map a (BVar s Double)
     -- ^ Target values
-  -> M.Map a (BVar s (R n))
---   -> M.Map a (BVar s Double)
+--   -> M.Map a (BVar s (R n))
+  -> M.Map a (BVar s Double)
     -- ^ Output values
   -> BVar s Double
 errorOne target output = PB.sum . BP.collectVar $ do
@@ -569,11 +554,11 @@ errorOne target output = PB.sum . BP.collectVar $ do
 
 -- | Error on a dataset.
 errorMany
-  :: (Ord a, KnownNat n, Reifies s W)
-  => [M.Map a (BVar s (R n))] -- ^ Targets
-  -> [M.Map a (BVar s (R n))] -- ^ Outputs
---   => [M.Map a (BVar s Double)] -- ^ Targets
---   -> [M.Map a (BVar s Double)] -- ^ Outputs
+  :: (Ord a, Reifies s W)
+--   => [M.Map a (BVar s (R n))] -- ^ Targets
+--   -> [M.Map a (BVar s (R n))] -- ^ Outputs
+  => [M.Map a (BVar s Double)] -- ^ Targets
+  -> [M.Map a (BVar s Double)] -- ^ Outputs
   -> BVar s Double
 errorMany targets outputs =
   go targets outputs
@@ -587,11 +572,11 @@ errorMany targets outputs =
 
 -- | Network error on a given dataset.
 netError
-  :: ( Reifies s W, KnownNat d, KnownNat c
+  :: ( Reifies s W, KnownNat d
      , Ord alb, Show alb, Ord nlb, Show nlb
      )
-  => DataSet d c alb nlb
-  -> BVar s (Param d c alb nlb)
+  => DataSet d alb nlb
+  -> BVar s (Param d alb nlb)
   -> BVar s Double
 netError dataSet net =
   let
