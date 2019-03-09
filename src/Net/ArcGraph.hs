@@ -12,6 +12,16 @@
 -- {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TupleSections #-}
 
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+-- -- JW: needed for 'instance BiComp ArcBias'
+-- {-# LANGUAGE PolyKinds #-}
+
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE Rank2Types #-}
+
 -- To derive Binary for `Param`
 {-# LANGUAGE DeriveAnyClass #-}
 
@@ -77,6 +87,7 @@ import           Codec.Compression.Zlib (compress, decompress)
 
 -- import qualified Data.Map.Lens as ML
 import           Control.Lens.At (ixAt)
+import           Control.Lens (Lens)
 import           Control.DeepSeq (NFData)
 
 import           Dhall (Interpret)
@@ -84,7 +95,7 @@ import qualified Data.Aeson as JSON
 
 import qualified Prelude.Backprop as PB
 import qualified Numeric.Backprop as BP
-import           Numeric.Backprop ((^^.), (^^?))
+import           Numeric.Backprop (Backprop, (^^.), (^^?))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
   (R, L, BVar, Reifies, W, (#), (#>), dot)
@@ -107,7 +118,52 @@ import           Debug.Trace (trace)
 
 
 ----------------------------------------------
--- Network Parameters
+-- Graph
+----------------------------------------------
+
+
+-- | Local graph type
+data Graph a b = Graph
+  { graphStr :: G.Graph
+    -- ^ The underlying directed graph
+  , graphInv :: G.Graph
+    -- ^ Inversed (transposed) `graphStr`
+  , nodeLabelMap :: M.Map G.Vertex a
+    -- ^ Label assigned to a given vertex
+  , arcLabelMap :: M.Map Arc b
+    -- ^ Label assigned to a given arc
+  } deriving (Show, Eq, Ord, Generic, Binary)
+
+
+-- | Node label mapping
+nmap :: (a -> c) -> Graph a b -> Graph c b
+nmap f g =
+  g {nodeLabelMap = fmap f (nodeLabelMap g)}
+
+
+-- | Arc label mapping
+amap :: (b -> c) -> Graph a b -> Graph a c
+amap f g =
+  g {arcLabelMap = fmap f (arcLabelMap g)}
+
+
+-- | A graph arc (edge)
+type Arc = (G.Vertex, G.Vertex)
+
+
+-- | Structured node
+data Node dim nlb = Node
+  { nodeEmb :: R dim
+    -- ^ Node embedding vector
+  , nodeLab :: nlb
+    -- ^ Node label (e.g., POS tag)
+  , nodeLex :: T.Text
+    -- ^ Lexical content (used for ,,unordered'' biaffinity)
+  } deriving (Show, Binary, Generic)
+
+
+----------------------------------------------
+-- Config
 ----------------------------------------------
 
 
@@ -135,6 +191,171 @@ instance JSON.FromJSON Config
 instance JSON.ToJSON Config where
   toEncoding = JSON.genericToEncoding JSON.defaultOptions
 instance Interpret Config
+
+
+----------------------------------------------
+-- Type voodoo
+----------------------------------------------
+
+
+-- | Custom pair, with Backprop and ParamSet instances, and nice Backprop
+-- pattern.
+data a :& b = !a :& !b
+  deriving (Show, Generic)
+infixr 2 :&
+
+instance (NFData a, NFData b) => NFData (a :& b)
+instance (Backprop a, Backprop b) => Backprop (a :& b)
+instance (ParamSet a, ParamSet b) => ParamSet (a :& b)
+
+pattern (:&&) :: (Backprop a, Backprop b, Reifies z W)
+              => BVar z a -> BVar z b -> BVar z (a :& b)
+pattern x :&& y <- (\xy -> (xy ^^. t1, xy ^^. t2)->(x, y))
+  where
+    (:&&) = BP.isoVar2 (:&) (\case x :& y -> (x, y))
+{-# COMPLETE (:&&) #-}
+
+
+t1 :: Lens (a :& b) (a' :& b) a a'
+t1 f (x :& y) = (:& y) <$> f x
+
+t2 :: Lens (a :& b) (a :& b') b b'
+t2 f (x :& y) = (x :&) <$> f y
+
+
+-- type Model p a b = forall z. Reifies z W
+--                 => BVar z p
+--                 -> BVar z a
+--                 -> BVar z b
+
+
+----------------------------------------------
+-- New
+----------------------------------------------
+
+
+class New a b p where
+  new'
+    :: Int
+      -- ^ Embedding dimension (TODO: could be get rid of?)
+    -> S.Set a
+      -- ^ Set of node labels
+    -> S.Set b
+      -- ^ Set of arc labels
+    -> IO p
+
+instance (New a b p1, New a b p2) => New a b (p1 :& p2) where
+  new' d xs ys = do
+    p1 <- new' d xs ys
+    p2 <- new' d xs ys
+    return (p1 :& p2)
+
+
+----------------------------------------------
+-- Components
+----------------------------------------------
+
+
+-- | Biaffinity component
+class Backprop comp => BiComp dim a b comp where
+  runBiComp 
+    :: (Reifies s W)
+    => Graph (Node dim a) b
+    -> Arc
+    -> BVar s comp
+    -> BVar s Double
+
+instance (BiComp dim a b comp1, BiComp dim a b comp2)
+  => BiComp dim a b (comp1 :& comp2) where
+  runBiComp graph arc (comp1 :&& comp2) =
+    runBiComp graph arc comp1 + runBiComp graph arc comp2
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Global bias
+newtype Bias = Bias
+  { _biasVal :: Double
+  } deriving (Generic, Binary)
+
+instance Backprop Bias
+makeLenses ''Bias
+
+instance New a b Bias where
+  new' _ _ _ = pure (Bias 0)
+
+instance BiComp dim a b Bias where
+  runBiComp _ _ bias = bias ^^. biasVal
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Arc label bias
+newtype ArcBias b = ArcBias
+  { _arcBiasMap :: M.Map b Double
+  } deriving (Generic, Binary)
+
+instance (Ord b) => Backprop (ArcBias b)
+makeLenses ''ArcBias
+
+instance (Ord b) => New a b (ArcBias b) where
+  new' _ _ arcLabelSet =
+    -- TODO: could be simplified...
+    ArcBias <$> mkMap arcLabelSet (pure 0)
+    where
+      mkMap keySet mkVal = fmap M.fromList .
+        forM (S.toList keySet) $ \key -> do
+          (key,) <$> mkVal
+
+instance (Ord b, Show b) => BiComp dim a b (ArcBias b) where
+  runBiComp graph (v, w) arcBias =
+    let err = trace
+          ( "ArcGraph.run: unknown arc label ("
+          ++ show (M.lookup (v, w) (arcLabelMap graph))
+          ++ ")" ) 0
+     in maybe err id $ do
+          arcLabel <- M.lookup (v, w) (arcLabelMap graph)
+          arcBias ^^. arcBiasMap ^^? ixAt arcLabel
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Biaffinity component
+data Biaff d h = Biaff
+  { _biaffN :: FFN
+      (d Nats.+ d)
+      -- TODO: make hidden layer larger?  The example with the grenade library
+      -- suggests this.
+      h -- Hidden layer size
+      d -- Output
+    -- ^ Potential FFN
+  , _biaffV :: R d
+    -- ^ Potential ,,feature vector''
+  } deriving (Generic, Binary)
+
+instance (KnownNat dim, KnownNat h) => Backprop (Biaff dim h)
+makeLenses ''Biaff
+
+instance (KnownNat dim, KnownNat h) => BiComp dim a b (Biaff dim h) where
+  runBiComp graph (v, w) bia =
+     let nodeMap = fmap
+           (BP.constVar . nodeEmb)
+           (nodeLabelMap graph)
+         hv = nodeMap M.! v
+         hw = nodeMap M.! w
+      in (bia ^^. biaffV) `dot`
+           (FFN.run (bia ^^. biaffN) (hv # hw))
+
+
+----------------------------------------------
+-- Network Parameters
+----------------------------------------------
 
 
 -- | Parameters of the graph-structured network
@@ -202,7 +423,7 @@ data Param d alb nlb = Param
   -- NOTE: automatically deriving `Show` does not work 
 
 instance (KnownNat d, Ord alb, Ord nlb)
-  => BP.Backprop (Param d alb nlb)
+  => Backprop (Param d alb nlb)
 makeLenses ''Param
 
 instance (KnownNat d, Ord alb, Ord nlb)
@@ -270,46 +491,6 @@ new d nodeLabelSet arcLabelSet Config{..} = Param
       x <- S.toList s
       y <- S.toList s
       return (x, y)
-
-
--- | Local graph type
-data Graph a b = Graph
-  { graphStr :: G.Graph
-    -- ^ The underlying directed graph
-  , graphInv :: G.Graph
-    -- ^ Inversed (transposed) `graphStr`
-  , nodeLabelMap :: M.Map G.Vertex a
-    -- ^ Label assigned to a given vertex
-  , arcLabelMap :: M.Map Arc b
-    -- ^ Label assigned to a given arc
-  } deriving (Show, Eq, Ord, Generic, Binary)
-
-
--- | Node label mapping
-nmap :: (a -> c) -> Graph a b -> Graph c b
-nmap f g =
-  g {nodeLabelMap = fmap f (nodeLabelMap g)}
-
-
--- | Arc label mapping
-amap :: (b -> c) -> Graph a b -> Graph a c
-amap f g =
-  g {arcLabelMap = fmap f (arcLabelMap g)}
-
-
--- | A graph arc (edge)
-type Arc = (G.Vertex, G.Vertex)
-
-
--- | Structured node
-data Node dim nlb = Node
-  { nodeEmb :: R dim
-    -- ^ Node embedding vector
-  , nodeLab :: nlb
-    -- ^ Node label (e.g., POS tag)
-  , nodeLex :: T.Text
-    -- ^ Lexical content (used for ,,unordered'' biaffinity)
-  } deriving (Show, Binary, Generic)
 
 
 -- | Run the network over a graph labeled with input word embeddings.
@@ -440,6 +621,31 @@ eval net graph =
 
 
 ----------------------------------------------
+-- Parameters
+----------------------------------------------
+
+
+type NewParam dim a b
+   = Biaff dim dim
+  :& ArcBias b
+  :& Bias
+
+
+run' 
+  :: (KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W)
+  => BVar s (NewParam dim a b)
+    -- ^ Graph network / params
+  -> Graph (Node dim a) b
+    -- ^ Input graph labeled with initial hidden states
+  -> M.Map Arc (BVar s Double)
+    -- ^ Output map with output potential values
+run' net graph = M.fromList $ do
+  arc <- graphArcs graph
+  let x = runBiComp graph arc net
+  return (arc, logistic x)
+
+
+----------------------------------------------
 -- Serialization
 ----------------------------------------------
 
@@ -510,13 +716,10 @@ crossEntropy
   -> BVar s Double
     -- ^ Output ,,artificial'' MWE probability
   -> BVar s Double
-crossEntropy p q
-  | p < 0 || p > 1 || q < 0 || q > 1 =
-      error "crossEntropy doesn't make sense"
-  | otherwise = negate
-      ( p0 * log q0
-      + p1 * log q1
-      )
+crossEntropy p q = negate
+  ( p0 * log q0
+  + p1 * log q1
+  )
   where
     p1 = p
     p0 = 1 - p1
