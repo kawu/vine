@@ -244,7 +244,7 @@ run cmd =
               <$> Cupt.readCupt trainCupt
             posTagSet <- MWE.posTagsIn . concat
               <$> Cupt.readCupt trainCupt
-            Graph.new 300 posTagSet depRelSet -- netCfg
+            Graph.new posTagSet depRelSet -- netCfg
           Just path -> Graph.loadParam path
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat

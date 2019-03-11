@@ -232,18 +232,16 @@ t2 f (x :& y) = (x :&) <$> f y
 
 class New a b p where
   new
-    :: Int
-      -- ^ Embedding dimension (TODO: could be get rid of?)
-    -> S.Set a
+    :: S.Set a
       -- ^ Set of node labels
     -> S.Set b
       -- ^ Set of arc labels
     -> IO p
 
 instance (New a b p1, New a b p2) => New a b (p1 :& p2) where
-  new d xs ys = do
-    p1 <- new d xs ys
-    p2 <- new d xs ys
+  new xs ys = do
+    p1 <- new xs ys
+    p2 <- new xs ys
     return (p1 :& p2)
 
 
@@ -280,7 +278,7 @@ instance Backprop Bias
 makeLenses ''Bias
 
 instance New a b Bias where
-  new _ _ _ = pure (Bias 0)
+  new _ _ = pure (Bias 0)
 
 instance BiComp dim a b Bias where
   runBiComp _ _ bias = bias ^^. biasVal
@@ -299,7 +297,7 @@ instance (Ord b) => Backprop (ArcBias b)
 makeLenses ''ArcBias
 
 instance (Ord b) => New a b (ArcBias b) where
-  new _ _ arcLabelSet =
+  new _ arcLabelSet =
     -- TODO: could be simplified...
     ArcBias <$> mkMap arcLabelSet (pure 0)
     where
@@ -339,7 +337,7 @@ instance (KnownNat dim, KnownNat h) => Backprop (Biaff dim h)
 makeLenses ''Biaff
 
 instance (KnownNat dim, KnownNat h) => New a b (Biaff dim h) where
-  new _ _ _ = Biaff
+  new _ _ = Biaff
     <$> FFN.new (d*2) h d
     <*> vector d
     where
