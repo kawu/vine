@@ -121,7 +121,7 @@ run
 run net x = z
   where
     -- run first layer
-    y = relu $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
+    y = leakyRelu $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
     -- run second layer
     z = (net ^^. nWeights2) #> y + (net ^^. nBias2)
 

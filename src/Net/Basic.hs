@@ -18,6 +18,7 @@ module Net.Basic
   , softmax
   -- * Utils
   -- , elemWiseMult
+  , randomList
   , matrix
   , vector
   , scale
@@ -81,6 +82,10 @@ leakyRelu :: Floating a => a -> a
 leakyRelu x
   = relu x
   + 0.01 * relu (-x)
+-- leakyRelu :: (Ord a, Floating a) => a -> a
+-- leakyRelu x
+--   | x < 0 = 0.01*x
+--   | otherwise = x
 
 
 -- | Apply the softmax layer to a vector.

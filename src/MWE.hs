@@ -282,15 +282,15 @@ train
 train Config{..} mweTyp cupt net0 = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
   let cupt' = map (mkElem (== mweTyp)) cupt
-  net' <- SGD.withDisk cupt' $ \dataSet -> do
+  SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     -- net0 <- Net.new 300 2
     -- trainProgSGD sgd dataSet globalDepth net0
     SGD.runIO sgd
       (toSGD method $ SGD.batchGradPar gradient)
       quality dataSet net0
-  Net.printParam net'
-  return net'
+--   Net.printParam net'
+--   return net'
   where
     gradient x = BP.gradBP (Net.netError [x])
     quality x = BP.evalBP (Net.netError [x])

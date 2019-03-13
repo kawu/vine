@@ -29,6 +29,7 @@
 
 -- To make GHC automatically infer that `KnownNat d => KnownNat (d + d)`
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
+{-# OPTIONS_GHC -fconstraint-solver-iterations=5 #-}
 
 
 module Net.ArcGraph
@@ -36,7 +37,7 @@ module Net.ArcGraph
   -- * Network
 --     Config(..)
     Param
-  , printParam
+  -- , printParam
   -- , size
   , new
   , Graph(..)
@@ -68,6 +69,8 @@ import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat, natVal)
 -- import           GHC.Natural (naturalToInt)
 import qualified GHC.TypeNats as Nats
+
+import           System.Random (randomRIO)
 
 import           Control.Monad (forM_, forM)
 
@@ -288,11 +291,47 @@ class New a b p where
       -- ^ Set of arc labels
     -> IO p
 
+instance New a b Double where
+  new _ _ = randomRIO (-0.01, 0.01)
+
+instance (KnownNat n) => New a b (R n) where
+  new _ _ = LA.vector <$> randomList n
+    where
+      n = proxyVal (Proxy :: Proxy n)
+      proxyVal = fromInteger . toInteger . natVal
+
+instance (KnownNat n, KnownNat m) => New a b (L n m) where
+  new _ _ = LA.matrix <$> randomList (n*m)
+    where
+      n = proxyVal (Proxy :: Proxy n)
+      m = proxyVal (Proxy :: Proxy m)
+      proxyVal = fromInteger . toInteger . natVal
+
+instance (KnownNat i, KnownNat h, KnownNat o) => New a b (FFN i h o) where
+  new xs ys = FFN
+    <$> new xs ys
+    <*> new xs ys
+    <*> new xs ys
+    <*> new xs ys
+
 instance (New a b p1, New a b p2) => New a b (p1 :& p2) where
   new xs ys = do
     p1 <- new xs ys
     p2 <- new xs ys
     return (p1 :& p2)
+
+
+-- | Create a new, random map.
+newMap
+  :: (Ord k, New a b v)
+  => S.Set k
+  -> S.Set a
+  -> S.Set b
+  -> IO (M.Map k v)
+newMap keySet xs ys =
+  fmap M.fromList .
+    forM (S.toList keySet) $ \key -> do
+      (key,) <$> new xs ys
 
 
 ----------------------------------------------
@@ -346,7 +385,7 @@ newtype Bias = Bias
 instance Backprop Bias
 makeLenses ''Bias
 instance New a b Bias where
-  new _ _ = pure (Bias 0)
+  new xs ys = Bias <$> new xs ys
 instance BiComp dim a b Bias where
   runBiComp _ _ bias = bias ^^. biasVal
 
@@ -364,13 +403,7 @@ instance (Ord b) => Backprop (ArcBias b)
 makeLenses ''ArcBias
 
 instance (Ord b) => New a b (ArcBias b) where
-  new _ arcLabelSet =
-    -- TODO: could be simplified...
-    ArcBias <$> mkMap arcLabelSet (pure 0)
-    where
-      mkMap keySet mkVal = fmap M.fromList .
-        forM (S.toList keySet) $ \key -> do
-          (key,) <$> mkVal
+  new xs ys = ArcBias <$> newMap ys xs ys
 
 
 -- | Label affinity of the given arc
@@ -528,12 +561,7 @@ instance (Ord a) => Backprop (Pos a)
 makeLenses ''Pos
 
 instance (Ord a) => New a b (Pos a) where
-  new nodeLabelSet _ =
-    Pos <$> mkMap nodeLabelSet (pure 0)
-    where
-      mkMap keySet mkVal = fmap M.fromList .
-        forM (S.toList keySet) $ \key -> do
-          (key,) <$> mkVal
+  new xs ys = Pos <$> newMap xs xs ys
 
 
 -- | POS affinity of the given node
@@ -612,67 +640,6 @@ instance (Ord a, Show a) => BiComp dim a b (EnkelPosAff a) where
     where
       check [] = aff ^^. enkelPosDef
       check xs = sum xs
-
-
--- newtype DepAff d h = DepAff { _unDepAff :: Aff d h }
---   deriving (Generic, Binary, NFData, ParamSet, Backprop)
--- makeLenses ''DepAff
--- instance (KnownNat dim, KnownNat h) => New a b (DepAff dim h) where
---   new xs ys = DepAff <$> new xs ys
--- instance (KnownNat dim, KnownNat h) => BiComp dim a b (DepAff dim h) where
---   runBiComp graph (v, _) aff = nodeAff graph v (aff ^^. unDepAff)
--- 
--- 
--- newtype SymAff d h = SymAff { _unSymAff :: Aff d h }
---   deriving (Generic, Binary, NFData, ParamSet, Backprop)
--- makeLenses ''SymAff
--- instance (KnownNat dim, KnownNat h) => New a b (SymAff dim h) where
---   new xs ys = SymAff <$> new xs ys
--- instance (KnownNat dim, KnownNat h) => BiComp dim a b (SymAff dim h) where
---   runBiComp graph (v, w) aff
---     = nodeAff graph v (aff ^^. unSymAff)
---     + nodeAff graph w (aff ^^. unSymAff)
-
-
-----------------------------------------------
-----------------------------------------------
-
-
--- -- | Head affinity component
--- data HeadAff d h = HeadAff
---   { _affN :: FFN
---       d
---       h -- Hidden layer size
---       d -- Output
---     -- ^ Potential FFN
---   , _affV :: R d
---     -- ^ Potential ,,feature vector''
---   } deriving (Generic, Binary, NFData, ParamSet)
--- 
--- instance (KnownNat dim, KnownNat h) => Backprop (HeadAff dim h)
--- makeLenses ''HeadAff
--- 
--- instance (KnownNat dim, KnownNat h) => New a b (HeadAff dim h) where
---   new _ _ = HeadAff
---     <$> FFN.new d h d
---     <*> vector d
---     where
---       d = proxyVal (Proxy :: Proxy dim)
---       h = proxyVal (Proxy :: Proxy h)
---       proxyVal = fromInteger . toInteger . natVal
--- 
--- instance (KnownNat dim, KnownNat h) => BiComp dim a b (HeadAff dim h) where
---   runBiComp graph (v, w) aff =
---      let nodeMap = fmap
---            (BP.constVar . nodeEmb)
---            (nodeLabelMap graph)
---          hv = nodeMap M.! v
---          hw = nodeMap M.! w
---          pot1 = (aff ^^. affV) `dot`
---            (FFN.run (aff ^^. affN) hv)
---          pot2 = (aff ^^. affV) `dot`
---            (FFN.run (aff ^^. affN) hw)
---       in pot1 + pot2
 
 
 ----------------------------------------------
@@ -861,41 +828,167 @@ instance (KnownNat dim, KnownNat h, Ord b, Show b)
 
 
 ----------------------------------------------
+----------------------------------------------
+
+
+-- | Holistic compoment -- (almost) all in one
+--
+--   * @d1@ -- word embedding dimension
+--   * @d2@ -- label embedding dimension
+--   * @h@  -- hidden dimension
+--   * @o@  -- pre-output dimension
+--
+data Holi d1 d2 a b h o = Holi
+  { _holN :: FFN
+      (d1 Nats.+ d1 Nats.+ d2 Nats.+ d2 Nats.+ d2)
+      -- (d1 Nats.+ d1 Nats.+ d2 Nats.+ d2)
+        -- two words + two POS + dep label
+      h
+        -- hidden layer size
+      o
+        -- output layer size
+  , _holV :: R o
+      -- ^ To get the ultimate potential value via dot product
+  , _holHeadPosMap :: M.Map a (R d2)
+      -- ^ Head POS repr
+  , _holDepPosMap :: M.Map a (R d2)
+      -- ^ Dependent POS repr
+  , _holArcMap :: M.Map b (R d2)
+      -- ^ Arc label repr
+  } deriving (Generic, Binary, NFData, ParamSet)
+
+instance (KnownNat d1, KnownNat d2, Ord a, Ord b, KnownNat h, KnownNat o)
+  => Backprop (Holi d1 d2 a b h o)
+makeLenses ''Holi
+
+instance (KnownNat d1, KnownNat d2, Ord a, Ord b, KnownNat h, KnownNat o)
+  => New a b (Holi d1 d2 a b h o) where
+  new xs ys = Holi
+    <$> new xs ys
+    <*> new xs ys
+    <*> newMap xs xs ys
+    <*> newMap xs xs ys
+    <*> newMap ys xs ys
+
+instance
+  ( KnownNat d1, KnownNat d2, KnownNat h, KnownNat o
+  , Show a, Ord a, Show b, Ord b )
+  => BiComp d1 a b (Holi d1 d2 a b h o) where
+    runBiComp graph (v, w) holi =
+      let nodeMap = nodeLabelMap graph
+          wordMap = fmap (BP.constVar . nodeEmb) nodeMap
+          hv = wordMap M.! v
+          hw = wordMap M.! w
+          depPos = depPosRepr . nodeLab $ nodeMap M.! v
+          headPos = headPosRepr . nodeLab $ nodeMap M.! w
+          arc = arcRepr $ arcLabelMap graph M.! (v, w)
+       in (holi ^^. holV) `dot`
+            (FFN.run (holi ^^. holN) (hv # hw # depPos # headPos # arc))
+      where
+        headPosRepr pos = maybe err id $ do
+          holi ^^. holHeadPosMap ^^? ixAt pos
+          where
+            err = trace
+              ( "ArcGraph.Holi: unknown POS ("
+              ++ show pos
+              ++ ")" ) 0
+        depPosRepr pos = maybe err id $ do
+          holi ^^. holDepPosMap ^^? ixAt pos
+          where
+            err = trace
+              ( "ArcGraph.Holi: unknown POS ("
+              ++ show pos
+              ++ ")" ) 0
+        arcRepr dep = maybe err id $ do
+          holi ^^. holArcMap ^^? ixAt dep
+          where
+            err = trace
+              ( "ArcGraph.Holi: unknown arc label ("
+              ++ show dep
+              ++ ")" ) 0
+
+-- instance (KnownNat dim, KnownNat h, Ord b, Show b)
+--   => BiComp dim a b (DirBiaff dim h b) where
+--   runBiComp graph (v, w) dirBia =
+--     let nodeMap = fmap
+--           (BP.constVar . nodeEmb)
+--           (nodeLabelMap graph)
+--         hv0 = nodeMap M.! v
+--         hw0 = nodeMap M.! w
+--         err = trace
+--           ( "ArcGraph.DirBiaff: unknown arc label ("
+--           ++ show (M.lookup (v, w) (arcLabelMap graph))
+--           ++ ")" ) 0
+--         p = maybe err logistic $ do
+--               arcLabel <- M.lookup (v, w) (arcLabelMap graph)
+--               dirBia ^^. dirBiaMap ^^? ixAt arcLabel
+--         q = 1 - p
+--         scale x = LBP.vmap (*x)
+--         hv = scale p hv0 + scale q hw0
+--         hw = scale q hv0 + scale p hw0
+--         bia = dirBia ^^. dirBiaff
+--      in (bia ^^. biaffV) `dot`
+--           (FFN.run (bia ^^. biaffN) (hv # hw))
+
+
+----------------------------------------------
 -- Parameters
 ----------------------------------------------
 
 
+-- -- | Parameter set
+-- type Param dim a b 
+--    = Biaff dim dim
+--   :& Bias
+
+
+-- -- | Parameter set
+-- type Param dim a b 
+--    = Biaff dim dim
+--   :& UnordBiaff dim dim
+--   :& HeadAff dim dim
+--   :& DepAff dim dim
+--   :& HeadPosAff a
+--   :& DepPosAff a
+--   :& PapyPosAff a
+--   :& EnkelPosAff a
+--   :& ArcBias b
+--   :& PapyArcAff b
+--   :& EnkelArcAff b
+--   :& Bias
+
+
 -- | Parameter set
 type Param dim a b 
-   = Biaff dim dim
-  :& UnordBiaff dim dim
-  :& HeadAff dim dim
-  :& DepAff dim dim
-  :& HeadPosAff a
-  :& DepPosAff a
-  :& PapyPosAff a
-  :& EnkelPosAff a
-  :& ArcBias b
-  :& PapyArcAff b
-  :& EnkelArcAff b
+   = Holi dim 50 a b 100 100
+--   :& UnordBiaff dim dim
+--   :& HeadAff dim dim
+--   :& DepAff dim dim
+--   :& HeadPosAff a
+--   :& DepPosAff a
+--   :& PapyPosAff a
+--   :& EnkelPosAff a
+--   :& ArcBias b
+--   :& PapyArcAff b
+--   :& EnkelArcAff b
   :& Bias
 
 
-printParam :: (Show a, Show b) => Param dim a b -> IO ()
-printParam
-  ( biaff :& unordBiaff :& headAff :& depAff :&
-    headPosAff :& depPosAff :& papyPosAff :&
-    enkelPosAff :& arcBias :& papyArcAff :&
-    enkelArcAff :& bias
-  ) = do
-    print headPosAff
-    print depPosAff
-    print papyPosAff
-    print enkelPosAff
-    print arcBias
-    print papyArcAff
-    print enkelArcAff
-    print bias
+-- printParam :: (Show a, Show b) => Param dim a b -> IO ()
+-- printParam
+--   ( biaff :& unordBiaff :& headAff :& depAff :&
+--     headPosAff :& depPosAff :& papyPosAff :&
+--     enkelPosAff :& arcBias :& papyArcAff :&
+--     enkelArcAff :& bias
+--   ) = do
+--     print headPosAff
+--     print depPosAff
+--     print papyPosAff
+--     print enkelPosAff
+--     print arcBias
+--     print papyArcAff
+--     print enkelArcAff
+--     print bias
 
 
 run
