@@ -27,9 +27,9 @@
 -- To derive Binary for `Param`
 {-# LANGUAGE DeriveAnyClass #-}
 
--- To make GHC automatically infer that `KnownNat d => KnownNat (d + d)`
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
-{-# OPTIONS_GHC -fconstraint-solver-iterations=5 #-}
+-- -- To make GHC automatically infer that `KnownNat d => KnownNat (d + d)`
+-- {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
+-- {-# OPTIONS_GHC -fconstraint-solver-iterations=5 #-}
 
 
 module Net.ArcGraph
@@ -45,6 +45,8 @@ module Net.ArcGraph
   , Arc
   , run
   , eval
+  , runQ
+  , evalQ
   -- , runTest
 
   -- * Storage
@@ -59,6 +61,7 @@ module Net.ArcGraph
 
   -- * Error
   , netError
+  , netErrorQ
 
   -- * Training
   -- , trainProg
@@ -120,6 +123,7 @@ import qualified Numeric.SGD.ParamSet as SGD
 
 import           Net.ArcGraph.Graph
 import           Net.ArcGraph.BiComp
+import qualified Net.ArcGraph.QuadComp as Q
 
 -- import qualified Embedding.Dict as D
 
@@ -153,20 +157,20 @@ import           Debug.Trace (trace)
 --   :& Bias
 
 
--- | Parameter set (HOLISTIC)
-type Param dim a b 
-   = Holi dim 50 a b 100 100
---   :& UnordBiaff dim dim
---   :& HeadAff dim dim
---   :& DepAff dim dim
---   :& HeadPosAff a
---   :& DepPosAff a
---   :& PapyPosAff a
---   :& EnkelPosAff a
---   :& ArcBias b
---   :& PapyArcAff b
---   :& EnkelArcAff b
-  :& Bias
+-- -- | Parameter set (HOLISTIC)
+-- type Param dim a b 
+--    = Holi dim 50 a b 100 100
+-- --   :& UnordBiaff dim dim
+-- --   :& HeadAff dim dim
+-- --   :& DepAff dim dim
+-- --   :& HeadPosAff a
+-- --   :& DepPosAff a
+-- --   :& PapyPosAff a
+-- --   :& EnkelPosAff a
+-- --   :& ArcBias b
+-- --   :& PapyArcAff b
+-- --   :& EnkelArcAff b
+--   :& Bias
 
 
 -- -- | Parameter set (TWO; ONE without unordered binary relation)
@@ -183,6 +187,16 @@ type Param dim a b
 --   :& PapyArcAff b
 --   :& EnkelArcAff b
 --   :& Bias
+
+
+-- | New, quad parameter set!
+type Param d a b
+--    = Q.QuadAff d d
+   = Q.TriAff d d
+  :& Q.SibAff d d
+  :& Q.BiAff d d
+  :& Q.UnAff d d
+  :& Q.Bias
 
 
 -- printParam :: (Show a, Show b) => Param dim a b -> IO ()
@@ -203,8 +217,10 @@ type Param dim a b
 
 
 run
-  :: (KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W)
-  => BVar s (Param dim a b)
+  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
+     , BiComp dim a b comp
+     )
+  => BVar s comp
     -- ^ Graph network / params
   -> Graph (Node dim a) b
     -- ^ Input graph labeled with initial hidden states
@@ -219,8 +235,10 @@ run net graph = M.fromList $ do
 -- | Evaluate the network over a graph labeled with input word embeddings.
 -- User-friendly (and without back-propagation) version of `run`.
 eval
-  :: (KnownNat dim, Ord a, Show a, Ord b, Show b)
-  => Param dim a b
+  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
+     , BiComp dim a b comp
+     )
+  => comp
     -- ^ Graph network / params
   -- -> Graph (R d) b
   -> Graph (Node dim a) b
@@ -230,6 +248,42 @@ eval net graph =
   BP.evalBP0
     ( BP.collectVar
     $ run
+        (BP.constVar net)
+        graph
+    )
+
+
+runQ
+  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
+     , Q.QuadComp dim a b comp
+     )
+  => BVar s comp
+    -- ^ Quad component
+  -> Graph (Node dim a) b
+    -- ^ Input graph labeled with initial hidden states
+  -> M.Map Arc (BVar s Double)
+    -- ^ Output map with output potential values
+runQ net graph = normalize . M.unions $ do
+  arc <- graphArcs graph
+  return $ Q.runQuadComp graph arc net
+  where
+    normalize = fmap logistic
+
+
+evalQ
+  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
+     , Q.QuadComp dim a b comp
+     )
+  => comp
+    -- ^ Graph network / params
+  -- -> Graph (R d) b
+  -> Graph (Node dim a) b
+    -- ^ Input graph labeled with initial hidden states (word embeddings)
+  -> M.Map Arc Double
+evalQ net graph =
+  BP.evalBP0
+    ( BP.collectVar
+    $ runQ
         (BP.constVar net)
         graph
     )
@@ -360,15 +414,35 @@ errorMany targets outputs =
 netError
   :: ( Reifies s W, KnownNat dim
      , Ord a, Show a, Ord b, Show b
+     , BiComp dim a b comp
      )
   => DataSet dim a b
-  -> BVar s (Param dim a b)
+  -- -> BVar s (Param dim a b)
+  -> BVar s comp
   -> BVar s Double
 netError dataSet net =
   let
     inputs = map graph dataSet
     -- outputs = map (run net . nmap BP.auto) inputs
     outputs = map (run net) inputs
+    targets = map (fmap BP.auto . labMap) dataSet
+  in  
+    errorMany targets outputs -- + (size net * 0.01)
+
+
+-- | Network error on a given dataset.
+netErrorQ
+  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
+     , Q.QuadComp dim a b comp
+     )
+  => DataSet dim a b
+  -> BVar s comp
+  -> BVar s Double
+netErrorQ dataSet net =
+  let
+    inputs = map graph dataSet
+    -- outputs = map (run net . nmap BP.auto) inputs
+    outputs = map (runQ net) inputs
     targets = map (fmap BP.auto . labMap) dataSet
   in  
     errorMany targets outputs -- + (size net * 0.01)

@@ -24,6 +24,8 @@ module Net.Basic
   , scale
   , vec1
   , elem0
+  , elem1
+  , elem2
   , toList
   ) where
 
@@ -159,11 +161,24 @@ vec1 =
 {-# INLINE vec1 #-}
 
 
--- | Extract the k-th element in the given vector
+-- | Extract the @0@-th element in the given vector
 elem0
   :: (Reifies s W, KnownNat n, 1 Nats.<= n)
   => BVar s (R n) -> BVar s Double
 elem0 = fst . LBP.headTail
+{-# INLINE elem0 #-}
+
+
+-- | Extract the @1@-th (second!) element in the given vector
+-- elem1
+--   :: (Reifies s W, KnownNat n, 2 Nats.<= n)
+--   => BVar s (R n) -> BVar s Double
+elem1 = fst . LBP.headTail . snd . LBP.headTail
+{-# INLINE elem1 #-}
+
+
+elem2 = fst . LBP.headTail . snd . LBP.headTail . snd . LBP.headTail
+{-# INLINE elem2 #-}
 
 
 -- | Convert the given vector to a list

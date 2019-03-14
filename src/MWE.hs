@@ -48,6 +48,9 @@ import qualified Data.Foldable as Fold
 import           Data.Semigroup (Max(..))
 import qualified Data.Graph as G
 import qualified Data.Map.Strict as M
+import qualified Data.Ord as Ord
+-- import           Data.Function (on)
+import qualified Data.List as List
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -72,6 +75,9 @@ import qualified Numeric.SGD.Momentum as Mom
 import qualified Numeric.SGD.AdaDelta as Ada
 import qualified Numeric.SGD.Adam as Adam
 -- import qualified SGD as SGD
+
+import qualified Net.ArcGraph.BiComp as Bi
+import qualified Net.ArcGraph.QuadComp as Q
 
 -- import Debug.Trace (trace)
 
@@ -160,17 +166,23 @@ mkElem mweSel sent =
 
 
 -- | Create a dataset element based on nodes and labeled arcs.
+--
+-- Works under the assumption that incoming/outgoing arcs are ,,naturally''
+-- ordered in accordance with their corresponding vertex IDs (e.g., for two
+-- children nodes x, v, the node with lower ID preceds the other node).
+--
 createElem
   :: (KnownNat d)
   -- => [(G.Vertex, R d, POS)]
   => [(G.Vertex, Net.Node d POS)]
   -> [(Net.Arc, DepRel, Bool)]
   -> Elem d DepRel POS
-createElem nodes arcs = Net.Elem
+createElem nodes arcs0 = Net.Elem
   { graph = graph
   , labMap = valMap
   }
   where
+    arcs = List.sortBy (Ord.comparing _1) arcs0
     vertices = [v | (v, _) <- nodes]
     gStr = G.buildG
       (minimum vertices, maximum vertices)
@@ -266,6 +278,66 @@ type DepRel = T.Text
 type POS = T.Text
 
 
+-- -- | Train the MWE identification network.
+-- train
+--   :: Config
+--     -- ^ General training confiration
+--   -> Cupt.MweTyp
+--     -- ^ Selected MWE type (category)
+--   -> [Sent 300]
+--     -- ^ Training dataset
+--   -> Net.Param 300 DepRel POS
+-- --   -> Net.Param 300
+--     -- ^ Initial network
+--   -> IO (Net.Param 300 DepRel POS)
+-- --   -> IO (Net.Param 300)
+-- train Config{..} mweTyp cupt net0 = do
+--   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+--   let cupt' = map (mkElem (== mweTyp)) cupt
+--   net' <- SGD.withDisk cupt' $ \dataSet -> do
+--     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
+--     -- net0 <- Net.new 300 2
+--     -- trainProgSGD sgd dataSet globalDepth net0
+--     SGD.runIO sgd
+--       (toSGD method $ SGD.batchGradPar gradient)
+--       quality dataSet net0
+-- --   Net.printParam net'
+--   return net'
+--   where
+--     gradient x = BP.gradBP (Net.netError [x])
+--     quality x = BP.evalBP (Net.netError [x])
+
+
+-- -- | Train the MWE identification network.
+-- train''
+--   :: Config
+--     -- ^ General training confiration
+--   -> Cupt.MweTyp
+--     -- ^ Selected MWE type (category)
+--   -> [Sent 300]
+--     -- ^ Training dataset
+--   -> Net.Param 300 DepRel POS
+-- --   -> Net.Param 300
+--     -- ^ Initial network
+--   -> IO (Net.Param 300 DepRel POS)
+-- --   -> IO (Net.Param 300)
+-- train'' Config{..} mweTyp cupt net0 = do
+--   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+--   let cupt' = map (mkElem (== mweTyp)) cupt
+--   net' <- SGD.withDisk cupt' $ \dataSet -> do
+--     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
+--     -- net0 <- Net.new 300 2
+--     -- trainProgSGD sgd dataSet globalDepth net0
+--     SGD.runIO sgd
+--       (toSGD method $ SGD.batchGradPar gradient)
+--       quality dataSet (Q.BiQuad net0)
+-- --   Net.printParam net'
+--   return (Q._unBiQuad net')
+--   where
+--     gradient x = BP.gradBP (Net.netErrorQ [x])
+--     quality x = BP.evalBP (Net.netErrorQ [x])
+
+
 -- | Train the MWE identification network.
 train
   :: Config
@@ -282,7 +354,7 @@ train
 train Config{..} mweTyp cupt net0 = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
   let cupt' = map (mkElem (== mweTyp)) cupt
-  SGD.withDisk cupt' $ \dataSet -> do
+  net' <- SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     -- net0 <- Net.new 300 2
     -- trainProgSGD sgd dataSet globalDepth net0
@@ -290,10 +362,10 @@ train Config{..} mweTyp cupt net0 = do
       (toSGD method $ SGD.batchGradPar gradient)
       quality dataSet net0
 --   Net.printParam net'
---   return net'
+  return net'
   where
-    gradient x = BP.gradBP (Net.netError [x])
-    quality x = BP.evalBP (Net.netError [x])
+    gradient x = BP.gradBP (Net.netErrorQ [x])
+    quality x = BP.evalBP (Net.netErrorQ [x])
 
 
 -- | Extract dependeny relations present in the given dataset.
@@ -375,7 +447,7 @@ tag mweTyp net sent = do
   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
   where
     elem = mkElem (const False) sent
-    arcMap = Net.eval net (Net.graph elem)
+    arcMap = Net.evalQ net (Net.graph elem)
     sent' = annotate mweTyp (cuptSent sent) arcMap
 
 
