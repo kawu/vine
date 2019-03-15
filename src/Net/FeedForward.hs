@@ -58,36 +58,58 @@ import           Net.ArcGraph.Graph (New(..))
 
 
 ----------------------------------------------
+-- Network layer
+----------------------------------------------
+
+
+-- data Layer i o = Layer
+--   { _nWeights :: {-# UNPACK #-} !(L o i)
+--   , _nBias    :: {-# UNPACK #-} !(R o)
+--   }
+--   deriving (Show, Generic, Binary)
+-- 
+-- instance (KnownNat i, KnownNat o) => BP.Backprop (Layer i o)
+-- makeLenses ''Layer
+-- instance (KnownNat i, KnownNat o) => ParamSet (Layer i o)
+-- instance (KnownNat i, KnownNat o) => NFData (Layer i o)
+-- instance (KnownNat i, KnownNat o) => New a b (Layer i o) where
+--   new xs ys = Layer <$> new xs ys <*> new xs ys
+-- 
+-- runLayer
+--   :: (KnownNat i, KnownNat o, Reifies s W)
+--   => BVar s (Layer i o)
+--   -> BVar s (R i) 
+--   -> BVar s (R o)
+-- runLayer l x = (l ^^. nWeights) #> x + (l ^^. nBias)
+-- {-# INLINE runLayer #-}
+
+
+----------------------------------------------
 -- Feed-forward net
 ----------------------------------------------
 
 
 data FFN idim hdim odim = FFN
-  { _nWeights1 :: !(L hdim idim)
-  , _nBias1    :: !(R hdim)
-  , _nWeights2 :: !(L odim hdim)
-  , _nBias2    :: !(R odim)
+  { _nWeights1 :: {-# UNPACK #-} !(L hdim idim)
+  , _nBias1    :: {-# UNPACK #-} !(R hdim)
+  , _nWeights2 :: {-# UNPACK #-} !(L odim hdim)
+  , _nBias2    :: {-# UNPACK #-} !(R odim)
   }
   deriving (Show, Generic, Binary)
 
 instance (KnownNat idim, KnownNat hdim, KnownNat odim) 
   => BP.Backprop (FFN idim hdim odim)
-
 makeLenses ''FFN
-
 instance (KnownNat i, KnownNat h, KnownNat o)
   => ParamSet (FFN i h o)
-
 instance (KnownNat i, KnownNat h, KnownNat o)
   => NFData (FFN i h o)
-
 instance (KnownNat i, KnownNat h, KnownNat o) => New a b (FFN i h o) where
   new xs ys = FFN
     <$> new xs ys
     <*> new xs ys
     <*> new xs ys
     <*> new xs ys
-
 
 run
   :: (KnownNat idim, KnownNat hdim, KnownNat odim, Reifies s W)
@@ -102,22 +124,36 @@ run net x = z
     z = (net ^^. nWeights2) #> y + (net ^^. nBias2)
 
 
--- -- | Substract the second network from the first one.
--- substract 
---   :: (KnownNat idim, KnownNat hdim, KnownNat odim)
---   => FFN idim hdim odim
---   -> FFN idim hdim odim
---   -> Double 
---   -> FFN idim hdim odim
--- substract x y coef = FFN
---   { _nWeights1 = _nWeights1 x - scale (_nWeights1 y)
---   , _nBias1 = _nBias1 x - scale (_nBias1 y)
---   , _nWeights2 = _nWeights2 x - scale (_nWeights2 y)
---   , _nBias2 = _nBias2 x - scale (_nBias2 y)
+-- ----------------------------------------------
+-- -- Feed-forward net: version with layers
+-- ----------------------------------------------
+-- 
+-- 
+-- data FFN idim hdim odim = FFN
+--   { _nLayer1 :: {-# UNPACK #-} !(Layer idim hdim)
+--   , _nLayer2 :: {-# UNPACK #-} !(Layer hdim odim)
 --   }
+--   deriving (Show, Generic, Binary)
+-- 
+-- instance (KnownNat idim, KnownNat hdim, KnownNat odim) 
+--   => BP.Backprop (FFN idim hdim odim)
+-- makeLenses ''FFN
+-- instance (KnownNat i, KnownNat h, KnownNat o)
+--   => ParamSet (FFN i h o)
+-- instance (KnownNat i, KnownNat h, KnownNat o)
+--   => NFData (FFN i h o)
+-- instance (KnownNat i, KnownNat h, KnownNat o) => New a b (FFN i h o) where
+--   new xs ys = FFN <$> new xs ys <*> new xs ys
+-- 
+-- 
+-- run
+--   :: (KnownNat idim, KnownNat hdim, KnownNat odim, Reifies s W)
+--   => BVar s (FFN idim hdim odim)
+--   -> BVar s (R idim)
+--   -> BVar s (R odim)
+-- run net x = z
 --   where
---     scale x
---       = fromJust
---       . LA.create
---       . LAD.scale coef
---       $ LA.unwrap x
+--     -- run first layer
+--     y = leakyRelu $ runLayer (net ^^. nLayer1) x
+--     -- run second layer
+--     z = runLayer (net ^^. nLayer2) y
