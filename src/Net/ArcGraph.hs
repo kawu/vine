@@ -189,13 +189,22 @@ import           Debug.Trace (trace)
 --   :& Bias
 
 
+-- -- | New, quad parameter set!
+-- type Param d a b
+-- --    = Q.QuadAff d d
+--    = Q.TriAff d d
+--   :& Q.SibAff d d
+--   :& Q.BiAff d d
+--   :& Q.UnAff d d
+--   :& Q.Bias
+
+
 -- | New, quad parameter set!
 type Param d a b
---    = Q.QuadAff d d
-   = Q.TriAff d d
-  :& Q.SibAff d d
-  :& Q.BiAff d d
-  :& Q.UnAff d d
+   = Q.TriAff d 100
+  :& Q.SibAff d 100
+  :& Q.BiAff d 100
+  :& Q.UnAff d 100
   :& Q.Bias
 
 
