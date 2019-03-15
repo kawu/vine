@@ -263,7 +263,7 @@ runQ
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s Double)
     -- ^ Output map with output potential values
-runQ net graph = normalize . M.unions $ do
+runQ net graph = normalize . M.unionsWith (+) $ do
   arc <- graphArcs graph
   return $ Q.runQuadComp graph arc net
   where

@@ -216,13 +216,14 @@ instance (KnownNat dim, KnownNat h) => Backprop (Aff dim h)
 makeLenses ''Aff
 
 instance (KnownNat dim, KnownNat h) => New a b (Aff dim h) where
-  new _ _ = Aff
-    <$> FFN.new d h d
-    <*> vector d
-    where
-      d = proxyVal (Proxy :: Proxy dim)
-      h = proxyVal (Proxy :: Proxy h)
-      proxyVal = fromInteger . toInteger . natVal
+  new xs ys = Aff
+    <$> new xs ys
+    <*> new xs ys
+    -- <*> vector d
+--     where
+--       d = proxyVal (Proxy :: Proxy dim)
+--       h = proxyVal (Proxy :: Proxy h)
+--       proxyVal = fromInteger . toInteger . natVal
 
 
 -- | Affinity of the given node
@@ -395,13 +396,15 @@ instance (KnownNat dim, KnownNat h) => Backprop (Biaff dim h)
 makeLenses ''Biaff
 
 instance (KnownNat dim, KnownNat h) => New a b (Biaff dim h) where
-  new _ _ = Biaff
-    <$> FFN.new (d*2) h d
-    <*> vector d
-    where
-      d = proxyVal (Proxy :: Proxy dim)
-      h = proxyVal (Proxy :: Proxy h)
-      proxyVal = fromInteger . toInteger . natVal
+  new xs ys = Biaff
+--     <$> FFN.new (d*2) h d
+--     <*> vector d
+    <$> new xs ys
+    <*> new xs ys
+--     where
+--       d = proxyVal (Proxy :: Proxy dim)
+--       h = proxyVal (Proxy :: Proxy h)
+--       proxyVal = fromInteger . toInteger . natVal
 
 instance (KnownNat dim, KnownNat h) => BiComp dim a b (Biaff dim h) where
   runBiComp graph (v, w) bia =
@@ -433,13 +436,15 @@ instance (KnownNat dim, KnownNat h) => Backprop (UnordBiaff dim h)
 makeLenses ''UnordBiaff
 
 instance (KnownNat dim, KnownNat h) => New a b (UnordBiaff dim h) where
-  new _ _ = UnordBiaff
-    <$> FFN.new (d*2) h d
-    <*> vector d
-    where
-      d = proxyVal (Proxy :: Proxy dim)
-      h = proxyVal (Proxy :: Proxy h)
-      proxyVal = fromInteger . toInteger . natVal
+  new xs ys = UnordBiaff
+--     <$> FFN.new (d*2) h d
+--     <*> vector d
+    <$> new xs ys
+    <*> new xs ys
+--     where
+--       d = proxyVal (Proxy :: Proxy dim)
+--       h = proxyVal (Proxy :: Proxy h)
+--       proxyVal = fromInteger . toInteger . natVal
 
 instance (KnownNat dim, KnownNat h) => BiComp dim a b (UnordBiaff dim h) where
   runBiComp graph (v, w) unordBia =

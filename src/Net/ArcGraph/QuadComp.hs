@@ -43,7 +43,7 @@ import           GHC.TypeNats (KnownNat, natVal)
 import qualified GHC.TypeNats as Nats
 
 import           Control.DeepSeq (NFData)
-import           Control.Lens.At (ixAt)
+import           Control.Lens.At (ixAt, ix)
 import           Control.Monad (forM)
 
 import           Lens.Micro.TH (makeLenses)
@@ -55,6 +55,7 @@ import           Data.Maybe (mapMaybe)
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 
+import qualified Numeric.LinearAlgebra as LA
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.), (^^?))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
@@ -72,28 +73,12 @@ import           Debug.Trace (trace)
 
 
 ----------------------------------------------
--- Graph utils
+-- Utils
 ----------------------------------------------
 
 
 -- | Retrieve the preceding sister node of the given node w.r.t. the given
 -- parent.
---
--- TODO (CRITICAL!): does the graph actually preserve the order of nodes?!  If
--- not, this is all wrong!  Therefore, you really should take some time in
--- order to make sure (with unit tests?) that this is correct.
---
--- In particular, you could use QuickCheck / SmallCheck to make sure that the
--- order of arcs in the created graph is consistent with token IDs (either the
--- same or inversed).
---
--- For the moment, it looks like:
--- 
---   * The graph is built (using `G.buildG`) from the list of arcs given in the
---     sequential order (i.e., as in the input sentence)
---   * The provided order is either preserved or reversed (but no permutation
---     or shuffling takes place)
---
 sister
   :: G.Vertex
     -- ^ Current vertex
@@ -109,6 +94,10 @@ sister cur par graph =
     go prev (x:xs)
       | x == cur = prev
       | otherwise = go (Just x) xs
+
+
+at v k = maybe 0 id $ v ^^? ix k
+{-# INLINE at #-}
 
 
 ----------------------------------------------
@@ -138,7 +127,10 @@ class Backprop comp => QuadComp dim a b comp where
 instance (QuadComp dim a b comp1, QuadComp dim a b comp2)
   => QuadComp dim a b (comp1 :& comp2) where
   runQuadComp graph arc (comp1 :&& comp2) =
-    runQuadComp graph arc comp1 `M.union` runQuadComp graph arc comp2
+    M.unionWith (+)
+      (runQuadComp graph arc comp1)
+      (runQuadComp graph arc comp2)
+    -- runQuadComp graph arc comp1 `M.union` runQuadComp graph arc comp2
 
 -- instance (Backprop comp, B.BiComp dim a b comp) => QuadComp dim a b comp where
 --   runQuadComp graph arc biComp =
@@ -179,29 +171,28 @@ instance QuadComp dim a b Bias where
 
 
 data UnAff d h = UnAff
-  { _headAffN :: FFN d h 2
-  , _depAffN  :: FFN d h 2
+  { _headAffN :: FFN d h 1
+  , _depAffN  :: FFN d h 1
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''UnAff
 
 instance (KnownNat d, KnownNat h) => New a b (UnAff d h) where
-  new _ _ = UnAff
-    <$> FFN.new d h 2
-    <*> FFN.new d h 2
-    where
-      d = proxyVal (Proxy :: Proxy d)
-      h = proxyVal (Proxy :: Proxy h)
-      proxyVal = fromInteger . toInteger . natVal
+  new xs ys = UnAff
+    <$> new xs ys
+    <*> new xs ys
 
 instance (KnownNat d, KnownNat h) => QuadComp d a b (UnAff d h) where
   runQuadComp graph (v, w) una =
     let wordRepr = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
         hv = wordRepr v
         hw = wordRepr w
-        vecv = FFN.run (una ^^.  depAffN) hv
-        vecw = FFN.run (una ^^. headAffN) hw
-     in M.singleton (v, w) (elem0 vecv + elem0 vecw)
+        -- vecv = FFN.run (una ^^.  depAffN) hv
+        -- vecw = FFN.run (una ^^. headAffN) hw
+        vecv = LBP.extractV $ FFN.run (una ^^.  depAffN) hv
+        vecw = LBP.extractV $ FFN.run (una ^^. headAffN) hw
+     in M.singleton (v, w) (vecv `at` 0 + vecw `at` 0)
+     -- in M.singleton (v, w) (elem0 vecv + elem0 vecw)
 
 
 ----------------------------------------------
@@ -210,33 +201,22 @@ instance (KnownNat d, KnownNat h) => QuadComp d a b (UnAff d h) where
 
 -- | Bi-affinity component, capturing the word embeddings of the current word and
 -- its parent.
---
--- TODO: the output size should be @1@!
---
 data BiAff d h = BiAff
-  { _biAffN :: FFN
-      (d Nats.+ d)
-      h
-      2
+  { _biAffN :: FFN (d Nats.+ d) h 1
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''BiAff
 
 instance (KnownNat d, KnownNat h) => New a b (BiAff d h) where
-  new _ _ = BiAff
-    <$> FFN.new (d*2) h 2
-    where
-      d = proxyVal (Proxy :: Proxy d)
-      h = proxyVal (Proxy :: Proxy h)
-      proxyVal = fromInteger . toInteger . natVal
+  new xs ys = BiAff <$> new xs ys
 
 instance (KnownNat d, KnownNat h) => QuadComp d a b (BiAff d h) where
   runQuadComp graph (v, w) bi =
     let wordRepr = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
         hv = wordRepr v
         hw = wordRepr w
-        vec = FFN.run (bi ^^. biAffN) (hv # hw)
-     in M.singleton (v, w) (elem0 vec)
+        vec = LBP.extractV $ FFN.run (bi ^^. biAffN) (hv # hw)
+     in M.singleton (v, w) (vec `at` 0)
 
 
 ----------------------------------------------
@@ -245,40 +225,27 @@ instance (KnownNat d, KnownNat h) => QuadComp d a b (BiAff d h) where
 
 -- | Triple-affinity component, capturing the word embeddings of the current word,
 -- its parent, and its grandparent.
---
--- TODO: the output size should be @2@!
---
 data TriAff d h = TriAff
-  { _triAffN :: FFN
-      (d Nats.+ d Nats.+ d)
-      h
-      3
+  { _triAffN :: FFN (d Nats.+ d Nats.+ d) h 2
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''TriAff
 
 instance (KnownNat d, KnownNat h) => New a b (TriAff d h) where
-  new _ _ = TriAff
-    <$> FFN.new (d*3) h 3
-    where
-      d = proxyVal (Proxy :: Proxy d)
-      h = proxyVal (Proxy :: Proxy h)
-      proxyVal = fromInteger . toInteger . natVal
+  new xs ys = TriAff <$> new xs ys
 
 instance (KnownNat d, KnownNat h) => QuadComp d a b (TriAff d h) where
-  runQuadComp graph (v, w) tri =
-    case outgoing w graph of
-      [u] ->
-        let wordRepr = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
-            hv = wordRepr v
-            hw = wordRepr w
-            hu = wordRepr u
-            vec = FFN.run (tri ^^. triAffN) (hv # hw # hu)
-         in M.fromList
-              [ ((v, w), elem0 vec)
-              , ((w, u), elem1 vec)
-              ]
-      _ -> M.empty
+  runQuadComp graph (v, w) tri = maybe M.empty id $ do
+    [u] <- return (outgoing w graph)
+    let wordRepr = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
+        hv = wordRepr v
+        hw = wordRepr w
+        hu = wordRepr u
+        vec = LBP.extractV $ FFN.run (tri ^^. triAffN) (hv # hw # hu)
+    return $  M.fromList
+      [ ((v, w), vec `at` 0)
+      , ((w, u), vec `at` 1)
+      ]
 
 
 ----------------------------------------------
@@ -287,25 +254,14 @@ instance (KnownNat d, KnownNat h) => QuadComp d a b (TriAff d h) where
 
 -- | Sibling-affinity component, capturing the word embeddings of the current
 -- word, its parent, and its sibling.
---
--- TODO: the output size should be @2@!
---
 data SibAff d h = SibAff
-  { _sibAffN :: FFN
-      (d Nats.+ d Nats.+ d)
-      h
-      3
+  { _sibAffN :: FFN (d Nats.+ d Nats.+ d) h 2
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''SibAff
 
 instance (KnownNat d, KnownNat h) => New a b (SibAff d h) where
-  new _ _ = SibAff
-    <$> FFN.new (d*3) h 3
-    where
-      d = proxyVal (Proxy :: Proxy d)
-      h = proxyVal (Proxy :: Proxy h)
-      proxyVal = fromInteger . toInteger . natVal
+  new xs ys = SibAff <$> new xs ys
 
 instance (KnownNat d, KnownNat h) => QuadComp d a b (SibAff d h) where
   runQuadComp graph (v, w) sib = maybe M.empty id $ do
@@ -314,10 +270,10 @@ instance (KnownNat d, KnownNat h) => QuadComp d a b (SibAff d h) where
         hv = wordRepr v
         hw = wordRepr w
         hs = wordRepr s
-        vec = FFN.run (sib ^^. sibAffN) (hv # hw # hs)
+        vec = LBP.extractV $ FFN.run (sib ^^. sibAffN) (hv # hw # hs)
     return $ M.fromList
-      [ ((v, w), elem0 vec)
-      , ((s, w), elem1 vec)
+      [ ((v, w), vec `at` 0)
+      , ((s, w), vec `at` 1)
       ]
 
 
@@ -326,25 +282,14 @@ instance (KnownNat d, KnownNat h) => QuadComp d a b (SibAff d h) where
 
 
 -- | Quad-affinity component.
---
--- TODO: the output size should be @3@!
---
 data QuadAff d h = QuadAff
-  { _quadAffN :: FFN
-      (d Nats.+ d Nats.+ d Nats.+ d)
-      h
-      4
+  { _quadAffN :: FFN (d Nats.+ d Nats.+ d Nats.+ d) h 3
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''QuadAff
 
 instance (KnownNat d, KnownNat h) => New a b (QuadAff d h) where
-  new _ _ = QuadAff
-    <$> FFN.new (d*4) h 4
-    where
-      d = proxyVal (Proxy :: Proxy d)
-      h = proxyVal (Proxy :: Proxy h)
-      proxyVal = fromInteger . toInteger . natVal
+  new xs ys = QuadAff <$> new xs ys
 
 instance (KnownNat d, KnownNat h) => QuadComp d a b (QuadAff d h) where
   runQuadComp graph (v, w) quad = maybe M.empty id $ do
@@ -355,9 +300,9 @@ instance (KnownNat d, KnownNat h) => QuadComp d a b (QuadAff d h) where
         hw = wordRepr w
         hu = wordRepr u
         hs = wordRepr s
-        vec = FFN.run (quad ^^. quadAffN) (hv # hw # hu # hs)
+        vec = LBP.extractV $ FFN.run (quad ^^. quadAffN) (hv # hw # hu # hs)
     return $ M.fromList
-      [ ((v, w), elem0 vec)
-      , ((w, u), elem1 vec)
-      , ((s, w), elem2 vec)
+      [ ((v, w), vec `at` 0)
+      , ((w, u), vec `at` 1)
+      , ((s, w), vec `at` 2)
       ]

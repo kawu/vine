@@ -63,6 +63,7 @@ import           Data.Binary (Binary)
 
 import qualified Format.Cupt as Cupt
 import qualified Net.ArcGraph as Net
+import           Net.ArcGraph.Graph (isAsc, mkAsc)
 import           Net.ArcGraph (Elem)
 -- import qualified Net.MWE2 as MWE
 -- import qualified Embedding as Emb
@@ -187,7 +188,7 @@ createElem nodes arcs0 = Net.Elem
     gStr = G.buildG
       (minimum vertices, maximum vertices)
       (map _1 arcs)
-    graph = Net.Graph
+    graph = verify . mkAsc $ Net.Graph
       { Net.graphStr = gStr
       , Net.graphInv = G.transposeG gStr
       , Net.nodeLabelMap = M.fromList $ nodes
@@ -207,6 +208,9 @@ createElem nodes arcs0 = Net.Elem
     _1 (x, _, _) = x
     -- _2 (_, y, _) = y
     -- _3 (_, _, z) = z
+    verify g
+      | isAsc g = g
+      | otherwise = error "MWE.createElem: constructed graph not ascending!"
 
 
 -- | Is MWE or not?

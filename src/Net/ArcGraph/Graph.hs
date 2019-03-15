@@ -25,6 +25,9 @@ module Net.ArcGraph.Graph
   , amap
   , posTag
 
+  , isAsc
+  , mkAsc
+
   , graphNodes
   , graphArcs
   , incoming
@@ -49,6 +52,7 @@ import           Control.Monad (forM)
 
 import           Data.Proxy (Proxy(..))
 import           Data.Binary (Binary)
+import qualified Data.List as L
 import qualified Data.Array as A
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
@@ -64,8 +68,8 @@ import           Numeric.LinearAlgebra.Static.Backprop (R, L)
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Net.Basic
-import qualified Net.FeedForward as FFN
-import           Net.FeedForward (FFN(..))
+-- import qualified Net.FeedForward as FFN
+-- import           Net.FeedForward (FFN(..))
 
 
 
@@ -152,6 +156,42 @@ incoming v Graph{..} =
 
 
 ----------------------------------------------
+-- Graph monotonicity
+----------------------------------------------
+
+
+-- | Check if the incoming/outgoing lists are ascending.
+mkAsc :: Graph a b -> Graph a b
+mkAsc g = g
+  { graphStr = _mkAsc $ graphStr g
+  , graphInv = _mkAsc $ graphInv g
+  }
+
+
+-- | Check if the incoming/outgoing lists are ascending.
+_mkAsc :: G.Graph -> G.Graph
+_mkAsc = fmap L.sort
+
+
+-- | Check if the incoming/outgoing lists are ascending.
+isAsc :: Graph a b -> Bool
+isAsc g = _isAsc (graphStr g) && _isAsc (graphInv g)
+
+
+-- | Check if the incoming/outgoing lists are ascending.
+_isAsc :: G.Graph -> Bool
+_isAsc g = and $ do
+  v <- G.vertices g
+  return $ isAscList (g A.! v)
+
+
+-- | Is the given list ascending?
+isAscList :: (Ord a) => [a] -> Bool
+isAscList (x:y:zs) = x < y && isAscList (y:zs)
+isAscList _ = True
+
+
+----------------------------------------------
 -- Type voodoo
 ----------------------------------------------
 
@@ -205,13 +245,6 @@ instance (KnownNat n, KnownNat m) => New a b (L n m) where
       n = proxyVal (Proxy :: Proxy n)
       m = proxyVal (Proxy :: Proxy m)
       proxyVal = fromInteger . toInteger . natVal
-
-instance (KnownNat i, KnownNat h, KnownNat o) => New a b (FFN i h o) where
-  new xs ys = FFN
-    <$> new xs ys
-    <*> new xs ys
-    <*> new xs ys
-    <*> new xs ys
 
 instance (New a b p1, New a b p2) => New a b (p1 :& p2) where
   new xs ys = do

@@ -6,6 +6,8 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeOperators #-}
 -- {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 -- To derive Binary
 {-# LANGUAGE DeriveAnyClass #-}
@@ -16,7 +18,7 @@
 
 module Net.FeedForward
   ( FFN (..)
-  , new
+  -- , new
   , run
   -- , substract
   ) where
@@ -51,6 +53,7 @@ import           Numeric.LinearAlgebra.Static.Backprop ((#>))
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Net.Basic
+import           Net.ArcGraph.Graph (New(..))
 -- import qualified GradientDescent.Momentum as Mom
 
 
@@ -78,39 +81,12 @@ instance (KnownNat i, KnownNat h, KnownNat o)
 instance (KnownNat i, KnownNat h, KnownNat o)
   => NFData (FFN i h o)
 
--- instance (KnownNat i, KnownNat h, KnownNat o)
---   => Mom.ParamSet (FFN i h o) where
---   zero = FFN 0 0 0 0
---   add x y = FFN
---     { _nWeights1 = _nWeights1 x + _nWeights1 y
---     , _nBias1 = _nBias1 x + _nBias1 y
---     , _nWeights2 = _nWeights2 x + _nWeights2 y
---     , _nBias2 = _nBias2 x + _nBias2 y
---     }
---   scale coef x = FFN
---     { _nWeights1 = scaleL $ _nWeights1 x
---     , _nBias1 = scaleR $ _nBias1 x
---     , _nWeights2 = scaleL $ _nWeights2 x
---     , _nBias2 = scaleR $ _nBias2 x
---     } where
---         scaleL = LA.dmmap (*coef)
---         scaleR = LA.dvmap (*coef)
---   size net = sqrt $ sum
---     [ LA.norm_2 (_nWeights1 net) ^ 2
---     , LA.norm_2 (_nBias1 net) ^ 2
---     , LA.norm_2 (_nWeights2 net) ^ 2
---     , LA.norm_2 (_nBias2 net) ^ 2
---     ]
-
--- | Create a new, random FFN
-new
-  :: (KnownNat idim, KnownNat hdim, KnownNat odim)
-  => Int -- idim
-  -> Int -- hdim
-  -> Int -- odim
-  -> IO (FFN idim hdim odim)
-new idim hdim odim =
-  FFN <$> matrix hdim idim <*> vector hdim <*> matrix odim hdim <*> vector odim
+instance (KnownNat i, KnownNat h, KnownNat o) => New a b (FFN i h o) where
+  new xs ys = FFN
+    <$> new xs ys
+    <*> new xs ys
+    <*> new xs ys
+    <*> new xs ys
 
 
 run
