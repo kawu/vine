@@ -19,6 +19,7 @@ module MWE
   , posTagsIn
 
   -- * Tagging
+  , TagConfig(..)
   , tag
   , tagMany
   ) where
@@ -395,16 +396,16 @@ posTagsIn =
 
 -- | Tag many sentences
 tagMany
-  :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
+  :: TagConfig
   -> Net.Param 300 DepRel POS
                       -- ^ Network parameters
   -> [Sent 300]       -- ^ Cupt sentences
   -> IO ()
-tagMany mweTyp net cupt = do
+tagMany tagCfg net cupt = do
   forM_ cupt $ \sent -> do
     T.putStr "# "
     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
-    tag mweTyp net sent
+    tag tagCfg net sent
 
 
 -- -- | Tag (output the result on stdin).
@@ -442,17 +443,17 @@ tagMany mweTyp net cupt = do
 
 -- | Tag (output the result on stdin).
 tag
-  :: Cupt.MweTyp      -- ^ MWE type (category) to tag with
+  :: TagConfig
   -> Net.Param 300 DepRel POS
                       -- ^ Network parameters
   -> Sent 300         -- ^ Cupt sentence
   -> IO ()
-tag mweTyp net sent = do
+tag tagCfg net sent = do
   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
   where
     elem = mkElem (const False) sent
     arcMap = Net.evalQ net (Net.graph elem)
-    sent' = annotate mweTyp (cuptSent sent) arcMap
+    sent' = annotate tagCfg (cuptSent sent) arcMap
 
 
 ----------------------------------------------
@@ -460,18 +461,27 @@ tag mweTyp net sent = do
 ----------------------------------------------
 
 
+-- | Tagging configuration
+data TagConfig = TagConfig
+  { mweThreshold :: Double
+    -- ^ The minimum probability to consider an arc a MWE component
+    -- (with 0.5 being the default)
+  , mweTyp :: Cupt.MweTyp
+    -- ^ MWE category to annotate
+  } deriving (Show, Eq, Ord)
+
+
 -- | Annotate the sentence with the given MWE type, given the network
 -- evaluation results.
 annotate
-  :: Cupt.MweTyp
-    -- ^ MWE category
+  :: TagConfig
   -> Cupt.Sent
     -- ^ Input .cupt sentence
   -- -> M.Map Net.Arc (R 2)
   -> M.Map Net.Arc Double
     -- ^ Net evaluation results
   -> Cupt.Sent
-annotate mweTyp cupt arcMap =
+annotate TagConfig{..} cupt arcMap =
 
   map enrich cupt
 
@@ -490,7 +500,8 @@ annotate mweTyp cupt arcMap =
       guard $ isMWE v
       return arc
 
-    isMWE = (>= 0.5)
+--     isMWE = (>= 0.5)
+    isMWE = (>= mweThreshold)
 --     isMWE statVect =
 --       let vect = LA.unwrap statVect
 --           val = vect `LAD.atIndex` 1

@@ -204,6 +204,7 @@ type Param d a b
    = Q.TriAff d 100
   :& Q.SibAff d 100
   :& Q.BiAff d 100
+  :& Q.UnordBiAff d 100
   :& Q.UnAff d 100
   :& Q.Bias
 

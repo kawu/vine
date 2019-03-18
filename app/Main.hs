@@ -86,6 +86,8 @@ data TagConfig = TagConfig
   , tagEmbs :: FilePath
   , tagMweCat :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
+  , tagProb :: Double
+    -- ^ MWE probability threshold
   , tagModel   :: FilePath
     -- ^ Input model (otherwise, random)
   }
@@ -181,6 +183,12 @@ tagOptions = fmap Tag $ TagConfig
        <> short 't'
        <> help "MWE category (type)"
         )
+  <*> option auto
+        ( long "prob"
+       <> short 'p'
+       <> value 0.5
+       <> help "MWE probability threshold"
+        )
   <*> strOption
         ( metavar "FILE"
        <> long "model"
@@ -268,8 +276,13 @@ run cmd =
         <$> Cupt.readCupt tagCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings tagEmbs
-      MWE.tagMany tagMweCat net
+      MWE.tagMany cfg net
         (mkInput cupt embs)
+      where
+        cfg = MWE.TagConfig
+          { MWE.mweTyp = tagMweCat
+          , MWE.mweThreshold = tagProb 
+          }
 
 
 main :: IO ()

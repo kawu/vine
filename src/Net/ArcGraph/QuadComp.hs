@@ -33,6 +33,7 @@ module Net.ArcGraph.QuadComp
   , TriAff (..)
   , SibAff (..)
   , BiAff (..)
+  , UnordBiAff (..)
   , UnAff (..)
   , Bias (..)
   ) where
@@ -216,6 +217,32 @@ instance (KnownNat d, KnownNat h) => QuadComp d a b (BiAff d h) where
         hv = wordRepr v
         hw = wordRepr w
         vec = LBP.extractV $ FFN.run (bi ^^. biAffN) (hv # hw)
+     in M.singleton (v, w) (vec `at` 0)
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Unordered bi-affinity component.
+data UnordBiAff d h = UnordBiAff
+  { _unordBiAffN :: FFN (d Nats.+ d) h 1
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+makeLenses ''UnordBiAff
+
+instance (KnownNat d, KnownNat h) => New a b (UnordBiAff d h) where
+  new xs ys = UnordBiAff <$> new xs ys
+
+instance (KnownNat d, KnownNat h) => QuadComp d a b (UnordBiAff d h) where
+  runQuadComp graph (v, w) bi =
+    let lex x = nodeLex <$> M.lookup x (nodeLabelMap graph)
+        emb = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
+        (hv, hw) =
+          if lex v <= lex w
+             then (emb v, emb w)
+             else (emb w, emb v)
+        vec = LBP.extractV $ FFN.run (bi ^^. unordBiAffN) (hv # hw)
      in M.singleton (v, w) (vec `at` 0)
 
 
