@@ -33,7 +33,9 @@ module Net.ArcGraph.QuadComp
   , TriAff (..)
   , SibAff (..)
   , BiAff (..)
+  , BiAffExt (..)
   , UnordBiAff (..)
+  , WordAff (..)
   , UnAff (..)
   , Bias (..)
   ) where
@@ -149,6 +151,8 @@ instance B.BiComp dim a b comp => QuadComp dim a b (BiQuad comp) where
     let biComp = biQuad ^^. unBiQuad
      in M.singleton arc (B.runBiComp graph arc biComp)
 
+instance (New a b comp) => New a b (BiQuad comp) where
+  new xs ys = BiQuad <$> new xs ys
 
 ----------------------------------------------
 -- Components
@@ -171,6 +175,35 @@ instance QuadComp dim a b Bias where
 ----------------------------------------------
 
 
+-- | Uni-word affinity component in which the head is not distinguished from
+-- the dependent.  See also `UnAff`.  Note also that this could be implemented
+-- more efficiently (as it is, the word-affinity of a word is re-calculated
+-- several times if it is the head of several words).
+newtype WordAff d h = WordAff
+  { _wordAffN :: FFN d h 1
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+makeLenses ''WordAff
+
+instance (KnownNat d, KnownNat h) => New a b (WordAff d h) where
+  new xs ys = WordAff <$> new xs ys
+
+instance (KnownNat d, KnownNat h) => QuadComp d a b (WordAff d h) where
+  runQuadComp graph (v, w) una =
+    let emb = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
+        hv = emb v
+        hw = emb w
+        vecv = LBP.extractV $ FFN.run (una ^^. wordAffN) hv
+        vecw = LBP.extractV $ FFN.run (una ^^. wordAffN) hw
+     in M.singleton (v, w) (vecv `at` 0 + vecw `at` 0)
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Uni-word affinity component, with distinction between the head and the
+-- dependent.  See also `WordAff`.
 data UnAff d h = UnAff
   { _headAffN :: FFN d h 1
   , _depAffN  :: FFN d h 1
@@ -218,6 +251,74 @@ instance (KnownNat d, KnownNat h) => QuadComp d a b (BiAff d h) where
         hw = wordRepr w
         vec = LBP.extractV $ FFN.run (bi ^^. biAffN) (hv # hw)
      in M.singleton (v, w) (vec `at` 0)
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Biaffinity component extended with info about POS and DEP labels.
+--
+--   * @d@ -- word embedding dimension
+--   * @l@ -- label (POS, DEP) embedding dimension
+--   * @h@ -- hidden dimension
+--
+data BiAffExt d l a b h = BiAffExt
+  { _biAffExtN :: FFN (d Nats.+ d Nats.+ l Nats.+ l Nats.+ l) h 1
+    -- ^ The actual bi-affinity net
+  , _biAffHeadPosMap :: M.Map a (R l)
+    -- ^ Head POS repr
+  , _biAffDepPosMap :: M.Map a (R l)
+    -- ^ Dependent POS repr
+  , _biAffArcMap :: M.Map b (R l)
+    -- ^ Arc label repr
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+makeLenses ''BiAffExt
+
+instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b)
+  => New a b (BiAffExt d l a b h) where
+  new xs ys = BiAffExt
+    <$> new xs ys
+    <*> newMap xs xs ys
+    <*> newMap xs xs ys
+    <*> newMap ys xs ys
+
+instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b, Show a, Show b)
+  => QuadComp d a b (BiAffExt d l a b h) where
+  runQuadComp graph (v, w) bi =
+    let nodeMap = nodeLabelMap graph
+        emb = BP.constVar . nodeEmb . (nodeMap M.!)
+        depPos = depPosRepr . nodeLab $ nodeMap M.! v
+        headPos = headPosRepr . nodeLab $ nodeMap M.! w
+        arc = arcRepr $ arcLabelMap graph M.! (v, w)
+        hv = emb v
+        hw = emb w
+        vec = LBP.extractV $ FFN.run (bi ^^. biAffExtN) 
+          (hv # hw # depPos # headPos # arc)
+     in M.singleton (v, w) (vec `at` 0)
+    where
+      headPosRepr pos = maybe err id $ do
+        bi ^^. biAffHeadPosMap ^^? ixAt pos
+        where
+          err = trace
+            ( "ArcGraph.Holi: unknown POS ("
+            ++ show pos
+            ++ ")" ) 0
+      depPosRepr pos = maybe err id $ do
+        bi ^^. biAffDepPosMap ^^? ixAt pos
+        where
+          err = trace
+            ( "ArcGraph.Holi: unknown POS ("
+            ++ show pos
+            ++ ")" ) 0
+      arcRepr dep = maybe err id $ do
+        bi ^^. biAffArcMap ^^? ixAt dep
+        where
+          err = trace
+            ( "ArcGraph.Holi: unknown arc label ("
+            ++ show dep
+            ++ ")" ) 0
 
 
 ----------------------------------------------

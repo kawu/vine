@@ -36,7 +36,7 @@ module Net.ArcGraph
   ( 
   -- * Network
 --     Config(..)
-    Param
+    Param(..)
   -- , printParam
   -- , size
   , new
@@ -91,7 +91,7 @@ import qualified Data.Graph as G
 import qualified Data.Array as A
 import           Data.Binary (Binary)
 import qualified Data.Binary as Bin
-import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy as BL
 import           Codec.Compression.Zlib (compress, decompress)
 
 -- import qualified Data.Map.Lens as ML
@@ -122,7 +122,7 @@ import           Numeric.SGD.ParamSet (ParamSet)
 import qualified Numeric.SGD.ParamSet as SGD
 
 import           Net.ArcGraph.Graph
-import           Net.ArcGraph.BiComp
+import qualified Net.ArcGraph.BiComp as B
 import qualified Net.ArcGraph.QuadComp as Q
 
 -- import qualified Embedding.Dict as D
@@ -189,7 +189,7 @@ import           Debug.Trace (trace)
 --   :& Bias
 
 
--- -- | New, quad parameter set!
+-- -- | quad100
 -- type Param d a b
 -- --    = Q.QuadAff d d
 --    = Q.TriAff d d
@@ -199,14 +199,106 @@ import           Debug.Trace (trace)
 --   :& Q.Bias
 
 
--- | New, quad parameter set!
-type Param d a b
-   = Q.TriAff d 100
-  :& Q.SibAff d 100
-  :& Q.BiAff d 100
-  :& Q.UnordBiAff d 100
-  :& Q.UnAff d 100
+-- -- | quad100-unord
+-- type Param d a b
+--    = Q.TriAff d 100
+--   :& Q.SibAff d 100
+--   :& Q.BiAff d 100
+--   :& Q.UnordBiAff d 100
+--   :& Q.UnAff d 100
+--   :& Q.Bias
+
+
+-- -- | The selected parameter config
+-- type Param d a b = Arc1 d a b
+
+
+-- | Possible model configurations
+data Param d a b 
+  = PArc0 (Arc0 d a b)
+  | PArc1 (Arc1 d a b)
+  | PArc2 (Arc2 d a b)
+  | PArc3 (Arc3 d a b)
+  | PArc4 (Arc4 d a b)
+  | PQuad0 (Quad0 d a b)
+  | PQuad1 (Quad1 d a b)
+  deriving (Generic, Binary)
+
+
+-- | Arc-factored model (0)
+type Arc0 d a b
+   = Q.BiAff d 100
   :& Q.Bias
+
+
+-- | Arc-factored model (1)
+type Arc1 d a b
+   = Q.BiAff d 100
+  :& Q.BiQuad (BiParam a b)
+
+
+-- | Arc-factored model (2)
+type Arc2 d a b
+   = Q.BiAffExt d 50 a b 100
+  :& Q.BiQuad (BiParam a b)
+
+
+-- | Arc-factored model (3)
+type Arc3 d a b
+  = Q.BiQuad (PotArc d 100 a b)
+
+
+-- | Arc-factored model (4); similar to (3), but with (h = d).
+-- The best for LVC.full in French found so far!
+type Arc4 d a b
+  = Q.BiQuad (PotArc d d a b)
+
+
+-- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
+-- exclusively)
+type BiParam a b 
+   = B.Bias
+  :& B.HeadPosAff a
+  :& B.DepPosAff a
+  :& B.PapyPosAff a
+  :& B.EnkelPosAff a
+  :& B.ArcBias b
+  :& B.PapyArcAff b
+  :& B.EnkelArcAff b
+
+
+-- | The best arc-factored model you found so far (with h = dim).
+type PotArc dim h a b 
+   = B.Biaff dim h
+  :& B.UnordBiaff dim h
+  :& B.HeadAff dim h
+  :& B.DepAff dim h
+  :& BiParam a b
+
+
+-- | Quad-factored model (0) with hidden layers of size 100
+type Quad0 d a b = 
+  QuadH d 100 a b
+
+
+-- | Quad-factored model (1); (0) + unordered bi-affine component
+type Quad1 d a b
+   = QuadH d 100 a b
+  :& Q.UnordBiAff d 100
+
+
+-- | Quad-factored model with underspecified size of the hidden layers
+type QuadH d h a b
+   = Q.TriAff d h
+  :& Q.SibAff d h
+  :& Q.BiAff d h
+  :& Q.UnAff d h
+  :& Q.Bias
+
+
+----------------------------------------------
+-- Evaluation
+----------------------------------------------
 
 
 -- printParam :: (Show a, Show b) => Param dim a b -> IO ()
@@ -228,7 +320,7 @@ type Param d a b
 
 run
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
-     , BiComp dim a b comp
+     , B.BiComp dim a b comp
      )
   => BVar s comp
     -- ^ Graph network / params
@@ -238,7 +330,7 @@ run
     -- ^ Output map with output potential values
 run net graph = M.fromList $ do
   arc <- graphArcs graph
-  let x = runBiComp graph arc net
+  let x = B.runBiComp graph arc net
   return (arc, logistic x)
 
 
@@ -246,7 +338,7 @@ run net graph = M.fromList $ do
 -- User-friendly (and without back-propagation) version of `run`.
 eval
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
-     , BiComp dim a b comp
+     , B.BiComp dim a b comp
      )
   => comp
     -- ^ Graph network / params
@@ -307,14 +399,14 @@ evalQ net graph =
 -- | Save the parameters in the given file.
 saveParam :: (Binary a) => FilePath -> a -> IO ()
 saveParam path =
-  B.writeFile path . compress . Bin.encode
+  BL.writeFile path . compress . Bin.encode
 
 
 -- | Load the parameters from the given file.
 loadParam :: (Binary a) => FilePath -> IO a
 loadParam path =
-  Bin.decode . decompress <$> B.readFile path
-  -- B.writeFile path . compress . Bin.encode
+  Bin.decode . decompress <$> BL.readFile path
+  -- BL.writeFile path . compress . Bin.encode
 
 
 ----------------------------------------------
@@ -424,7 +516,7 @@ errorMany targets outputs =
 netError
   :: ( Reifies s W, KnownNat dim
      , Ord a, Show a, Ord b, Show b
-     , BiComp dim a b comp
+     , B.BiComp dim a b comp
      )
   => DataSet dim a b
   -- -> BVar s (Param dim a b)

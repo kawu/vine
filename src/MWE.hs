@@ -11,10 +11,14 @@
 module MWE 
   ( Sent(..)
 
+  -- * New
+  , ParamTyp(..)
+  , new
+
   -- * Training
   , Config(..)
   , Method(..)
-  , train
+  , trainP
   , depRelsIn
   , posTagsIn
 
@@ -22,6 +26,7 @@ module MWE
   , TagConfig(..)
   , tag
   , tagMany
+  , tagManyP
   ) where
 
 
@@ -31,6 +36,7 @@ import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
 
 import           Control.Monad (guard, forM_)
+import           Control.DeepSeq (NFData)
 
 -- import qualified System.Directory as D
 -- import           System.FilePath ((</>))
@@ -214,10 +220,10 @@ createElem nodes arcs0 = Net.Elem
       | otherwise = error "MWE.createElem: constructed graph not ascending!"
 
 
--- | Is MWE or not?
-mwe, notMwe :: R 2
-notMwe = LA.vector [1, 0]
-mwe = LA.vector [0, 1]
+-- -- | Is MWE or not?
+-- mwe, notMwe :: R 2
+-- notMwe = LA.vector [1, 0]
+-- mwe = LA.vector [0, 1]
 
 
 -- | Token ID
@@ -345,16 +351,20 @@ type POS = T.Text
 
 -- | Train the MWE identification network.
 train
-  :: Config
+  :: ( KnownNat d
+     , Q.QuadComp d DepRel POS comp
+     , SGD.ParamSet comp, NFData comp
+     )
+  => Config
     -- ^ General training confiration
   -> Cupt.MweTyp
     -- ^ Selected MWE type (category)
-  -> [Sent 300]
+  -> [Sent d]
     -- ^ Training dataset
-  -> Net.Param 300 DepRel POS
+  -> comp
 --   -> Net.Param 300
     -- ^ Initial network
-  -> IO (Net.Param 300 DepRel POS)
+  -> IO comp
 --   -> IO (Net.Param 300)
 train Config{..} mweTyp cupt net0 = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
@@ -371,6 +381,37 @@ train Config{..} mweTyp cupt net0 = do
   where
     gradient x = BP.gradBP (Net.netErrorQ [x])
     quality x = BP.evalBP (Net.netErrorQ [x])
+
+
+-- -- | Train the MWE identification network.
+-- train
+--   :: Config
+--     -- ^ General training confiration
+--   -> Cupt.MweTyp
+--     -- ^ Selected MWE type (category)
+--   -> [Sent 300]
+--     -- ^ Training dataset
+--   -> Net.Param 300 DepRel POS
+-- --   -> Net.Param 300
+--     -- ^ Initial network
+--   -> IO (Net.Param 300 DepRel POS)
+-- --   -> IO (Net.Param 300)
+-- train = train'
+-- -- train Config{..} mweTyp cupt net0 = do
+-- --   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+-- --   let cupt' = map (mkElem (== mweTyp)) cupt
+-- --   net' <- SGD.withDisk cupt' $ \dataSet -> do
+-- --     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
+-- --     -- net0 <- Net.new 300 2
+-- --     -- trainProgSGD sgd dataSet globalDepth net0
+-- --     SGD.runIO sgd
+-- --       (toSGD method $ SGD.batchGradPar gradient)
+-- --       quality dataSet net0
+-- -- --   Net.printParam net'
+-- --   return net'
+-- --   where
+-- --     gradient x = BP.gradBP (Net.netErrorQ [x])
+-- --     quality x = BP.evalBP (Net.netErrorQ [x])
 
 
 -- | Extract dependeny relations present in the given dataset.
@@ -390,16 +431,94 @@ posTagsIn =
 
 
 ----------------------------------------------
+-- Model type, new model
+----------------------------------------------
+
+
+-- | Model type
+data ParamTyp
+  = Arc0
+  | Arc1
+  | Arc2
+  | Arc3
+  | Arc4
+  | Quad0
+  | Quad1
+  deriving (Show, Read)
+
+
+-- | Create a new model
+new 
+  :: ParamTyp
+  -> S.Set POS
+  -> S.Set DepRel
+  -> IO (Net.Param 300 DepRel POS)
+new model xs ys =
+  case model of
+    Arc0 -> Net.PArc0 <$> Net.new xs ys
+    Arc1 -> Net.PArc1 <$> Net.new xs ys
+    Arc2 -> Net.PArc2 <$> Net.new xs ys
+    Arc3 -> Net.PArc3 <$> Net.new xs ys
+    Arc4 -> Net.PArc4 <$> Net.new xs ys
+    Quad0 -> Net.PQuad0 <$> Net.new xs ys
+    Quad1 -> Net.PQuad1 <$> Net.new xs ys
+
+
+-- | Train the MWE identification network.
+trainP
+  :: Config
+    -- ^ General training confiration
+  -> Cupt.MweTyp
+    -- ^ Selected MWE type (category)
+  -> [Sent 300]
+    -- ^ Training dataset
+  -> Net.Param 300 DepRel POS
+--   -> Net.Param 300
+    -- ^ Initial network
+  -> IO (Net.Param 300 DepRel POS)
+trainP cfg mweTyp cupt net =
+  case net of
+    Net.PArc0 p -> Net.PArc0 <$> train cfg mweTyp cupt p
+    Net.PArc1 p -> Net.PArc1 <$> train cfg mweTyp cupt p
+    Net.PArc2 p -> Net.PArc2 <$> train cfg mweTyp cupt p
+    Net.PArc3 p -> Net.PArc3 <$> train cfg mweTyp cupt p
+    Net.PArc4 p -> Net.PArc4 <$> train cfg mweTyp cupt p
+    Net.PQuad0 p -> Net.PQuad0 <$> train cfg mweTyp cupt p
+    Net.PQuad1 p -> Net.PQuad1 <$> train cfg mweTyp cupt p
+
+
+-- | Tag many sentences
+tagManyP
+  :: TagConfig
+  -> Net.Param 300 DepRel POS
+  -> [Sent 300]
+  -> IO ()
+tagManyP cfg net =
+  case net of
+    Net.PArc0 p -> tagMany cfg p
+    Net.PArc1 p -> tagMany cfg p
+    Net.PArc2 p -> tagMany cfg p
+    Net.PArc3 p -> tagMany cfg p
+    Net.PArc4 p -> tagMany cfg p
+    Net.PQuad0 p -> tagMany cfg p
+    Net.PQuad1 p -> tagMany cfg p
+
+
+----------------------------------------------
 -- Tagging
 ----------------------------------------------
 
 
 -- | Tag many sentences
 tagMany
-  :: TagConfig
-  -> Net.Param 300 DepRel POS
+  :: ( KnownNat d
+     , Q.QuadComp d DepRel POS comp
+     -- , SGD.ParamSet comp, NFData comp
+     )
+  => TagConfig
+  -> comp
                       -- ^ Network parameters
-  -> [Sent 300]       -- ^ Cupt sentences
+  -> [Sent d]       -- ^ Cupt sentences
   -> IO ()
 tagMany tagCfg net cupt = do
   forM_ cupt $ \sent -> do
@@ -443,10 +562,15 @@ tagMany tagCfg net cupt = do
 
 -- | Tag (output the result on stdin).
 tag
-  :: TagConfig
-  -> Net.Param 300 DepRel POS
+  :: ( KnownNat d
+     , Q.QuadComp d DepRel POS comp
+     -- , SGD.ParamSet comp, NFData comp
+     )
+  => TagConfig
+  -- -> Net.Param 300 DepRel POS
+  -> comp
                       -- ^ Network parameters
-  -> Sent 300         -- ^ Cupt sentence
+  -> Sent d           -- ^ Cupt sentence
   -> IO ()
 tag tagCfg net sent = do
   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']

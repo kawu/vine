@@ -67,6 +67,7 @@ data Command
 data TrainConfig = TrainConfig
   { trainCupt :: FilePath
   , trainEmbs :: FilePath
+  , trainModelTyp :: MWE.ParamTyp
   , trainMweCat :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
   , trainSgdCfgPath :: FilePath
@@ -132,6 +133,10 @@ trainOptions = fmap Train $ TrainConfig
        <> long "embed"
        <> short 'e'
        <> help "Input embedding file"
+        )
+  <*> option auto
+        ( long "typ"
+       <> help "MWE model type (Arc1, Arc2, ...)"
         )
   <*> strOption
         ( long "mwe"
@@ -252,14 +257,15 @@ run cmd =
               <$> Cupt.readCupt trainCupt
             posTagSet <- MWE.posTagsIn . concat
               <$> Cupt.readCupt trainCupt
-            Graph.new posTagSet depRelSet -- netCfg
+            -- Graph.new posTagSet depRelSet -- netCfg
+            MWE.new trainModelTyp posTagSet depRelSet -- netCfg
           Just path -> Graph.loadParam path
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
-      net <- MWE.train sgdCfg trainMweCat
+      net <- MWE.trainP sgdCfg trainMweCat
         (mkInput cupt embs) net0
       case trainOutModel of
         Nothing -> return ()
@@ -276,7 +282,7 @@ run cmd =
         <$> Cupt.readCupt tagCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings tagEmbs
-      MWE.tagMany cfg net
+      MWE.tagManyP cfg net
         (mkInput cupt embs)
       where
         cfg = MWE.TagConfig
