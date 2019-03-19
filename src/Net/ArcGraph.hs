@@ -23,6 +23,8 @@
 {-# LANGUAGE Rank2Types #-}
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- To derive Binary for `Param`
 {-# LANGUAGE DeriveAnyClass #-}
@@ -49,6 +51,11 @@ module Net.ArcGraph
   , evalQ
   -- , runTest
 
+  -- * Opaque
+  , Opaque(..)
+  , Typ(..)
+  , newO
+
   -- * Storage
   , saveParam
   , loadParam
@@ -65,6 +72,12 @@ module Net.ArcGraph
 
   -- * Training
   -- , trainProg
+
+--   -- * Test
+--   , Test
+--   , Opaque (..)
+--   , test1
+--   , runOpaque
   ) where
 
 
@@ -72,6 +85,7 @@ import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat, natVal)
 -- import           GHC.Natural (naturalToInt)
 import qualified GHC.TypeNats as Nats
+import           GHC.TypeLits (Symbol, KnownSymbol)
 
 import           System.Random (randomRIO)
 
@@ -128,6 +142,237 @@ import qualified Net.ArcGraph.QuadComp as Q
 -- import qualified Embedding.Dict as D
 
 import           Debug.Trace (trace)
+
+
+----------------------------------------------
+-- Tests
+----------------------------------------------
+
+
+-- data Test a b = Test a b
+-- 
+-- 
+-- runTest :: (Show a) => Test a b -> IO ()
+-- runTest (Test x y) = print x
+-- 
+-- 
+-- -- data Opaque b = forall a. Opaque (Test a b)
+-- data Opaque :: * -> * where
+--   Opaque :: (Show a) => Test a b -> Opaque b
+-- 
+-- 
+-- runOpaque :: Opaque b -> IO ()
+-- runOpaque = \case
+--   Opaque test -> runTest test
+-- 
+-- 
+-- test1 :: Test String Int
+-- test1 = Test "well well well" 0
+
+
+-- | Model type
+data Typ
+  = Arc0T
+  | Arc1T
+  | Arc2T
+  | Arc3T
+  | Arc4T
+  | Quad0T
+  | Quad1T
+  deriving (Show, Read, Generic, Binary)
+
+
+-- | Execute the given action within the context of a particular model type.
+exec
+  :: forall d a b m.
+    ( KnownNat d
+    , Binary a, NFData a, Show a, Ord a
+    , Binary b, NFData b, Show b, Ord b
+    , Functor m
+    )
+  => Typ
+  -> (forall p. (Binary p, New a b p) => m p)
+  -> m (Opaque d a b)
+exec typ action =
+  case typ of
+    Arc0T -> Opaque typ <$> (action :: m (Arc0 d a b))
+    Arc1T -> Opaque typ <$> (action :: m (Arc1 d a b))
+    Arc2T -> Opaque typ <$> (action :: m (Arc2 d a b))
+    Arc3T -> Opaque typ <$> (action :: m (Arc3 d a b))
+    Arc4T -> Opaque typ <$> (action :: m (Arc4 d a b))
+    Quad0T -> Opaque typ <$> (action :: m (Quad0 d a b))
+    Quad1T -> Opaque typ <$> (action :: m (Quad1 d a b))
+
+
+-- | Opaque parameter set (with the actual quad component abstracted away).
+-- The type (`Typ`) is kept for the sake of (de)serialization.
+data Opaque :: Nats.Nat -> * -> * -> * where
+  Opaque 
+    :: (Binary p, NFData p, SGD.ParamSet p, Q.QuadComp d a b p)
+    => Typ -> p -> Opaque d a b
+
+
+instance Generic (Opaque d a b)
+instance ( KnownNat d
+         , Binary a, Binary b, NFData a, NFData b
+         , Ord a, Ord b, Show a, Show b
+         )
+  => Binary (Opaque d a b) where
+  put (Opaque typ p) = Bin.put typ >> Bin.put p
+  get = do
+    typ <- Bin.get
+    exec typ Bin.get
+
+
+newO
+  :: forall d a b.
+    ( KnownNat d
+    , Binary a, NFData a, Show a, Ord a
+    , Binary b, NFData b, Show b, Ord b
+    )
+  => Typ
+  -> S.Set a
+  -> S.Set b
+  -> IO (Opaque d a b)
+newO typ xs ys =
+  exec typ (new xs ys)
+
+
+-- exec 
+--   :: forall (f :: * -> *) (d :: Nats.Nat) a b comp.
+--      (KnownNat d, Q.QuadComp d a b comp)
+--   -- => Typ -> f (Arc0 d a b) -> f (Opaque d a b)
+--   => Typ -> IO comp -> IO (Opaque d a b)
+-- exec typ action =
+--   case typ of
+--     Arc0T -> Opaque Arc0T <$> (action :: IO (Arc0 d a b))
+--     -- Arc1T -> Opaque Arc1T <$> (action :: f (Arc1 d a b))
+
+
+-- -- exec :: forall m. (Monad m) => Typ -> m (comp d a b) -> m (Opaque d a b)
+-- exec 
+--   :: forall (f :: * -> *) (d :: Nats.Nat) a b comp.
+--      (Monad f, KnownNat d, Q.QuadComp d a b comp)
+--   -- => Typ -> f (Arc0 d a b) -> f (Opaque d a b)
+--   => Typ -> f comp -> f (Opaque d a b)
+-- exec typ action =
+--   case typ of
+--     Arc0T -> Opaque Arc0T <$> (action :: f (Arc0 d a b))
+--     -- Arc1T -> Opaque Arc1T <$> (action :: f (Arc1 d a b))
+
+
+-- type family GParam (typ :: Symbol) d a b where
+--   GParam "Arc0" d a b = Arc0 d a b
+--   GParam "Arc1" d a b = Arc1 d a b
+-- 
+-- 
+-- class Collects ce where
+--   type CElem ce
+--   empty :: ce
+--   add :: CElem ce -> ce -> ce
+--   toList :: ce -> [CElem ce]
+-- 
+-- 
+-- -- | Remember: you don't really want all the functions defined in `MWE` (e.g.
+-- -- trainP, tagManyP, etc.).  You don't want the `Param` sum type either.  You
+-- -- simply want to determine the type of the parameter set (e.g. `Arc1`) from a
+-- -- symbol literal.  You should design the class below with this in mind!
+-- class ParamClass param where
+--   -- | Parameter signature (symbol)
+--   type ParamSign param :: *
+--   signature :: param -> ParamSign param
+--   inverse :: ParamSign param -> param
+--   -- newQ ::
+-- 
+-- 
+-- -- loadPC :: 
+-- 
+-- 
+-- instance (KnownNat d) => ParamClass (Arc0 d a b) where
+--   data ParamTyp (Arc0 d a b) = Bool
+
+
+-- class ParamClass (typ :: Symbol) d a b where
+--   type QParam typ d a b :: *
+--   newQ :: (KnownNat d) => S.Set a -> S.Set b -> IO (QParam typ d a b)
+
+-- instance (KnownNat d) => ParamClass "Arc0" d a b where
+--   type QParam "Arc0" d a b = Arc0 d a b
+-- 
+-- instance (KnownNat d, Ord a, Ord b) => ParamClass "Arc1" d a b where
+--   type QParam "Arc1" d a b = Arc1 d a b
+
+
+-- data Qaram (typ :: Symbol) d a b where
+--   QArc0 :: Arc0 d a b -> Qaram "Arc0" d a b
+--   QArc1 :: Arc1 d a b -> Qaram "Arc1" d a b
+
+
+-- data family GParam (typ :: Symbol) d a b
+-- 
+-- data instance GParam "Arc0" d a b = Arc0 d a b
+-- data instance GParam "Arc1" d a b = Arc1 d a b
+
+
+-- -- | Create a new model
+-- new'
+--   :: (KnownSymbol typ, KnownNat d, Ord a, Ord b)
+--   => S.Set a
+--   -> S.Set b
+--   -> IO (GParam typ d a b)
+-- new' = new
+
+
+-- -- | Create a new model
+-- sth
+--   :: (KnownNat d)
+--   => GParam "Arc0" d a b
+--   -> IO ()
+-- sth = undefined
+-- 
+-- 
+-- -- | Create a new model
+-- new''
+--   :: (KnownNat d, Ord a, Ord b)
+--   => S.Set a
+--   -> S.Set b
+--   -> IO (GParam "Arc1" d a b)
+-- new'' = new
+
+
+-- -- | Create a new model
+-- new'
+--   :: (KnownSymbol typ, Ord a, Ord b)
+--   => S.Set a
+--   -> S.Set b
+--   -> IO (Qaram typ d a b)
+-- new' xs ys = undefined
+-- --   case typ of
+-- --     Arc0 -> Net.PArc0 <$> Net.new xs ys
+-- --     Arc1 -> Net.PArc1 <$> Net.new xs ys
+
+
+-- class ParamClass p where
+--   type P p :: Typ
+-- 
+-- 
+-- instance ParamClass (Qaram typ d a b) where
+--   type P (Qaram typ d a b) = typ
+-- 
+-- 
+-- -- | Create a new model
+-- new
+--   -- :: (KnownNat d, Ord a, Ord b)
+--   :: (ParamClass p)
+--   => P p
+--   -> S.Set a
+--   -> S.Set b
+--   -> IO (Qaram (P p) d a b)
+-- new typ xs ys = undefined
+-- -- new model xs ys =
+-- --   case model of
+-- --     Arc0 -> Net.PArc0 <$> Net.new xs ys
+-- --     Arc1 -> Net.PArc1 <$> Net.new xs ys
 
 
 ----------------------------------------------
@@ -213,6 +458,12 @@ import           Debug.Trace (trace)
 -- type Param d a b = Arc1 d a b
 
 
+-- class ParamClass p where
+--   -- the associated parameter type
+--   type P p :: *
+--   mkP :: P p -> p
+
+
 -- | Possible model configurations
 data Param d a b 
   = PArc0 (Arc0 d a b)
@@ -268,7 +519,7 @@ type BiParam a b
 
 
 -- | The best arc-factored model you found so far (with h = dim).
-type PotArc dim h a b 
+type PotArc dim h a b
    = B.Biaff dim h
   :& B.UnordBiaff dim h
   :& B.HeadAff dim h

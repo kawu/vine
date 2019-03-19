@@ -67,7 +67,7 @@ data Command
 data TrainConfig = TrainConfig
   { trainCupt :: FilePath
   , trainEmbs :: FilePath
-  , trainModelTyp :: MWE.ParamTyp
+  , trainModelTyp :: MWE.Typ
   , trainMweCat :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
   , trainSgdCfgPath :: FilePath
@@ -249,7 +249,7 @@ run cmd =
 --       netCfg <- Dhall.input Dhall.auto (dhallPath trainNetCfgPath)
 
       -- Initial network
-      net0 <- 
+      net0 <-
         case trainInModel of
           Nothing -> do
             -- Extract the set of dependency labels
@@ -258,14 +258,14 @@ run cmd =
             posTagSet <- MWE.posTagsIn . concat
               <$> Cupt.readCupt trainCupt
             -- Graph.new posTagSet depRelSet -- netCfg
-            MWE.new trainModelTyp posTagSet depRelSet -- netCfg
+            MWE.newO trainModelTyp posTagSet depRelSet -- netCfg
           Just path -> Graph.loadParam path
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
-      net <- MWE.trainP sgdCfg trainMweCat
+      net <- MWE.trainO sgdCfg trainMweCat
         (mkInput cupt embs) net0
       case trainOutModel of
         Nothing -> return ()
@@ -282,7 +282,7 @@ run cmd =
         <$> Cupt.readCupt tagCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings tagEmbs
-      MWE.tagManyP cfg net
+      MWE.tagManyO cfg net
         (mkInput cupt embs)
       where
         cfg = MWE.TagConfig

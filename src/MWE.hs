@@ -5,7 +5,36 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs #-}
+
+{-# LANGUAGE KindSignatures #-}
+
+-- {-# LANGUAGE FlexibleContexts #-}
+-- {-# LANGUAGE RecordWildCards #-}
+-- {-# LANGUAGE NoMonomorphismRestriction #-}
+-- {-# LANGUAGE TypeOperators #-}
 -- {-# LANGUAGE ScopedTypeVariables #-}
+-- -- {-# LANGUAGE OverloadedStrings #-}
+-- -- {-# LANGUAGE TypeApplications    #-}
+-- {-# LANGUAGE TupleSections #-}
+-- 
+-- {-# LANGUAGE MultiParamTypeClasses #-}
+-- {-# LANGUAGE FlexibleInstances #-}
+-- 
+-- {-# LANGUAGE PolyKinds #-}
+-- 
+-- {-# LANGUAGE PatternSynonyms #-}
+-- {-# LANGUAGE LambdaCase #-}
+-- {-# LANGUAGE ViewPatterns #-}
+-- {-# LANGUAGE Rank2Types #-}
+-- 
+-- {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+-- {-# LANGUAGE GADTs #-}
+-- {-# LANGUAGE TypeFamilies #-}
+-- 
+-- -- To derive Binary for `Param`
+-- {-# LANGUAGE DeriveAnyClass #-}
 
 
 module MWE 
@@ -14,11 +43,14 @@ module MWE
   -- * New
   , ParamTyp(..)
   , new
+  , Net.newO
+  , Net.Typ
 
   -- * Training
   , Config(..)
   , Method(..)
   , trainP
+  , trainO
   , depRelsIn
   , posTagsIn
 
@@ -27,6 +59,7 @@ module MWE
   , tag
   , tagMany
   , tagManyP
+  , tagManyO
   ) where
 
 
@@ -34,6 +67,7 @@ import           Prelude hiding (elem)
 
 import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
+import qualified GHC.TypeNats as Nats
 
 import           Control.Monad (guard, forM_)
 import           Control.DeepSeq (NFData)
@@ -485,6 +519,33 @@ trainP cfg mweTyp cupt net =
     Net.PArc4 p -> Net.PArc4 <$> train cfg mweTyp cupt p
     Net.PQuad0 p -> Net.PQuad0 <$> train cfg mweTyp cupt p
     Net.PQuad1 p -> Net.PQuad1 <$> train cfg mweTyp cupt p
+
+
+-- | Train the MWE identification network.
+trainO
+  :: Config
+    -- ^ General training confiration
+  -> Cupt.MweTyp
+    -- ^ Selected MWE type (category)
+  -> [Sent 300]
+    -- ^ Training dataset
+  -> Net.Opaque 300 DepRel POS
+--   -> Net.Param 300
+    -- ^ Initial network
+  -> IO (Net.Opaque 300 DepRel POS)
+trainO cfg mweTyp cupt net =
+  case net of
+    Net.Opaque t p -> Net.Opaque t <$> train cfg mweTyp cupt p
+
+
+-- | Tag many sentences
+tagManyO
+  :: TagConfig
+  -> Net.Opaque 300 DepRel POS
+  -> [Sent 300]
+  -> IO ()
+tagManyO cfg = \case
+  Net.Opaque _ p -> tagMany cfg p
 
 
 -- | Tag many sentences
