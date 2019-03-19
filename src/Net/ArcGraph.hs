@@ -281,7 +281,24 @@ type Quad0 d a b =
   QuadH d 100 a b
 
 
--- | Quad-factored model (1); (0) + unordered bi-affine component
+-- | Quad-factored model (1); (0) + unordered bi-affine component.  That's the
+-- last model you tried on cl-srv2.  Turned out better than `Quad0`, the
+-- `Q.UnordBiAff` seems to make a difference.
+--
+-- Now you could try to do some ablation/enriching study:
+--
+--   * What if you remove `Q.TriAff` and `Q.SibAff`?
+--   * What if you also remove `Q.UnAff`?
+--
+-- You can also try `Arc3`, a simplified (with dim = 100) version of the best
+-- model obtained so far (`Arc4`).  Just to see how much you potentialy (well,
+-- it can depend on training anyway...) lose by using smaller dimension.
+--
+-- The next thing to do would be to check if you can gain somethin by using
+-- POS/DEP embeddings.  For instance by enriching `Arc3` or `Arc4` with
+-- `Q.BiAffExt` (see `Arc2`).  In fact, it makes sense to test `Arc1`, `Arc2`,
+-- and `Arc3` first and see what they give.
+--
 type Quad1 d a b
    = QuadH d 100 a b
   :& Q.UnordBiAff d 100
