@@ -108,6 +108,9 @@ import qualified Data.Binary as Bin
 import qualified Data.ByteString.Lazy as BL
 import           Codec.Compression.Zlib (compress, decompress)
 
+-- import qualified Text.Read as R
+-- import qualified Text.ParserCombinators.ReadP as R
+
 -- import qualified Data.Map.Lens as ML
 import           Control.Lens.At (ixAt)
 import           Control.Lens (Lens)
@@ -179,7 +182,17 @@ data Typ
   | Arc4T
   | Quad0T
   | Quad1T
-  deriving (Show, Read, Generic, Binary)
+  deriving (Generic, Binary, Read)
+
+
+-- instance Read Typ where
+--   readPrec =
+--     Arc0T <$ str "arc0"
+--     Arc1T <$ str "arc1"
+--     Arc2T <$ str "arc2"
+--     where
+--       str = R.lift . R.string
+--   readListPrec = R.readListPrecDefault
 
 
 -- | Execute the given action within the context of a particular model type.
