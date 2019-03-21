@@ -12,8 +12,8 @@
 {-# LANGUAGE PolyKinds #-}
 
 -------------------------
-{-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+-- {-# LANGUAGE NoMonomorphismRestriction #-}
+-- {-# LANGUAGE ScopedTypeVariables #-}
 -------------------------
 
 
@@ -33,16 +33,12 @@ module Net.ArcGraph.Graph
   , incoming
   , outgoing
 
-  , New(..)
-  , newMap
-
   , (:&) (..)
   , pattern (:&&)
   ) where
 
 
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat, natVal)
 
 import           System.Random (randomRIO)
 
@@ -67,7 +63,8 @@ import           Numeric.LinearAlgebra.Static.Backprop (R, L)
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
-import           Net.Basic
+import           Net.Util
+import           Net.New
 -- import qualified Net.FeedForward as FFN
 -- import           Net.FeedForward (FFN(..))
 
@@ -202,6 +199,12 @@ data a :& b = !a :& !b
   deriving (Show, Generic, Binary, NFData, Backprop, ParamSet)
 infixr 2 :&
 
+instance (New a b p1, New a b p2) => New a b (p1 :& p2) where
+  new xs ys = do
+    p1 <- new xs ys
+    p2 <- new xs ys
+    return (p1 :& p2)
+
 pattern (:&&) :: (Backprop a, Backprop b, Reifies z W)
               => BVar z a -> BVar z b -> BVar z (a :& b)
 pattern x :&& y <- (\xy -> (xy ^^. t1, xy ^^. t2)->(x, y))
@@ -220,47 +223,47 @@ t2 f (x :& y) = (x :&) <$> f y
 ----------------------------------------------
 -- New
 ----------------------------------------------
-
-
-class New a b p where
-  new
-    :: S.Set a
-      -- ^ Set of node labels
-    -> S.Set b
-      -- ^ Set of arc labels
-    -> IO p
-
-instance New a b Double where
-  new _ _ = randomRIO (-0.01, 0.01)
-
-instance (KnownNat n) => New a b (R n) where
-  new _ _ = LA.vector <$> randomList n
-    where
-      n = proxyVal (Proxy :: Proxy n)
-      proxyVal = fromInteger . toInteger . natVal
-
-instance (KnownNat n, KnownNat m) => New a b (L n m) where
-  new _ _ = LA.matrix <$> randomList (n*m)
-    where
-      n = proxyVal (Proxy :: Proxy n)
-      m = proxyVal (Proxy :: Proxy m)
-      proxyVal = fromInteger . toInteger . natVal
-
-instance (New a b p1, New a b p2) => New a b (p1 :& p2) where
-  new xs ys = do
-    p1 <- new xs ys
-    p2 <- new xs ys
-    return (p1 :& p2)
-
-
--- | Create a new, random map.
-newMap
-  :: (Ord k, New a b v)
-  => S.Set k
-  -> S.Set a
-  -> S.Set b
-  -> IO (M.Map k v)
-newMap keySet xs ys =
-  fmap M.fromList .
-    forM (S.toList keySet) $ \key -> do
-      (key,) <$> new xs ys
+-- 
+-- 
+-- class New a b p where
+--   new
+--     :: S.Set a
+--       -- ^ Set of node labels
+--     -> S.Set b
+--       -- ^ Set of arc labels
+--     -> IO p
+-- 
+-- instance New a b Double where
+--   new _ _ = randomRIO (-0.01, 0.01)
+-- 
+-- instance (KnownNat n) => New a b (R n) where
+--   new _ _ = LA.vector <$> randomList n
+--     where
+--       n = proxyVal (Proxy :: Proxy n)
+--       proxyVal = fromInteger . toInteger . natVal
+-- 
+-- instance (KnownNat n, KnownNat m) => New a b (L n m) where
+--   new _ _ = LA.matrix <$> randomList (n*m)
+--     where
+--       n = proxyVal (Proxy :: Proxy n)
+--       m = proxyVal (Proxy :: Proxy m)
+--       proxyVal = fromInteger . toInteger . natVal
+-- 
+-- instance (New a b p1, New a b p2) => New a b (p1 :& p2) where
+--   new xs ys = do
+--     p1 <- new xs ys
+--     p2 <- new xs ys
+--     return (p1 :& p2)
+-- 
+-- 
+-- -- | Create a new, random map.
+-- newMap
+--   :: (Ord k, New a b v)
+--   => S.Set k
+--   -> S.Set a
+--   -> S.Set b
+--   -> IO (M.Map k v)
+-- newMap keySet xs ys =
+--   fmap M.fromList .
+--     forM (S.toList keySet) $ \key -> do
+--       (key,) <$> new xs ys

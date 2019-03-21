@@ -9,9 +9,12 @@
 {-# LANGUAGE TypeFamilies #-}
 
 
-module Net.Basic
+-- | This utility module provides basic artificial network-related functions
+-- (`logistic`, `softmax`, `relu`, etc.).
+
+
+module Net.Util
   ( logistic
-  , sigma
   , reluSmooth
   , leakyRelu
   , relu
@@ -58,9 +61,9 @@ logistic :: Floating a => a -> a
 logistic x = 1 / (1 + exp (-x))
 
 
--- TODO: are you sure?
-sigma :: Floating a => a -> a
-sigma = logistic
+-- -- TODO: are you sure?
+-- sigma :: Floating a => a -> a
+-- sigma = logistic
 
 
 reluSmooth :: Floating a => a -> a

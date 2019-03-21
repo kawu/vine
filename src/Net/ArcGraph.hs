@@ -30,10 +30,7 @@
 module Net.ArcGraph
   ( 
   -- * Network
---     Config(..)
     Param(..)
-  -- , printParam
-  -- , size
   , new
   , Graph(..)
   , Node(..)
@@ -42,7 +39,6 @@ module Net.ArcGraph
   , eval
   , runQ
   , evalQ
-  -- , runTest
 
   -- * Opaque
   , Opaque(..)
@@ -56,21 +52,10 @@ module Net.ArcGraph
   -- * Data set
   , DataSet
   , Elem(..)
-  -- , mkGraph
-  -- , mkSent
 
   -- * Error
   , netError
   , netErrorQ
-
-  -- * Training
-  -- , trainProg
-
---   -- * Test
---   , Test
---   , Opaque (..)
---   , test1
---   , runOpaque
   ) where
 
 
@@ -120,7 +105,8 @@ import           Numeric.LinearAlgebra.Static.Backprop
   (R, L, BVar, Reifies, W, (#), (#>), dot)
 import qualified Numeric.LinearAlgebra.Static as LA
 
-import           Net.Basic
+import           Net.New
+import           Net.Util
 -- import qualified Net.List as NL
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))

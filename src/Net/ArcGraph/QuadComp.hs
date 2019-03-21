@@ -70,7 +70,7 @@ import           Numeric.LinearAlgebra.Static.Backprop (R, (#))
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
--- import           Net.Basic
+import           Net.New (New(..), newMap)
 import           Net.ArcGraph.Graph
 import qualified Net.ArcGraph.BiComp as B
 import qualified Net.FeedForward as FFN
