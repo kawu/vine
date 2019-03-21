@@ -22,7 +22,8 @@ module Graph
   , Arc
   , nmap
   , amap
-  , posTag
+  , nodeLabAt
+  , arcLabAt
 
   , isAsc
   , mkAsc
@@ -104,14 +105,14 @@ data Node dim nlb = Node
   } deriving (Show, Binary, Generic)
 
 
--- | POS tag of the given vertex. 
-posTag :: Graph (Node d a) b -> G.Vertex -> Maybe a
-posTag g v = nodeLab <$> M.lookup v (nodeLabelMap g)
+-- | Node label of the given vertex.
+nodeLabAt :: Graph (Node d a) b -> G.Vertex -> Maybe a
+nodeLabAt g v = nodeLab <$> M.lookup v (nodeLabelMap g)
 
 
--- -- | Arc label of the given arc. 
--- arcLabel :: Graph (Node d a) b -> Arc -> Maybe a
--- arcLabel g (v, w) = M.lookup v (arcLabelMap g)
+-- | Arc label of the given arc. 
+arcLabAt :: Graph (Node d a) b -> Arc -> Maybe b
+arcLabAt g e = M.lookup e (arcLabelMap g)
 
 
 ----------------------------------------------

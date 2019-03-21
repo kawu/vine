@@ -27,7 +27,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
 
-module Net.ArcGraph
+module Net.Graph
   ( 
   -- * Network
     Param(..)
@@ -43,8 +43,8 @@ module Net.ArcGraph
   , newO
 
   -- * Storage
-  , saveParam
-  , loadParam
+  , save
+  , load
 
   -- * Data set
   , DataSet
@@ -116,8 +116,8 @@ import           Numeric.SGD.ParamSet (ParamSet)
 import qualified Numeric.SGD.ParamSet as SGD
 
 import           Graph
-import qualified Net.ArcGraph.BiComp as B
-import qualified Net.ArcGraph.QuadComp as Q
+import qualified Net.Graph.BiComp as B
+import qualified Net.Graph.QuadComp as Q
 
 -- import qualified Embedding.Dict as D
 
@@ -406,14 +406,14 @@ evalQ net graph =
 
 
 -- | Save the parameters in the given file.
-saveParam :: (Binary a) => FilePath -> a -> IO ()
-saveParam path =
+save :: (Binary a) => FilePath -> a -> IO ()
+save path =
   BL.writeFile path . compress . Bin.encode
 
 
 -- | Load the parameters from the given file.
-loadParam :: (Binary a) => FilePath -> IO a
-loadParam path =
+load :: (Binary a) => FilePath -> IO a
+load path =
   Bin.decode . decompress <$> BL.readFile path
 
 

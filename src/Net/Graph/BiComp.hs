@@ -23,7 +23,7 @@
 -------------------------
 
 
-module Net.ArcGraph.BiComp
+module Net.Graph.BiComp
   ( BiComp (..)
   , Bias (..)
   , ArcBias (..)
@@ -151,14 +151,14 @@ arcAff x aff = maybe err id $ do
   aff ^^. arcBiasMap ^^? ixAt x
   where
     err = trace
-      ( "ArcGraph.arcAff: unknown arc label ("
+      ( "Graph.arcAff: unknown arc label ("
       ++ show x
       ++ ")" ) 0
 
 instance (Ord b, Show b) => BiComp dim a b (ArcBias b) where
   runBiComp graph (v, w) arcBias =
     let err = trace
-          ( "ArcGraph.run: unknown arc ("
+          ( "Graph.run: unknown arc ("
           ++ show (v, w)
           ++ ")" ) 0
      in maybe err id $ do
@@ -313,7 +313,7 @@ posAff pos aff = maybe err id $ do
   aff ^^. posMap ^^? ixAt pos
   where
     err = trace
-      ( "ArcGraph.posAff: unknown POS ("
+      ( "Graph.posAff: unknown POS ("
       ++ show pos
       ++ ")" ) 0
 
@@ -328,7 +328,7 @@ nodePosAff graph v aff = maybe err id $ do
   return (posAff pos aff)
   where
     err = trace
-      ( "ArcGraph.nodePosAff: undefined node ("
+      ( "Graph.nodePosAff: undefined node ("
       ++ show v
       ++ ")" ) 0
 
@@ -362,7 +362,7 @@ instance (Ord a) => New a b (PapyPosAff a) where
   new xs ys = PapyPosAff <$> new xs ys <*> pure 0
 instance (Ord a, Show a) => BiComp dim a b (PapyPosAff a) where
   runBiComp graph (_, w) aff = check $ do
-    pos <- nub . mapMaybe (posTag graph) $ outgoing w graph
+    pos <- nub . mapMaybe (nodeLabAt graph) $ outgoing w graph
     return $ posAff pos (aff ^^. papyPosAff)
     where
       check [] = aff ^^. papyPosDef
@@ -378,7 +378,7 @@ instance (Ord a) => New a b (EnkelPosAff a) where
   new xs ys = EnkelPosAff <$> new xs ys <*> pure 0
 instance (Ord a, Show a) => BiComp dim a b (EnkelPosAff a) where
   runBiComp graph (v, _) aff = check $ do
-    pos <- nub . mapMaybe (posTag graph) $ incoming v graph
+    pos <- nub . mapMaybe (nodeLabAt graph) $ incoming v graph
     return $ posAff pos (aff ^^. enkelPosAff)
     where
       check [] = aff ^^. enkelPosDef
@@ -505,7 +505,7 @@ instance (KnownNat dim, KnownNat h, Ord b, Show b)
         hv0 = nodeMap M.! v
         hw0 = nodeMap M.! w
         err = trace
-          ( "ArcGraph.DirBiaff: unknown arc label ("
+          ( "Graph.DirBiaff: unknown arc label ("
           ++ show (M.lookup (v, w) (arcLabelMap graph))
           ++ ")" ) 0
         p = maybe err logistic $ do
@@ -553,7 +553,7 @@ instance (KnownNat dim, KnownNat h, Ord b, Show b)
 --         hv = nodeMap M.! v
 --         hw = nodeMap M.! w
 --         err = trace
---           ( "ArcGraph.DirBiaff: unknown arc label ("
+--           ( "Graph.DirBiaff: unknown arc label ("
 --           ++ show (M.lookup (v, w) (arcLabelMap graph))
 --           ++ ")" ) 1
 --         -- logist x = 1.0 / (1.0 + exp (-100*x))
@@ -636,20 +636,20 @@ instance
           holi ^^. holHeadPosMap ^^? ixAt pos
           where
             err = trace
-              ( "ArcGraph.Holi: unknown POS ("
+              ( "Graph.Holi: unknown POS ("
               ++ show pos
               ++ ")" ) 0
         depPosRepr pos = maybe err id $ do
           holi ^^. holDepPosMap ^^? ixAt pos
           where
             err = trace
-              ( "ArcGraph.Holi: unknown POS ("
+              ( "Graph.Holi: unknown POS ("
               ++ show pos
               ++ ")" ) 0
         arcRepr dep = maybe err id $ do
           holi ^^. holArcMap ^^? ixAt dep
           where
             err = trace
-              ( "ArcGraph.Holi: unknown arc label ("
+              ( "Graph.Holi: unknown arc label ("
               ++ show dep
               ++ ")" ) 0

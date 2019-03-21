@@ -28,7 +28,7 @@ import qualified Dhall as Dhall
 
 import           System.FilePath (isAbsolute, (</>))
 
-import qualified Net.ArcGraph as Graph
+import qualified Net.Graph as Graph
 import qualified MWE
 import qualified Format.Embedding as Emb
 import qualified Format.Cupt as Cupt
@@ -217,7 +217,7 @@ run cmd =
               <$> Cupt.readCupt trainCupt
             -- Graph.new posTagSet depRelSet -- netCfg
             MWE.newO trainModelTyp posTagSet depRelSet -- netCfg
-          Just path -> Graph.loadParam path
+          Just path -> Graph.load path
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt trainCupt
@@ -229,12 +229,12 @@ run cmd =
         Nothing -> return ()
         Just path -> do
           putStrLn "Saving model..."
-          Graph.saveParam path net
+          Graph.save path net
       putStrLn "Done!"
 
     Tag TagConfig{..} -> do
       -- Load the model
-      net <- Graph.loadParam tagModel
+      net <- Graph.load tagModel
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt tagCupt

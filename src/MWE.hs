@@ -78,9 +78,9 @@ import           Data.Binary (Binary)
 -- import qualified Data.IORef as R
 
 import qualified Format.Cupt as Cupt
-import qualified Net.ArcGraph as Net
+import qualified Net.Graph as Net
 import qualified Graph
-import           Net.ArcGraph (Elem)
+import           Net.Graph (Elem)
 import qualified Numeric.SGD as SGD
 import qualified Numeric.SGD.Type as SGD
 import qualified Numeric.SGD.ParamSet as SGD
@@ -90,8 +90,8 @@ import qualified Numeric.SGD.AdaDelta as Ada
 import qualified Numeric.SGD.Adam as Adam
 -- import qualified SGD as SGD
 
--- import qualified Net.ArcGraph.BiComp as Bi
-import qualified Net.ArcGraph.QuadComp as Q
+-- import qualified Net.Graph.BiComp as Bi
+import qualified Net.Graph.QuadComp as Q
 
 -- import Debug.Trace (trace)
 

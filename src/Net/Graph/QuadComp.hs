@@ -26,7 +26,7 @@
 -- {-# LANGUAGE UndecidableInstances #-}
 
 
-module Net.ArcGraph.QuadComp
+module Net.Graph.QuadComp
   ( QuadComp (..)
   , BiQuad (..)
 
@@ -73,7 +73,7 @@ import           Numeric.SGD.ParamSet (ParamSet)
 import           Graph
 import           Net.New
 import           Net.Pair
-import qualified Net.ArcGraph.BiComp as B
+import qualified Net.Graph.BiComp as B
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 
@@ -317,21 +317,21 @@ instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b, Show a, Show b)
         bi ^^. biAffHeadPosMap ^^? ixAt pos
         where
           err = trace
-            ( "ArcGraph.Holi: unknown POS ("
+            ( "Graph.Holi: unknown POS ("
             ++ show pos
             ++ ")" ) 0
       depPosRepr pos = maybe err id $ do
         bi ^^. biAffDepPosMap ^^? ixAt pos
         where
           err = trace
-            ( "ArcGraph.Holi: unknown POS ("
+            ( "Graph.Holi: unknown POS ("
             ++ show pos
             ++ ")" ) 0
       arcRepr dep = maybe err id $ do
         bi ^^. biAffArcMap ^^? ixAt dep
         where
           err = trace
-            ( "ArcGraph.Holi: unknown arc label ("
+            ( "Graph.Holi: unknown arc label ("
             ++ show dep
             ++ ")" ) 0
 
