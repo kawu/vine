@@ -1,8 +1,8 @@
 BPfun
 =====
 
-A collection of examples showing how to implement a simple encoder-decoder NMT
-system using [backprop](https://backprop.jle.im/index.html).
+An experimental MWE identification system based on the
+[backprop](https://backprop.jle.im/index.html) library.
 
 
 Installation
@@ -13,16 +13,11 @@ Then run the following commands:
 
     git clone https://github.com/kawu/bpfun.git
     cd bpfun
-    stack ghci --only-main
+    stack install
 
-You can then proceed to play with the examples:
+The above command builds the `bpfun-exe` command-line tool and (on Linux) puts
+it in the `~/.local/bin/` directory by default.
 
-```console
-> import Net.Ex1
-> import Numeric.Backprop
->
-> gradBP f 3
-6
-```
 
-More examples to come.
+[stack]: http://docs.haskellstack.org "Haskell Tool Stack"
+[backprop]: https://backprop.jle.im/index.html "Backpropagation library"
