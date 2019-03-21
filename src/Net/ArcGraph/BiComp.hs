@@ -70,7 +70,8 @@ import           Numeric.LinearAlgebra.Static.Backprop (R, dot, (#))
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Net.Util hiding (scale)
-import           Net.New (New(..), newMap)
+import           Net.New
+import           Net.Pair
 import           Net.ArcGraph.Graph
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))

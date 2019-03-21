@@ -106,6 +106,7 @@ import           Numeric.LinearAlgebra.Static.Backprop
 import qualified Numeric.LinearAlgebra.Static as LA
 
 import           Net.New
+import           Net.Pair
 import           Net.Util
 -- import qualified Net.List as NL
 import qualified Net.FeedForward as FFN
