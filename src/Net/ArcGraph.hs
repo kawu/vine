@@ -180,6 +180,8 @@ data Typ
   | Arc2T
   | Arc3T
   | Arc4T
+  | Arc5T
+  | Arc6T
   | Quad0T
   | Quad1T
   deriving (Generic, Binary, Read)
@@ -213,6 +215,8 @@ exec typ action =
     Arc2T -> Opaque typ <$> (action :: m (Arc2 d a b))
     Arc3T -> Opaque typ <$> (action :: m (Arc3 d a b))
     Arc4T -> Opaque typ <$> (action :: m (Arc4 d a b))
+    Arc5T -> Opaque typ <$> (action :: m (Arc5 d a b))
+    Arc6T -> Opaque typ <$> (action :: m (Arc6 d a b))
     Quad0T -> Opaque typ <$> (action :: m (Quad0 d a b))
     Quad1T -> Opaque typ <$> (action :: m (Quad1 d a b))
 
@@ -516,6 +520,18 @@ type Arc3 d a b
 -- The best for LVC.full in French found so far!
 type Arc4 d a b
   = Q.BiQuad (PotArc d d a b)
+
+
+-- | Arc-factored model (5): (2) - `BiParam`
+type Arc5 d a b
+   = Q.BiAffExt d 50 a b 100
+
+
+-- | Arc-factored model (6): (2) + `Q.UnordBiAff`
+type Arc6 d a b
+   = Q.BiAffExt d 50 a b 100
+  :& Q.UnordBiAff d 100
+  :& Q.BiQuad (BiParam a b)
 
 
 -- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
