@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 -- {-# LANGUAGE PatternSynonyms #-}
 -- {-# LANGUAGE LambdaCase #-}
 -- {-# LANGUAGE ViewPatterns #-}
@@ -41,32 +42,35 @@ module Net.ArcGraph.QuadComp
   ) where
 
 
+import           Prelude hiding (lex)
+
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat, natVal)
+import           GHC.TypeNats (KnownNat)
 import qualified GHC.TypeNats as Nats
 
 import           Control.DeepSeq (NFData)
 import           Control.Lens.At (ixAt, ix)
-import           Control.Monad (forM)
+import qualified Control.Lens.At as At
+-- import           Control.Monad (forM)
 
 import           Lens.Micro.TH (makeLenses)
 
-import           Data.Proxy (Proxy(..))
+-- import           Data.Proxy (Proxy(..))
 import qualified Data.Graph as G
 import           Data.Binary (Binary)
-import           Data.Maybe (mapMaybe)
-import qualified Data.Set as S
+-- import           Data.Maybe (mapMaybe)
+-- import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 
-import qualified Numeric.LinearAlgebra as LA
+-- import qualified Numeric.LinearAlgebra as LA
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.), (^^?))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
-import           Numeric.LinearAlgebra.Static.Backprop (R, dot, (#))
+import           Numeric.LinearAlgebra.Static.Backprop (R, (#))
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
-import           Net.Basic
+-- import           Net.Basic
 import           Net.ArcGraph.Graph
 import qualified Net.ArcGraph.BiComp as B
 import qualified Net.FeedForward as FFN
@@ -99,6 +103,13 @@ sister cur par graph =
       | otherwise = go (Just x) xs
 
 
+at
+  :: ( Num (At.IxValue b), Reifies s W, Backprop b
+     , Backprop (At.IxValue b), At.Ixed b
+     )
+  => BVar s b
+  -> At.Index b 
+  -> BVar s (At.IxValue b)
 at v k = maybe 0 id $ v ^^? ix k
 {-# INLINE at #-}
 
@@ -142,7 +153,8 @@ instance (QuadComp dim a b comp1, QuadComp dim a b comp2)
 
 newtype BiQuad comp = BiQuad
   { _unBiQuad :: comp
-  } deriving (Show, Eq, Ord, Generic, Binary, NFData, ParamSet, Backprop)
+  } deriving (Show, Eq, Ord, Generic)
+    deriving newtype (Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''BiQuad
 
@@ -162,7 +174,8 @@ instance (New a b comp) => New a b (BiQuad comp) where
 -- | Global bias
 newtype Bias = Bias
   { _biasVal :: Double
-  } deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
+  } deriving (Show, Generic)
+    deriving newtype (Binary, NFData, ParamSet, Backprop)
 makeLenses ''Bias
 instance New a b Bias where
   new xs ys = Bias <$> new xs ys
@@ -181,7 +194,8 @@ instance QuadComp dim a b Bias where
 -- several times if it is the head of several words).
 newtype WordAff d h = WordAff
   { _wordAffN :: FFN d h 1
-  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+  } deriving (Generic)
+    deriving newtype (Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''WordAff
 

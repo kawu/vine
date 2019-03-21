@@ -7,34 +7,9 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTs #-}
-
 {-# LANGUAGE KindSignatures #-}
 
--- {-# LANGUAGE FlexibleContexts #-}
--- {-# LANGUAGE RecordWildCards #-}
--- {-# LANGUAGE NoMonomorphismRestriction #-}
--- {-# LANGUAGE TypeOperators #-}
--- {-# LANGUAGE ScopedTypeVariables #-}
--- -- {-# LANGUAGE OverloadedStrings #-}
--- -- {-# LANGUAGE TypeApplications    #-}
--- {-# LANGUAGE TupleSections #-}
--- 
--- {-# LANGUAGE MultiParamTypeClasses #-}
--- {-# LANGUAGE FlexibleInstances #-}
--- 
--- {-# LANGUAGE PolyKinds #-}
--- 
--- {-# LANGUAGE PatternSynonyms #-}
--- {-# LANGUAGE LambdaCase #-}
--- {-# LANGUAGE ViewPatterns #-}
--- {-# LANGUAGE Rank2Types #-}
--- 
--- {-# LANGUAGE GeneralizedNewtypeDeriving #-}
--- {-# LANGUAGE GADTs #-}
--- {-# LANGUAGE TypeFamilies #-}
--- 
--- -- To derive Binary for `Param`
--- {-# LANGUAGE DeriveAnyClass #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 
 module MWE 
@@ -67,7 +42,7 @@ import           Prelude hiding (elem)
 
 import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
-import qualified GHC.TypeNats as Nats
+-- import qualified GHC.TypeNats as Nats
 
 import           Control.Monad (guard, forM_)
 import           Control.DeepSeq (NFData)
@@ -76,8 +51,8 @@ import           Control.DeepSeq (NFData)
 -- import           System.FilePath ((</>))
 
 import           Numeric.LinearAlgebra.Static.Backprop (R)
-import qualified Numeric.LinearAlgebra.Static as LA
-import qualified Numeric.LinearAlgebra as LAD
+-- import qualified Numeric.LinearAlgebra.Static as LA
+-- import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.Backprop as BP
 
 import           Dhall -- (Interpret)
@@ -106,9 +81,6 @@ import qualified Format.Cupt as Cupt
 import qualified Net.ArcGraph as Net
 import           Net.ArcGraph.Graph (isAsc, mkAsc)
 import           Net.ArcGraph (Elem)
--- import qualified Net.MWE2 as MWE
--- import qualified Embedding as Emb
--- import qualified GradientDescent.Momentum as Mom
 import qualified Numeric.SGD as SGD
 import qualified Numeric.SGD.Type as SGD
 import qualified Numeric.SGD.ParamSet as SGD
@@ -118,7 +90,7 @@ import qualified Numeric.SGD.AdaDelta as Ada
 import qualified Numeric.SGD.Adam as Adam
 -- import qualified SGD as SGD
 
-import qualified Net.ArcGraph.BiComp as Bi
+-- import qualified Net.ArcGraph.BiComp as Bi
 import qualified Net.ArcGraph.QuadComp as Q
 
 -- import Debug.Trace (trace)

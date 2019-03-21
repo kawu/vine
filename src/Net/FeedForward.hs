@@ -25,36 +25,23 @@ module Net.FeedForward
 
 import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
-import qualified GHC.TypeNats as Nats
 
-import           Control.Monad (forM, forM_)
 import           Control.DeepSeq (NFData)
 
-import           System.Random (randomRIO)
-
--- import           Control.Lens.TH (makeLenses)
 import           Lens.Micro.TH (makeLenses)
-import           Lens.Micro ((^.))
 
--- import           Data.Proxy (Proxy(..))
 import           Data.Binary (Binary)
-import           Data.Maybe (fromJust)
 
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop ((^^.))
-import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
-  (R, L, BVar, Reifies, W, (#))
-import qualified Numeric.LinearAlgebra as LAD
-import qualified Numeric.LinearAlgebra.Static as LA
+  (R, L, BVar, Reifies, W)
 import           Numeric.LinearAlgebra.Static.Backprop ((#>))
--- import qualified Debug.SimpleReflect as Refl
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Net.Basic
 import           Net.ArcGraph.Graph (New(..))
--- import qualified GradientDescent.Momentum as Mom
 
 
 ----------------------------------------------

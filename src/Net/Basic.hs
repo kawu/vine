@@ -30,31 +30,23 @@ module Net.Basic
   ) where
 
 
-import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
 import qualified GHC.TypeNats as Nats
 
-import           Control.Monad (forM, forM_)
-
 import           System.Random (randomRIO)
-
--- import           Control.Lens.TH (makeLenses)
-import           Lens.Micro.TH (makeLenses)
-import           Lens.Micro ((^.))
 
 import           Data.Maybe (fromJust)
 import qualified Data.Vector.Storable.Sized as SVS
 import qualified Numeric.Backprop as BP
-import           Numeric.Backprop
-  (BVar, Reifies, W, (^^.))
+import           Numeric.Backprop (BVar, Reifies, W)
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
-import           Numeric.LinearAlgebra.Static.Backprop
-  (R, L, (#))
+import           Numeric.LinearAlgebra.Static.Backprop (R, L)
 import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.LinearAlgebra.Static as LA
 import qualified Numeric.LinearAlgebra.Static.Vector as LA
-import           Numeric.LinearAlgebra.Static.Backprop ((#>))
-import qualified Debug.SimpleReflect as Refl
+
+-- -- To make GHC automatically infer that, e.g., `KnownNat d => KnownNat (d + d)`
+-- {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
 
 
 ------------------------------------
@@ -148,7 +140,11 @@ vector k = do
 
 
 -- | Scale the given vector/matrix
+scale
+  :: (LAD.Linear t d, LA.Sized t c d, LA.Sized t s d) 
+  => t -> s -> c
 scale coef x = fromJust . LA.create . LAD.scale coef $ LA.unwrap x
+{-# INLINE scale #-}
 
 
 -- | Create a singleton vector (an overkill, but this
@@ -161,7 +157,7 @@ vec1 =
 {-# INLINE vec1 #-}
 
 
--- | Extract the @0@-th element in the given vector
+-- | Extract the @0@ (first!) element of the given vector.
 elem0
   :: (Reifies s W, KnownNat n, 1 Nats.<= n)
   => BVar s (R n) -> BVar s Double
@@ -169,14 +165,28 @@ elem0 = fst . LBP.headTail
 {-# INLINE elem0 #-}
 
 
--- | Extract the @1@-th (second!) element in the given vector
--- elem1
---   :: (Reifies s W, KnownNat n, 2 Nats.<= n)
---   => BVar s (R n) -> BVar s Double
+-- | Extract the @1@-th (second!) element of the given vector.
+elem1
+  :: ( Reifies s W
+     , KnownNat (n Nats.- 1), KnownNat n
+     , (1 Nats.<=? (n Nats.- 1)) ~ 'True
+     , (1 Nats.<=? n) ~ 'True 
+     )
+  => BVar s (R n) -> BVar s Double
 elem1 = fst . LBP.headTail . snd . LBP.headTail
 {-# INLINE elem1 #-}
 
 
+-- | Extract the @2@ (third!) element of the given vector.
+elem2
+  :: ( Reifies s W
+     , KnownNat (n Nats.- 1), KnownNat n
+     , KnownNat ((n Nats.- 1) Nats.- 1)
+     , (1 Nats.<=? ((n Nats.- 1) Nats.- 1)) ~ 'True
+     , (1 Nats.<=? (n Nats.- 1)) ~ 'True
+     , (1 Nats.<=? n) ~ 'True
+     )
+  => BVar s (R n) -> BVar s Double
 elem2 = fst . LBP.headTail . snd . LBP.headTail . snd . LBP.headTail
 {-# INLINE elem2 #-}
 

@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 -- {-# LANGUAGE PatternSynonyms #-}
 -- {-# LANGUAGE LambdaCase #-}
 -- {-# LANGUAGE ViewPatterns #-}
@@ -45,7 +46,7 @@ module Net.ArcGraph.BiComp
 
 
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat, natVal)
+import           GHC.TypeNats (KnownNat)
 import qualified GHC.TypeNats as Nats
 
 import           Control.DeepSeq (NFData)
@@ -54,7 +55,7 @@ import           Control.Monad (forM)
 
 import           Lens.Micro.TH (makeLenses)
 
-import           Data.Proxy (Proxy(..))
+-- import           Data.Proxy (Proxy(..))
 import qualified Data.Graph as G
 import           Data.Binary (Binary)
 import           Data.Maybe (mapMaybe)
@@ -68,7 +69,7 @@ import           Numeric.LinearAlgebra.Static.Backprop (R, dot, (#))
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
-import           Net.Basic
+import           Net.Basic hiding (scale)
 import           Net.ArcGraph.Graph
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
@@ -113,7 +114,8 @@ instance (BiComp dim a b comp1, BiComp dim a b comp2)
 -- | Global bias
 newtype Bias = Bias
   { _biasVal :: Double
-  } deriving (Show, Generic, Binary, NFData, ParamSet)
+  } deriving (Show, Generic)
+    deriving newtype (Binary, NFData, ParamSet)
 instance Backprop Bias
 makeLenses ''Bias
 instance New a b Bias where
@@ -129,7 +131,8 @@ instance BiComp dim a b Bias where
 -- | Arc label bias
 newtype ArcBias b = ArcBias
   { _arcBiasMap :: M.Map b Double
-  } deriving (Show, Generic, Binary, NFData, ParamSet)
+  } deriving (Show, Generic)
+    deriving newtype (Binary, NFData, ParamSet)
 
 instance (Ord b) => Backprop (ArcBias b)
 makeLenses ''ArcBias
@@ -239,7 +242,8 @@ nodeAff graph v aff =
 
 
 newtype HeadAff d h = HeadAff { _unHeadAff :: Aff d h }
-  deriving (Generic, Binary, NFData, ParamSet, Backprop)
+  deriving (Generic)
+  deriving newtype (Binary, NFData, ParamSet, Backprop)
 makeLenses ''HeadAff
 instance (KnownNat dim, KnownNat h) => New a b (HeadAff dim h) where
   new xs ys = HeadAff <$> new xs ys
@@ -248,7 +252,8 @@ instance (KnownNat dim, KnownNat h) => BiComp dim a b (HeadAff dim h) where
 
 
 newtype DepAff d h = DepAff { _unDepAff :: Aff d h }
-  deriving (Generic, Binary, NFData, ParamSet, Backprop)
+  deriving (Generic)
+  deriving newtype (Binary, NFData, ParamSet, Backprop)
 makeLenses ''DepAff
 instance (KnownNat dim, KnownNat h) => New a b (DepAff dim h) where
   new xs ys = DepAff <$> new xs ys
@@ -257,7 +262,8 @@ instance (KnownNat dim, KnownNat h) => BiComp dim a b (DepAff dim h) where
 
 
 newtype SymAff d h = SymAff { _unSymAff :: Aff d h }
-  deriving (Generic, Binary, NFData, ParamSet, Backprop)
+  deriving (Generic)
+  deriving newtype (Binary, NFData, ParamSet, Backprop)
 makeLenses ''SymAff
 instance (KnownNat dim, KnownNat h) => New a b (SymAff dim h) where
   new xs ys = SymAff <$> new xs ys
@@ -326,7 +332,8 @@ nodePosAff graph v aff = maybe err id $ do
 
 
 newtype HeadPosAff a = HeadPosAff { _unHeadPosAff :: Pos a }
-  deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
+  deriving (Show, Generic)
+  deriving newtype (Binary, NFData, ParamSet, Backprop)
 makeLenses ''HeadPosAff
 instance (Ord a) => New a b (HeadPosAff a) where
   new xs ys = HeadPosAff <$> new xs ys
@@ -335,7 +342,8 @@ instance (Ord a, Show a) => BiComp dim a b (HeadPosAff a) where
 
 
 newtype DepPosAff a = DepPosAff { _unDepPosAff :: Pos a }
-  deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
+  deriving (Show, Generic)
+  deriving newtype (Binary, NFData, ParamSet, Backprop)
 makeLenses ''DepPosAff
 instance (Ord a) => New a b (DepPosAff a) where
   new xs ys = DepPosAff <$> new xs ys
@@ -643,26 +651,3 @@ instance
               ( "ArcGraph.Holi: unknown arc label ("
               ++ show dep
               ++ ")" ) 0
-
--- instance (KnownNat dim, KnownNat h, Ord b, Show b)
---   => BiComp dim a b (DirBiaff dim h b) where
---   runBiComp graph (v, w) dirBia =
---     let nodeMap = fmap
---           (BP.constVar . nodeEmb)
---           (nodeLabelMap graph)
---         hv0 = nodeMap M.! v
---         hw0 = nodeMap M.! w
---         err = trace
---           ( "ArcGraph.DirBiaff: unknown arc label ("
---           ++ show (M.lookup (v, w) (arcLabelMap graph))
---           ++ ")" ) 0
---         p = maybe err logistic $ do
---               arcLabel <- M.lookup (v, w) (arcLabelMap graph)
---               dirBia ^^. dirBiaMap ^^? ixAt arcLabel
---         q = 1 - p
---         scale x = LBP.vmap (*x)
---         hv = scale p hv0 + scale q hw0
---         hw = scale q hv0 + scale p hw0
---         bia = dirBia ^^. dirBiaff
---      in (bia ^^. biaffV) `dot`
---           (FFN.run (bia ^^. biaffN) (hv # hw))

@@ -28,21 +28,9 @@ import qualified Dhall as Dhall
 
 import           System.FilePath (isAbsolute, (</>))
 
--- import           System.Environment (getArgs)
-
--- import qualified SMT as SMT
--- import qualified Net.Ex1 as Ex1
--- import qualified Net.Ex2 as Ex2
--- import qualified Net.Ex3 as Ex3
--- import qualified Net.Ex4 as Ex4
--- import qualified Net.DAG as DAG
 import qualified Net.ArcGraph as Graph
-import qualified Net.POS as POS
--- import qualified Net.MWE2 as MWE
 import qualified MWE
--- import qualified GradientDescent.Momentum as Mom
-import qualified Embedding.Dict as D
-import qualified Embedding as Emb
+import qualified Format.Embedding as Emb
 import qualified Format.Cupt as Cupt
 
 import Debug.Trace (trace)
@@ -55,9 +43,7 @@ import Debug.Trace (trace)
 
 -- | Available commands
 data Command
-    = FastText Emb.Config
-      -- ^ Calculate fasttext embeddings for the individual words in the file
-    | Train TrainConfig
+    = Train TrainConfig
       -- ^ Train a model
     | Tag TagConfig
       -- ^ Tagging
@@ -97,27 +83,6 @@ data TagConfig = TagConfig
 --------------------------------------------------
 -- Parse options
 --------------------------------------------------
-
-
-fastTextOptions :: Parser Command
-fastTextOptions = fmap FastText $ Emb.Config
-  <$> strOption
-        ( metavar "FILE"
-       <> long "embed"
-       <> short 'e'
-       <> help "Fasttext embedding file"
-        )
-  <*> strOption
-        ( metavar "FILE"
-       <> long "input"
-       <> short 'i'
-       <> help "Input .cupt file"
-        )
-  <*> switch
-        ( long "no-header"
-       <> short 'n'
-       <> help "Embedding file has no header"
-        )
 
 
 trainOptions :: Parser Command
@@ -209,11 +174,7 @@ tagOptions = fmap Tag $ TagConfig
 
 opts :: Parser Command
 opts = subparser
-  ( command "fasttext"
-    (info (helper <*> fastTextOptions)
-      (progDesc "Determine fasttext embeddings")
-    )
-    <> command "train"
+  ( command "train"
     (info (helper <*> trainOptions)
       (progDesc "Training")
     )
@@ -233,9 +194,6 @@ opts = subparser
 run :: Command -> IO ()
 run cmd =
   case cmd of
-
-    FastText cfg -> do
-      Emb.produceEmbeddings cfg
 
     Train TrainConfig{..} -> do
 
