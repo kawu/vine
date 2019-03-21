@@ -11,13 +11,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE PolyKinds #-}
 
--------------------------
--- {-# LANGUAGE NoMonomorphismRestriction #-}
--- {-# LANGUAGE ScopedTypeVariables #-}
--------------------------
+
+-- | The module provides the representation of a graph as it is used for VMWE
+-- identification.
 
 
-module Net.ArcGraph.Graph
+module Graph
   ( Graph(..)
   , Node(..)
   , Arc
@@ -54,7 +53,7 @@ import qualified Data.Graph as G
 import qualified Numeric.LinearAlgebra.Static as LA
 import           Numeric.LinearAlgebra.Static.Backprop (R, L)
 
-import           Net.Util
+-- import           Net.Util
 -- import qualified Net.FeedForward as FFN
 -- import           Net.FeedForward (FFN(..))
 
@@ -65,7 +64,7 @@ import           Net.Util
 ----------------------------------------------
 
 
--- | Local graph type
+-- | Our custom graph type
 data Graph a b = Graph
   { graphStr :: G.Graph
     -- ^ The underlying directed graph

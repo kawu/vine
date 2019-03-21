@@ -32,9 +32,6 @@ module Net.ArcGraph
   -- * Network
     Param(..)
   , new
-  , Graph(..)
-  , Node(..)
-  , Arc
   , run
   , eval
   , runQ
@@ -118,7 +115,7 @@ import           Net.FeedForward (FFN(..))
 import           Numeric.SGD.ParamSet (ParamSet)
 import qualified Numeric.SGD.ParamSet as SGD
 
-import           Net.ArcGraph.Graph
+import           Graph
 import qualified Net.ArcGraph.BiComp as B
 import qualified Net.ArcGraph.QuadComp as Q
 

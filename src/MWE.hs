@@ -79,7 +79,7 @@ import           Data.Binary (Binary)
 
 import qualified Format.Cupt as Cupt
 import qualified Net.ArcGraph as Net
-import           Net.ArcGraph.Graph (isAsc, mkAsc)
+import qualified Graph
 import           Net.ArcGraph (Elem)
 import qualified Numeric.SGD as SGD
 import qualified Numeric.SGD.Type as SGD
@@ -156,7 +156,7 @@ mkElem mweSel sent =
     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
     nodes = do
       (tok, vec) <- zip cuptSentF (wordEmbs sent)
-      let node = Net.Node
+      let node = Graph.Node
             { nodeEmb = vec
             , nodeLab = Cupt.upos tok
             -- | TODO: could be lemma?
@@ -188,8 +188,8 @@ mkElem mweSel sent =
 createElem
   :: (KnownNat d)
   -- => [(G.Vertex, R d, POS)]
-  => [(G.Vertex, Net.Node d POS)]
-  -> [(Net.Arc, DepRel, Bool)]
+  => [(G.Vertex, Graph.Node d POS)]
+  -> [(Graph.Arc, DepRel, Bool)]
   -> Elem d DepRel POS
 createElem nodes arcs0 = Net.Elem
   { graph = graph
@@ -201,12 +201,12 @@ createElem nodes arcs0 = Net.Elem
     gStr = G.buildG
       (minimum vertices, maximum vertices)
       (map _1 arcs)
-    graph = verify . mkAsc $ Net.Graph
-      { Net.graphStr = gStr
-      , Net.graphInv = G.transposeG gStr
-      , Net.nodeLabelMap = M.fromList $ nodes
-          -- map (\(x, e, pos) -> (x, Net.Node e pos)) nodes
-      , Net.arcLabelMap = M.fromList $
+    graph = verify . Graph.mkAsc $ Graph.Graph
+      { Graph.graphStr = gStr
+      , Graph.graphInv = G.transposeG gStr
+      , Graph.nodeLabelMap = M.fromList $ nodes
+          -- map (\(x, e, pos) -> (x, Graph.Node e pos)) nodes
+      , Graph.arcLabelMap = M.fromList $
           map (\(x, y, _) -> (x, y)) arcs
       }
     valMap = M.fromList $ do
@@ -222,7 +222,7 @@ createElem nodes arcs0 = Net.Elem
     -- _2 (_, y, _) = y
     -- _3 (_, _, z) = z
     verify g
-      | isAsc g = g
+      | Graph.isAsc g = g
       | otherwise = error "MWE.createElem: constructed graph not ascending!"
 
 
@@ -634,8 +634,8 @@ annotate
   :: TagConfig
   -> Cupt.Sent
     -- ^ Input .cupt sentence
-  -- -> M.Map Net.Arc (R 2)
-  -> M.Map Net.Arc Double
+  -- -> M.Map Graph.Arc (R 2)
+  -> M.Map Graph.Arc Double
     -- ^ Net evaluation results
   -> Cupt.Sent
 annotate TagConfig{..} cupt arcMap =
@@ -675,8 +675,8 @@ annotate TagConfig{..} cupt arcMap =
 -- | Given a set of graph arcs, determine all the connected arc subsets in the
 -- corresponding graph.
 findConnectedComponents
-  :: S.Set Net.Arc
-  -> [S.Set Net.Arc]
+  :: S.Set Graph.Arc
+  -> [S.Set Graph.Arc]
 findConnectedComponents arcSet
   | S.null arcSet = []
   | otherwise
@@ -693,11 +693,11 @@ findConnectedComponents arcSet
 -- | Determine the set of arcs in the given connected graph component.
 -- TODO: This could be done much more efficiently!
 arcsInTree
-  :: S.Set Net.Arc
+  :: S.Set Graph.Arc
     -- ^ The set of all arcs
   -> G.Tree G.Vertex
     -- ^ Connected component
-  -> S.Set Net.Arc
+  -> S.Set Graph.Arc
 arcsInTree arcSet cc = S.fromList $ do
   (v, w) <- S.toList arcSet
   guard $ v `S.member` vset
@@ -708,7 +708,7 @@ arcsInTree arcSet cc = S.fromList $ do
 
 
 -- | The set of nodes in the given arc set.
-nodesIn :: S.Set Net.Arc -> S.Set G.Vertex
+nodesIn :: S.Set Graph.Arc -> S.Set G.Vertex
 nodesIn arcSet =
   (S.fromList . concat)
     [[v, w] | (v, w) <- S.toList arcSet]
