@@ -27,12 +27,13 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
 
+-- | Processing graphs with artificial neural networks.
+
+
 module Net.Graph
   ( 
   -- * Network
-    Param(..)
-  , new
-  , run
+    run
   , eval
   , runQ
   , evalQ
@@ -42,7 +43,7 @@ module Net.Graph
   , Typ(..)
   , newO
 
-  -- * Storage
+  -- * Serialization
   , save
   , load
 
@@ -113,7 +114,6 @@ import           Net.FeedForward (FFN(..))
 -- import qualified GradientDescent.Nestorov as Mom
 -- import qualified GradientDescent.AdaDelta as Ada
 import           Numeric.SGD.ParamSet (ParamSet)
-import qualified Numeric.SGD.ParamSet as SGD
 
 import           Graph
 import qualified Net.Graph.BiComp as B
@@ -124,7 +124,12 @@ import qualified Net.Graph.QuadComp as Q
 import           Debug.Trace (trace)
 
 
--- | Model type
+----------------------------------------------
+-- Opaque
+----------------------------------------------
+
+
+-- | Each constructor of `Typ` corresponds to a specific network architecture.
 data Typ
   = Arc0T
   | Arc1T
@@ -138,6 +143,11 @@ data Typ
   deriving (Generic, Binary, Read)
 
 
+-- NOTE: the code below is commented out because it requires manually
+-- specifying the correspondence between the different `Typ` constructors and
+-- their string representation.  Maybe we could use (and export) an additional
+-- newtype to automate this?
+--
 -- instance Read Typ where
 --   readPrec =
 --     Arc0T <$ str "arc0"
@@ -148,7 +158,32 @@ data Typ
 --   readListPrec = R.readListPrecDefault
 
 
--- | Execute the given action within the context of a particular model type.
+-- | Opaque neural network with the actual architecture abstracted away.
+-- The type (`Typ`) is kept for the sake of (de-)serialization.
+--
+-- `Opaque` is motivated by the fact that each network architecture is
+-- represeted by a different type.  We know, however, that each architecture is
+-- an instance of `Q.QuadComp`, `ParamSet`, etc., and this is precisely
+-- what `Opaque` preserves.
+data Opaque :: Nats.Nat -> * -> * -> * where
+  Opaque 
+    :: (Binary p, NFData p, ParamSet p, Q.QuadComp d a b p)
+    => Typ -> p -> Opaque d a b
+
+
+instance ( KnownNat d
+         , Binary a, Binary b, NFData a, NFData b
+         , Ord a, Ord b, Show a, Show b
+         )
+  => Binary (Opaque d a b) where
+  put (Opaque typ p) = Bin.put typ >> Bin.put p
+  get = do
+    typ <- Bin.get
+    exec typ Bin.get
+
+
+-- | Execute the action within the context of the given model type.  Just a
+-- helper function, really, which allows to avoid boilerplate code.
 exec
   :: forall d a b m.
     ( KnownNat d
@@ -172,54 +207,24 @@ exec typ action =
     Quad1T -> Opaque typ <$> (action :: m (Quad1 d a b))
 
 
--- | Opaque parameter set (with the actual quad component abstracted away).
--- The type (`Typ`) is kept for the sake of (de)serialization.
-data Opaque :: Nats.Nat -> * -> * -> * where
-  Opaque 
-    :: (Binary p, NFData p, SGD.ParamSet p, Q.QuadComp d a b p)
-    => Typ -> p -> Opaque d a b
-
-
-instance ( KnownNat d
-         , Binary a, Binary b, NFData a, NFData b
-         , Ord a, Ord b, Show a, Show b
-         )
-  => Binary (Opaque d a b) where
-  put (Opaque typ p) = Bin.put typ >> Bin.put p
-  get = do
-    typ <- Bin.get
-    exec typ Bin.get
-
-
+-- | Create a new network of the given type.
 newO
   :: forall d a b.
     ( KnownNat d
     , Binary a, NFData a, Show a, Ord a
     , Binary b, NFData b, Show b, Ord b
     )
-  => Typ
-  -> S.Set a
-  -> S.Set b
+  => Typ     -- ^ Network type, which determines its architecture
+  -> S.Set a -- ^ The set of node labels
+  -> S.Set b -- ^ The set of arc labels
   -> IO (Opaque d a b)
 newO typ xs ys =
   exec typ (new xs ys)
 
 
 ----------------------------------------------
--- Parameters
+-- Different network architectures
 ----------------------------------------------
-
-
--- | Possible model configurations
-data Param d a b 
-  = PArc0 (Arc0 d a b)
-  | PArc1 (Arc1 d a b)
-  | PArc2 (Arc2 d a b)
-  | PArc3 (Arc3 d a b)
-  | PArc4 (Arc4 d a b)
-  | PQuad0 (Quad0 d a b)
-  | PQuad1 (Quad1 d a b)
-  deriving (Generic, Binary)
 
 
 -- | Arc-factored model (0)
@@ -327,6 +332,8 @@ type QuadH d h a b
 ----------------------------------------------
 
 
+-- | Run the given (bi-affine) network over the given graph.  The function
+-- works within the context of back-propagation, hence the complicated types.
 run
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
      , B.BiComp dim a b comp
@@ -343,8 +350,8 @@ run net graph = M.fromList $ do
   return (arc, logistic x)
 
 
--- | Evaluate the network over a graph labeled with input word embeddings.
--- User-friendly (and without back-propagation) version of `run`.
+-- | Evaluate the network over the given graph.  User-friendly (and without
+-- back-propagation) version of `run`.
 eval
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
      , B.BiComp dim a b comp
@@ -364,6 +371,8 @@ eval net graph =
     )
 
 
+-- | Run the given (quad/multi-affine) network over the given graph within the
+-- context of back-propagation.
 runQ
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
      , Q.QuadComp dim a b comp
@@ -381,13 +390,13 @@ runQ net graph = normalize . M.unionsWith (+) $ do
     normalize = fmap logistic
 
 
+-- | User-friendly (and without back-propagation) version of `runQ`.
 evalQ
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
      , Q.QuadComp dim a b comp
      )
   => comp
     -- ^ Graph network / params
-  -- -> Graph (R d) b
   -> Graph (Node dim a) b
     -- ^ Input graph labeled with initial hidden states (word embeddings)
   -> M.Map Arc Double
