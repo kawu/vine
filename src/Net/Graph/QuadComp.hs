@@ -317,21 +317,21 @@ instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b, Show a, Show b)
         bi ^^. biAffHeadPosMap ^^? ixAt pos
         where
           err = trace
-            ( "Graph.Holi: unknown POS ("
+            ( "Graph.BiAffExt: unknown POS ("
             ++ show pos
             ++ ")" ) 0
       depPosRepr pos = maybe err id $ do
         bi ^^. biAffDepPosMap ^^? ixAt pos
         where
           err = trace
-            ( "Graph.Holi: unknown POS ("
+            ( "Graph.BiAffExt: unknown POS ("
             ++ show pos
             ++ ")" ) 0
       arcRepr dep = maybe err id $ do
         bi ^^. biAffArcMap ^^? ixAt dep
         where
           err = trace
-            ( "Graph.Holi: unknown arc label ("
+            ( "Graph.BiAffExt: unknown arc label ("
             ++ show dep
             ++ ")" ) 0
 
