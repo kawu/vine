@@ -427,9 +427,10 @@ tag tagCfg net sent = do
   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
   where
     elem = mkElem (const False) sent
-    arcMap 
-      = fmap (N.arcProb . N.decode)
-      $ N.eval net (N.graph elem)
+    arcMap
+      = N.tagGreedy (mweThreshold tagCfg)
+      . N.eval net
+      $ N.graph elem
     sent' = annotate tagCfg (cuptSent sent) arcMap
 
 
@@ -447,7 +448,7 @@ tag tagCfg net sent = do
 --   where
 --     elem = mkElem (const False) sent
 --     arcMap 
---       = fmap (N.arcProb . N.decode)
+--       = fmap (N.arcVal . N.decode)
 --       $ N.eval net (N.graph elem)
 --     sent' = annotate tagCfg (cuptSent sent) arcMap
 
@@ -455,7 +456,7 @@ tag tagCfg net sent = do
 ----------------------------------------------
 -- Annotation
 --
--- TODO: copy from MWE
+-- TODO: almost copy from MWE
 ----------------------------------------------
 
 
@@ -466,7 +467,8 @@ annotate
   -> Cupt.Sent
     -- ^ Input .cupt sentence
   -- -> M.Map Graph.Arc (R 2)
-  -> M.Map Graph.Arc Double
+  -- -> M.Map Graph.Arc Double
+  -> M.Map Graph.Arc Bool
     -- ^ Net evaluation results
   -> Cupt.Sent
 annotate TagConfig{..} cupt arcMap =
@@ -485,15 +487,16 @@ annotate TagConfig{..} cupt arcMap =
     -- Determine the set of MWE arcs
     arcSet = S.fromList $ do
       (arc, v) <- M.toList arcMap
-      guard $ isMWE v
+      -- guard $ isMWE v
+      guard v
       return arc
 
---     isMWE = (>= 0.5)
-    isMWE = (>= mweThreshold)
---     isMWE statVect =
---       let vect = LA.unwrap statVect
---           val = vect `LAD.atIndex` 1
---        in val > 0.5
+-- --     isMWE = (>= 0.5)
+--     isMWE = (>= mweThreshold)
+-- --     isMWE statVect =
+-- --       let vect = LA.unwrap statVect
+-- --           val = vect `LAD.atIndex` 1
+-- --        in val > 0.5
 
     -- Determine the mapping from nodes to new MWE id's
     ccs = findConnectedComponents arcSet

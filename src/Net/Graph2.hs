@@ -87,6 +87,9 @@ module Net.Graph2
   , enumerate
   , explicate
   , obfuscate
+
+  -- * Inference
+  , tagGreedy
   ) where
 
 
@@ -422,15 +425,18 @@ eval net graph =
 --   { nodLab :: M.Map G.Vertex Bool
 --   , arcLab :: M.Map Arc Bool
 --   }
---
---
--- -- | Greedily determine the node and arc labeling with the highest potential.
--- --
--- -- On input, the map of either potentials or probabilities should be given.
--- -- This should not matter.
--- -- 
--- tagGreedy :: M.Map Arc B.Pot -> Labeling
--- tagGreedy 
+
+
+-- | Greedily pick an arc labeling with high potential based on the given
+-- potential map.
+tagGreedy
+  :: Double -- ^ Probability threshold (e.g. @0.5@)
+  -> M.Map Arc (Vec8 Prob)
+  -> M.Map Arc Bool
+-- tagGreedy th m = M.fromList $ do
+--   (e, vec) <- M.toList m
+--   return (e, arcVal (decode vec) >= th)
+tagGreedy th = fmap $ \vec -> arcVal (decode vec) >= th
 
 
 ----------------------------------------------
@@ -577,9 +583,9 @@ mkTarget el = M.fromList $ do
   let vP = nodMap el M.! v
       wP = nodMap el M.! w
       target = Out
-        { arcProb = arcP
-        , hedProb = wP
-        , depProb = vP }
+        { arcVal = arcP
+        , hedVal = wP
+        , depVal = vP }
   return ((v, w), encode target)
 
 
@@ -590,11 +596,11 @@ mkTarget el = M.fromList $ do
 
 -- | Output structure
 data Out a = Out
-  { arcProb :: a
+  { arcVal :: a
     -- ^ Probability/potential of the arc
-  , hedProb :: a
+  , hedVal :: a
     -- ^ Probability/potential of the head
-  , depProb :: a
+  , depVal :: a
     -- ^ Probability/potential of the dependent
   } deriving (Generic, Show, Eq, Ord)
 
@@ -605,7 +611,7 @@ instance (SC.Serial m a) => SC.Serial m (Out a)
 -- | Encode the target structure as a vector
 -- TODO: Out Double -> e.g. Out (Real Prob) or Out (Float Prob)
 encode :: Out Double -> Vec8 Prob
-encode Out{..} = (Vec . encode') [arcProb, hedProb, depProb]
+encode Out{..} = (Vec . encode') [arcVal, hedVal, depVal]
 
 
 -- | Decode the target structure from the potential vector
@@ -613,9 +619,9 @@ decode :: Vec8 Prob -> Out Double
 decode vec =
   case decode' (unVec vec) of
     [arcP, hedP, depP] -> Out
-      { arcProb = arcP
-      , hedProb = hedP
-      , depProb = depP
+      { arcVal = arcP
+      , hedVal = hedP
+      , depVal = depP
       }
     xs -> error $
       "Graph2.decode: unsupported list length (" ++
