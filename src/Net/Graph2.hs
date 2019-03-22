@@ -78,10 +78,15 @@ module Net.Graph2
   , netError
 
   -- * Encoding
-  , Target(..)
+  , Out(..)
   , encode
   , decode
   , rightInTwo
+
+  -- * Explicating
+  , enumerate
+  , explicate
+  , obfuscate
   ) where
 
 
@@ -146,6 +151,7 @@ import           Net.FeedForward (FFN(..))
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Graph
+import           Net.Graph2.BiComp (Pot, Prob, Vec(..), Vec8)
 import qualified Net.Graph2.BiComp as B
 -- import qualified Net.Graph.QuadComp as Q
 
@@ -333,6 +339,23 @@ type BiParam a b
 
 -- | Run the given (bi-affine) network over the given graph within the context
 -- of back-propagation.
+runRaw
+  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
+     , B.BiComp dim a b comp
+     )
+  => BVar s comp
+    -- ^ Graph network / params
+  -> Graph (Node dim a) b
+    -- ^ Input graph labeled with initial hidden states
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Output map with output potential values
+runRaw net graph = M.fromList $ do
+  arc <- graphArcs graph
+  let x = B.runBiComp graph arc net
+  return (arc, x)
+
+
+-- | `runRaw` + softmax
 run
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
      , B.BiComp dim a b comp
@@ -341,16 +364,36 @@ run
     -- ^ Graph network / params
   -> Graph (Node dim a) b
     -- ^ Input graph labeled with initial hidden states
-  -> M.Map Arc (BVar s B.Pot)
+  -> M.Map Arc (BVar s (Vec8 Prob))
     -- ^ Output map with output potential values
-run net graph = M.fromList $ do
-  arc <- graphArcs graph
-  let x = B.runBiComp graph arc net
-  return (arc, softmax x)
+run net = fmap B.softmaxVec . runRaw net
+
+
+-- | Evaluate the network over the given graph.  User-friendly (and without
+-- back-propagation) version of `runRaw`.
+evalRaw
+  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
+     , B.BiComp dim a b comp
+     )
+  => comp
+    -- ^ Graph network / params
+  -> Graph (Node dim a) b
+    -- ^ Input graph labeled with initial hidden states (word embeddings)
+  -> M.Map Arc (Vec8 Pot)
+evalRaw net graph =
+  BP.evalBP0
+    ( BP.collectVar
+    $ runRaw
+        (BP.constVar net)
+        graph
+    )
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
 -- back-propagation) version of `run`.
+--
+-- TODO: lot's of code common with `evalRaw`.
+--
 eval
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
      , B.BiComp dim a b comp
@@ -359,7 +402,7 @@ eval
     -- ^ Graph network / params
   -> Graph (Node dim a) b
     -- ^ Input graph labeled with initial hidden states (word embeddings)
-  -> M.Map Arc B.Pot
+  -> M.Map Arc (Vec8 Prob)
 eval net graph =
   BP.evalBP0
     ( BP.collectVar
@@ -367,6 +410,53 @@ eval net graph =
         (BP.constVar net)
         graph
     )
+
+
+----------------------------------------------
+-- Inference
+----------------------------------------------
+
+
+-- -- | Graph labeling
+-- data Labeling = Labeling
+--   { nodLab :: M.Map G.Vertex Bool
+--   , arcLab :: M.Map Arc Bool
+--   }
+--
+--
+-- -- | Greedily determine the node and arc labeling with the highest potential.
+-- --
+-- -- On input, the map of either potentials or probabilities should be given.
+-- -- This should not matter.
+-- -- 
+-- tagGreedy :: M.Map Arc B.Pot -> Labeling
+-- tagGreedy 
+
+
+----------------------------------------------
+-- Explicating
+----------------------------------------------
+
+
+-- | Determine the values assigned to different labellings of the given arc and
+-- nodes.
+explicate :: Vec8 p -> M.Map (Out Bool) Double
+explicate = M.fromList . zip enumerate . toList . unVec
+
+
+-- | The inverse of `explicate`.
+obfuscate :: M.Map (Out Bool) Double -> Vec8 p
+obfuscate = Vec . LA.vector . M.elems
+
+
+-- | Enumerate the possible arc/node labelings in order consistent with the
+-- encoding/decoding format.
+enumerate :: [Out Bool]
+enumerate = do
+  b1 <- [False, True]
+  b2 <- [False, True]
+  b3 <- [False, True]
+  return $ Out b1 b2 b3
 
 
 ----------------------------------------------
@@ -413,24 +503,25 @@ type DataSet d a b = [Elem d a b]
 
 -- | Cross entropy between the true and the artificial distributions
 crossEntropy
-  :: (KnownNat n, Reifies s W)
-  => BVar s (R n)
+  :: forall n s. (KnownNat n, Reifies s W)
+  => BVar s (Vec n Prob)
     -- ^ Target ,,true'' distribution
-  -> BVar s (R n)
+  -> BVar s (Vec n Prob)
     -- ^ Output ,,artificial'' distribution
   -> BVar s Double
-crossEntropy p q =
+crossEntropy p0 q0 =
   negate (p `dot` LBP.vmap' log q)
+  where
+    p = BP.coerceVar p0 :: BVar s (R n)
+    q = BP.coerceVar q0
 
 
 -- | Cross entropy between the target and the output values
 errorOne
-  :: (Ord a, KnownNat n, Reifies s W)
---   => M.Map a (BVar s Double)
-  => M.Map a (BVar s (R n))
+  :: (Ord a, Reifies s W)
+  => M.Map a (BVar s (Vec8 Prob))
     -- ^ Target values
---   -> M.Map a (BVar s Double)
-  -> M.Map a (BVar s (R n))
+  -> M.Map a (BVar s (Vec8 Prob))
     -- ^ Output values
   -> BVar s Double
 errorOne target output = PB.sum . BP.collectVar $ do
@@ -441,11 +532,13 @@ errorOne target output = PB.sum . BP.collectVar $ do
 
 -- | Error on a dataset.
 errorMany
-  :: (Ord a, KnownNat n, Reifies s W)
-  => [M.Map a (BVar s (R n))] -- ^ Targets
-  -> [M.Map a (BVar s (R n))] -- ^ Outputs
---   => [M.Map a (BVar s Double)] -- ^ Targets
---   -> [M.Map a (BVar s Double)] -- ^ Outputs
+  :: (Ord a, Reifies s W)
+  => [M.Map a (BVar s (Vec8 Prob))] -- ^ Targets
+  -> [M.Map a (BVar s (Vec8 Prob))] -- ^ Outputs
+--   => [M.Map a (BVar s (R n))] -- ^ Targets
+--   -> [M.Map a (BVar s (R n))] -- ^ Outputs
+-- --   => [M.Map a (BVar s Double)] -- ^ Targets
+-- --   -> [M.Map a (BVar s Double)] -- ^ Outputs
   -> BVar s Double
 errorMany targets outputs =
   go targets outputs
@@ -478,12 +571,12 @@ netError dataSet net =
 -- | Create the target map from the given dataset element.
 mkTarget
   :: Elem dim a b
-  -> M.Map Arc B.Pot
+  -> M.Map Arc (Vec8 Prob)
 mkTarget el = M.fromList $ do
   ((v, w), arcP) <- M.toList (arcMap el)
   let vP = nodMap el M.! v
       wP = nodMap el M.! w
-      target = Target
+      target = Out
         { arcProb = arcP
         , hedProb = wP
         , depProb = vP }
@@ -491,39 +584,35 @@ mkTarget el = M.fromList $ do
 
 
 ----------------------------------------------
--- encoding
+-- Encoding
 ----------------------------------------------
 
 
--- | Target structure
---
--- TODO: additional type annotation to distinguish potential from probability
--- target structures?
---
-data Target = Target
-  { arcProb :: Double
+-- | Output structure
+data Out a = Out
+  { arcProb :: a
     -- ^ Probability/potential of the arc
-  , hedProb :: Double
+  , hedProb :: a
     -- ^ Probability/potential of the head
-  , depProb :: Double
+  , depProb :: a
     -- ^ Probability/potential of the dependent
   } deriving (Generic, Show, Eq, Ord)
 
 -- Allows to use SmallCheck to test (decode . encode) == id.
-instance Monad m => SC.Serial m Target
+instance (SC.Serial m a) => SC.Serial m (Out a)
 
 
--- | Encode the target structure as a potential vector
-encode :: Target -> B.Pot
-encode Target{..} = encode' [arcProb, hedProb, depProb]
+-- | Encode the target structure as a vector
+-- TODO: Out Double -> e.g. Out (Real Prob) or Out (Float Prob)
+encode :: Out Double -> Vec8 Prob
+encode Out{..} = (Vec . encode') [arcProb, hedProb, depProb]
 
 
 -- | Decode the target structure from the potential vector
--- TODO: should make sure the potential vector is softmax-ed?
-decode :: B.Pot -> Target
+decode :: Vec8 Prob -> Out Double
 decode vec =
-  case decode' vec of
-    [arcP, hedP, depP] -> Target
+  case decode' (unVec vec) of
+    [arcP, hedP, depP] -> Out
       { arcProb = arcP
       , hedProb = hedP
       , depProb = depP
@@ -543,11 +632,11 @@ encode' =
   where
     go (p:ps)
       = map (uncurry (*))
-      $ cart [1-p, p] (go ps)
+      $ cartesian [1-p, p] (go ps)
     go [] = [1]
 
 
--- | Decode the list of probabilities/potentials from the given vector
+-- | Decode the list of probabilities/potentials from the given vector.
 decode'
   :: (KnownNat n)
   => R n
@@ -565,14 +654,14 @@ decode' =
 
 
 -- | Cartesian product of two lists
-cart :: [a] -> [b] -> [(a, b)]
-cart xs ys = do
+cartesian :: [a] -> [b] -> [(a, b)]
+cartesian xs ys = do
   x <- xs
   y <- ys
   return (x, y)
 
 
--- | Split a list x_1, x_2, ..., x_(2n) in two equal parts
+-- | Split a list x_1, x_2, ..., x_(2n) in two equal parts:
 -- 
 --   * x_1, x_2, ..., x_n, and
 --   * x_(n+1), x_(n+2), ..., x_(2n)

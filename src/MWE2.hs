@@ -415,9 +415,6 @@ tagMany tagCfg net cupt = do
 
 
 -- | Tag a single sentence with the given network.
---
--- TODO: include some element of global inference?
---
 tag
   :: ( KnownNat d
      , B.BiComp d DepRel POS comp
@@ -434,6 +431,25 @@ tag tagCfg net sent = do
       = fmap (N.arcProb . N.decode)
       $ N.eval net (N.graph elem)
     sent' = annotate tagCfg (cuptSent sent) arcMap
+
+
+-- -- | Tag a single sentence with the given network.
+-- tag'
+--   :: ( KnownNat d
+--      , B.BiComp d DepRel POS comp
+--      )
+--   => TagConfig
+--   -> comp             -- ^ Network parameters
+--   -> Sent d           -- ^ Cupt sentence
+--   -> IO ()
+-- tag' tagCfg net sent = do
+--   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
+--   where
+--     elem = mkElem (const False) sent
+--     arcMap 
+--       = fmap (N.arcProb . N.decode)
+--       $ N.eval net (N.graph elem)
+--     sent' = annotate tagCfg (cuptSent sent) arcMap
 
 
 ----------------------------------------------

@@ -25,8 +25,13 @@
 
 
 module Net.Graph2.BiComp
-  ( BiComp (..)
-  , Pot
+  ( Pot
+  , Prob
+  , Vec(..)
+  , Vec8
+  , softmaxVec
+  
+  , BiComp (..)
   , Bias (..)
   , ArcBias (..)
   , PapyArcAff (..)
@@ -96,6 +101,11 @@ nub = S.toList . S.fromList
 ----------------------------------------------
 
 
+-- | Potential/probability annotation
+data Pot
+data Prob
+
+
 -- | Output potential is a vector of length 2^3 (the number of possible
 -- combinations of values of the:
 --
@@ -103,7 +113,30 @@ nub = S.toList . S.fromList
 --   * label of the dependent
 --   * label of the arc
 --
-type Pot = R 8
+-- We additionally trace the size of the vector @n@.  It's actually just for
+-- convenience, to not to have to tell in other places in the code that the
+-- size of `unVec` is actually @8@.
+--
+newtype Vec n p = Vec { unVec :: R n }
+  deriving (Show, Generic)
+  deriving newtype (Binary, NFData, ParamSet, Num, Backprop)
+
+instance (KnownNat n) => New a b (Vec n p) where
+  new xs ys = Vec <$> new xs ys
+
+
+-- | Softmax over a vector of potentials
+softmaxVec 
+  :: forall n s. (KnownNat n, Reifies s W)
+  => BVar s (Vec n Pot) -> BVar s (Vec n Prob)
+softmaxVec
+  = BP.coerceVar
+  . (softmax :: Reifies s W => BVar s (R n) -> BVar s (R n))
+  . BP.coerceVar
+
+
+-- | Type synonym to @Vec 8 p@.
+type Vec8 p = Vec 8 p
 
 
 -- | Biaffinity component
@@ -113,7 +146,7 @@ class Backprop comp => BiComp dim a b comp where
     => Graph (Node dim a) b
     -> Arc
     -> BVar s comp
-    -> BVar s Pot
+    -> BVar s (Vec8 Pot)
 
 instance (BiComp dim a b comp1, BiComp dim a b comp2)
   => BiComp dim a b (comp1 :& comp2) where
@@ -127,7 +160,7 @@ instance (BiComp dim a b comp1, BiComp dim a b comp2)
 
 -- | Global bias
 newtype Bias = Bias
-  { _biasVal :: Pot
+  { _biasVal :: Vec8 Pot
   } deriving (Show, Generic)
     deriving newtype (Binary, NFData, ParamSet)
 instance Backprop Bias
@@ -144,7 +177,7 @@ instance BiComp dim a b Bias where
 
 -- | Arc label bias
 newtype ArcBias b = ArcBias
-  { _arcBiasMap :: M.Map b Pot
+  { _arcBiasMap :: M.Map b (Vec8 Pot)
   } deriving (Show, Generic)
     deriving newtype (Binary, NFData, ParamSet)
 
@@ -158,7 +191,7 @@ instance (Ord b) => New a b (ArcBias b) where
 -- | Label affinity of the given arc
 arcAff
   :: (Ord a, Show a, Reifies s W)
-  => a -> BVar s (ArcBias a) -> BVar s Pot
+  => a -> BVar s (ArcBias a) -> BVar s (Vec8 Pot)
 arcAff x aff = maybe err id $ do
   aff ^^. arcBiasMap ^^? ixAt x
   where
@@ -181,7 +214,7 @@ instance (Ord b, Show b) => BiComp dim a b (ArcBias b) where
 -- | Parent/grandparent arc label affinity
 data PapyArcAff b = PapyArcAff
   { _papyArcAff :: ArcBias b
-  , _papyArcDef :: Pot
+  , _papyArcDef :: Vec8 Pot
   } deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
 makeLenses ''PapyArcAff
 instance (Ord b) => New a b (PapyArcAff b) where
@@ -199,7 +232,7 @@ instance (Ord b, Show b) => BiComp dim a b (PapyArcAff b) where
 -- | Child/grandchild arc label affinity
 data EnkelArcAff b = EnkelArcAff
   { _enkelnArcAff :: ArcBias b
-  , _enkelnArcDef :: Pot
+  , _enkelnArcDef :: Vec8 Pot
   } deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
 makeLenses ''EnkelArcAff
 instance (Ord b) => New a b (EnkelArcAff b) where
@@ -235,11 +268,11 @@ nodeAff :: (KnownNat d, KnownNat h, Reifies s W)
         => Graph (Node d a) b
         -> G.Vertex
         -> BVar s (WordAff d h)
-        -> BVar s Pot
+        -> BVar s (Vec8 Pot)
 nodeAff graph v aff =
   let wordRepr = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
       hv = wordRepr v
-   in FFN.run (aff ^^. wordAffN) hv
+   in BP.coerceVar $ FFN.run (aff ^^. wordAffN) hv
 
 
 newtype HeadAff d h = HeadAff { _unHeadAff :: WordAff d h }
@@ -280,7 +313,7 @@ instance (KnownNat dim, KnownNat h) => BiComp dim a b (SymAff dim h) where
 
 -- | POS affinity component
 data Pos a = Pos
-  { _posMap :: M.Map a Pot
+  { _posMap :: M.Map a (Vec8 Pot)
   } deriving (Show, Generic, Binary, NFData, ParamSet)
 
 instance (Ord a) => Backprop (Pos a)
@@ -293,7 +326,7 @@ instance (Ord a) => New a b (Pos a) where
 -- | POS affinity of the given node
 posAff
   :: (Ord a, Show a, Reifies s W)
-  => a -> BVar s (Pos a) -> BVar s Pot
+  => a -> BVar s (Pos a) -> BVar s (Vec8 Pot)
 posAff pos aff = maybe err id $ do
   aff ^^. posMap ^^? ixAt pos
   where
@@ -307,7 +340,7 @@ posAff pos aff = maybe err id $ do
 nodePosAff
   :: (Ord a, Show a, Reifies s W)
   => Graph (Node d a) b -> G.Vertex
-  -> BVar s (Pos a) -> BVar s Pot
+  -> BVar s (Pos a) -> BVar s (Vec8 Pot)
 nodePosAff graph v aff = maybe err id $ do
   pos <- nodeLab <$> M.lookup v (nodeLabelMap graph)
   return (posAff pos aff)
@@ -340,7 +373,7 @@ instance (Ord a, Show a) => BiComp dim a b (DepPosAff a) where
 
 data PapyPosAff a = PapyPosAff
   { _papyPosAff :: Pos a 
-  , _papyPosDef :: Pot
+  , _papyPosDef :: Vec8 Pot
   } deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
 makeLenses ''PapyPosAff
 instance (Ord a) => New a b (PapyPosAff a) where
@@ -356,7 +389,7 @@ instance (Ord a, Show a) => BiComp dim a b (PapyPosAff a) where
 
 data EnkelPosAff a = EnkelPosAff
   { _enkelPosAff :: Pos a 
-  , _enkelPosDef :: Pot
+  , _enkelPosDef :: Vec8 Pot
   } deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
 makeLenses ''EnkelPosAff
 instance (Ord a) => New a b (EnkelPosAff a) where
@@ -389,7 +422,7 @@ instance (KnownNat dim, KnownNat h) => BiComp dim a b (BiAff dim h) where
     let wordRepr = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
         hv = wordRepr v
         hw = wordRepr w
-     in FFN.run (bi ^^. biAffN) (hv # hw)
+     in BP.coerceVar $ FFN.run (bi ^^. biAffN) (hv # hw)
 
 
 ----------------------------------------------
