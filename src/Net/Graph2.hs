@@ -411,40 +411,6 @@ type DataSet d a b = [Elem d a b]
 ----------------------------------------------
 
 
--- -- | Squared error between the target and the actual output.
--- squaredError
---   :: (Ord a, KnownNat n, Reifies s W)
---   => M.Map a (BVar s (R n))
---     -- ^ Target values
---   -> M.Map a (BVar s (R n))
---     -- ^ Output values
---   -> BVar s Double
--- squaredError target output = PB.sum . BP.collectVar $ do
---   (key, tval) <- M.toList target
---   let oval = output M.! key
---       err = tval - oval
---   return $ err `dot` err
-
-
--- -- | Cross entropy between the true and the artificial distributions
--- crossEntropy
---   :: (Reifies s W)
---   => BVar s Double
---     -- ^ Target ,,true'' MWE probability
---   -> BVar s Double
---     -- ^ Output ,,artificial'' MWE probability
---   -> BVar s Double
--- crossEntropy p q = negate
---   ( p0 * log q0
---   + p1 * log q1
---   )
---   where
---     p1 = p
---     p0 = 1 - p1
---     q1 = q
---     q0 = 1 - q1
-
-
 -- | Cross entropy between the true and the artificial distributions
 crossEntropy
   :: (KnownNat n, Reifies s W)
