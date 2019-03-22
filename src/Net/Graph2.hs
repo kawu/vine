@@ -76,6 +76,11 @@ module Net.Graph2
 
   -- * Error
   , netError
+
+  -- * Encoding
+  , Target(..)
+  , encode
+  , decode
   ) where
 
 

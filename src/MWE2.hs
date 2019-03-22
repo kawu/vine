@@ -24,22 +24,22 @@
 module MWE2
   ( Sent(..)
 
---   -- * New
---   , N.newO
---   , N.Typ
--- 
---   -- * Training
---   , Config(..)
---   , Method(..)
---   , trainO
---   , depRelsIn
---   , posTagsIn
--- 
---   -- * Tagging
---   , TagConfig(..)
---   , tag
---   , tagMany
---   , tagManyO
+  -- * New
+  , N.newO
+  , N.Typ
+
+  -- * Training
+  , Config(..)
+  , Method(..)
+  , trainO
+  , depRelsIn
+  , posTagsIn
+
+  -- * Tagging
+  , TagConfig(..)
+  , tag
+  , tagMany
+  , tagManyO
   ) where
 
 
@@ -368,14 +368,14 @@ trainO cfg mweTyp cupt net =
     N.Opaque t p -> N.Opaque t <$> train cfg mweTyp cupt p
 
 
--- -- | Tag sentences with the opaque network.
--- tagManyO
---   :: TagConfig
---   -> N.Opaque 300 DepRel POS
---   -> [Sent 300]
---   -> IO ()
--- tagManyO cfg = \case
---   N.Opaque _ p -> tagMany cfg p
+-- | Tag sentences with the opaque network.
+tagManyO
+  :: TagConfig
+  -> N.Opaque 300 DepRel POS
+  -> [Sent 300]
+  -> IO ()
+tagManyO cfg = \case
+  N.Opaque _ p -> tagMany cfg p
 
 
 ----------------------------------------------
@@ -395,43 +395,45 @@ data TagConfig = TagConfig
   } deriving (Show, Eq, Ord)
 
 
--- -- | Tag sentences based on the given configuration and multi/quad-affine
--- -- network.  The output is directed to stdout.
--- tagMany
---   :: ( KnownNat d
---      , Q.QuadComp d DepRel POS comp
---      -- , SGD.ParamSet comp, NFData comp
---      )
---   => TagConfig
---   -> comp
---                       -- ^ Network parameters
---   -> [Sent d]       -- ^ Cupt sentences
---   -> IO ()
--- tagMany tagCfg net cupt = do
---   forM_ cupt $ \sent -> do
---     T.putStr "# "
---     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
---     tag tagCfg net sent
+-- | Tag sentences based on the given configuration and multi/quad-affine
+-- network.  The output is directed to stdout.
+tagMany
+  :: ( KnownNat d
+     , B.BiComp d DepRel POS comp
+     -- , SGD.ParamSet comp, NFData comp
+     )
+  => TagConfig
+  -> comp
+                      -- ^ Network parameters
+  -> [Sent d]       -- ^ Cupt sentences
+  -> IO ()
+tagMany tagCfg net cupt = do
+  forM_ cupt $ \sent -> do
+    T.putStr "# "
+    T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
+    tag tagCfg net sent
 
 
--- -- | Tag a single sentence with the given network.
--- --
--- -- TODO: include some element of global inference?
--- --
--- tag
---   :: ( KnownNat d
---      , B.BiComp d DepRel POS comp
---      )
---   => TagConfig
---   -> comp             -- ^ Network parameters
---   -> Sent d           -- ^ Cupt sentence
---   -> IO ()
--- tag tagCfg net sent = do
---   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
---   where
---     elem = mkElem (const False) sent
---     arcMap = N.eval net (N.graph elem)
---     sent' = annotate tagCfg (cuptSent sent) arcMap
+-- | Tag a single sentence with the given network.
+--
+-- TODO: include some element of global inference?
+--
+tag
+  :: ( KnownNat d
+     , B.BiComp d DepRel POS comp
+     )
+  => TagConfig
+  -> comp             -- ^ Network parameters
+  -> Sent d           -- ^ Cupt sentence
+  -> IO ()
+tag tagCfg net sent = do
+  L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
+  where
+    elem = mkElem (const False) sent
+    arcMap 
+      = fmap (N.arcProb . N.decode)
+      $ N.eval net (N.graph elem)
+    sent' = annotate tagCfg (cuptSent sent) arcMap
 
 
 ----------------------------------------------

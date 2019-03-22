@@ -29,7 +29,7 @@ import qualified Dhall as Dhall
 import           System.FilePath (isAbsolute, (</>))
 
 import qualified Net.Graph as Graph
-import qualified MWE
+import qualified MWE2 as MWE
 import qualified Format.Embedding as Emb
 import qualified Format.Cupt as Cupt
 
