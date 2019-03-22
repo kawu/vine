@@ -556,7 +556,9 @@ decode vec =
       , hedProb = hedP
       , depProb = depP
       }
-    _ -> error "Graph2.decode: unsupported list length"
+    xs -> error $
+      "Graph2.decode: unsupported list length (" ++
+       show xs ++ ")"
 
 
 -- | Encode a list of probabilities of length @n@ as a vector of length @2^n@.
@@ -581,6 +583,8 @@ decode'
 decode' =
   go . toList
   where
+    go []  = []
+    go [_] = []
     go xs =
       let (left, right) = rightInTwo xs
           -- p0 = sum left
@@ -609,5 +613,6 @@ rightInTwo =
   where
     go [] = []
     go (x : y : xs) = (x, y) : go xs
-    go _ = error
-      "Graph2.rightInTwo: length of the list not even"
+    go xs = error $
+      "Graph2.rightInTwo: length of the list not even (" ++
+      show (length xs) ++ ")"
