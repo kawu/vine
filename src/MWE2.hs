@@ -21,25 +21,25 @@
 --   * ...
 
 
-module MWE 
+module MWE2
   ( Sent(..)
 
-  -- * New
-  , N.newO
-  , N.Typ
-
-  -- * Training
-  , Config(..)
-  , Method(..)
-  , trainO
-  , depRelsIn
-  , posTagsIn
-
-  -- * Tagging
-  , TagConfig(..)
-  , tag
-  , tagMany
-  , tagManyO
+--   -- * New
+--   , N.newO
+--   , N.Typ
+-- 
+--   -- * Training
+--   , Config(..)
+--   , Method(..)
+--   , trainO
+--   , depRelsIn
+--   , posTagsIn
+-- 
+--   -- * Tagging
+--   , TagConfig(..)
+--   , tag
+--   , tagMany
+--   , tagManyO
   ) where
 
 
@@ -92,10 +92,8 @@ import qualified Numeric.SGD.Adam as Adam
 
 import qualified Format.Cupt as Cupt
 import qualified Graph
-import qualified Net.Graph as N
-import qualified Net.Graph.QuadComp as Q
-
--- import qualified Net.Graph2 as N2
+import qualified Net.Graph2 as N
+import qualified Net.Graph2.BiComp as B
 
 -- import Debug.Trace (trace)
 
@@ -191,13 +189,13 @@ mkElem mweSel sent =
 --
 createElem
   :: (KnownNat d)
-  -- => [(G.Vertex, R d, POS)]
   => [(G.Vertex, Graph.Node d POS)]
   -> [(Graph.Arc, DepRel, Bool)]
   -> N.Elem d DepRel POS
 createElem nodes arcs0 = N.Elem
   { graph = graph
-  , labMap = valMap
+  , nodMap = _nodMap
+  , arcMap = _arcMap
   }
   where
     arcs = List.sortBy (Ord.comparing _1) arcs0
@@ -213,18 +211,14 @@ createElem nodes arcs0 = N.Elem
       , Graph.arcLabelMap = M.fromList $
           map (\(x, y, _) -> (x, y)) arcs
       }
-    valMap = M.fromList $ do
+    _arcMap = M.fromList $ do
       (arc, _arcLab, isMwe) <- arcs
-      return 
-        ( arc
-        , if isMwe then 1.0 else 0.0
---         , if isMwe
---              then mwe
---              else notMwe
-        )
+      return (arc, if isMwe then 1.0 else 0.0)
+    _nodMap = M.fromListWith max . concat $ do
+      ((v, w), _arcLab, isMwe) <- arcs
+      let mwe = if isMwe then 1.0 else 0.0
+      return [(v, mwe), (w, mwe)]
     _1 (x, _, _) = x
-    -- _2 (_, y, _) = y
-    -- _3 (_, _, z) = z
     verify g
       | Graph.isAsc g = g
       | otherwise = error "MWE.createElem: constructed graph not ascending!"
@@ -247,6 +241,8 @@ tokID tok =
 
 ----------------------------------------------
 -- Training
+--
+-- TODO: mostly copy from MWE
 ----------------------------------------------
 
 
@@ -302,7 +298,7 @@ type POS = T.Text
 -- | Train the MWE identification network.
 train
   :: ( KnownNat d
-     , Q.QuadComp d DepRel POS comp
+     , B.BiComp d DepRel POS comp
      , SGD.ParamSet comp, NFData comp
      )
   => Config
@@ -329,8 +325,8 @@ train Config{..} mweTyp cupt net0 = do
 --   N.printParam net'
   return net'
   where
-    gradient x = BP.gradBP (N.netErrorQ [x])
-    quality x = BP.evalBP (N.netErrorQ [x])
+    gradient x = BP.gradBP (N.netError [x])
+    quality x = BP.evalBP (N.netError [x])
 
 
 -- | Extract dependeny relations present in the given dataset.
@@ -351,6 +347,8 @@ posTagsIn =
 
 ----------------------------------------------
 -- Working with opaque network architecture
+--
+-- TODO: copy from MWE
 ----------------------------------------------
 
 
@@ -370,18 +368,20 @@ trainO cfg mweTyp cupt net =
     N.Opaque t p -> N.Opaque t <$> train cfg mweTyp cupt p
 
 
--- | Tag sentences with the opaque network.
-tagManyO
-  :: TagConfig
-  -> N.Opaque 300 DepRel POS
-  -> [Sent 300]
-  -> IO ()
-tagManyO cfg = \case
-  N.Opaque _ p -> tagMany cfg p
+-- -- | Tag sentences with the opaque network.
+-- tagManyO
+--   :: TagConfig
+--   -> N.Opaque 300 DepRel POS
+--   -> [Sent 300]
+--   -> IO ()
+-- tagManyO cfg = \case
+--   N.Opaque _ p -> tagMany cfg p
 
 
 ----------------------------------------------
 -- Tagging
+--
+-- TODO: copy from MWE, apart from `tag`
 ----------------------------------------------
 
 
@@ -395,47 +395,49 @@ data TagConfig = TagConfig
   } deriving (Show, Eq, Ord)
 
 
--- | Tag sentences based on the given configuration and multi/quad-affine
--- network.  The output is directed to stdout.
-tagMany
-  :: ( KnownNat d
-     , Q.QuadComp d DepRel POS comp
-     -- , SGD.ParamSet comp, NFData comp
-     )
-  => TagConfig
-  -> comp
-                      -- ^ Network parameters
-  -> [Sent d]       -- ^ Cupt sentences
-  -> IO ()
-tagMany tagCfg net cupt = do
-  forM_ cupt $ \sent -> do
-    T.putStr "# "
-    T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
-    tag tagCfg net sent
+-- -- | Tag sentences based on the given configuration and multi/quad-affine
+-- -- network.  The output is directed to stdout.
+-- tagMany
+--   :: ( KnownNat d
+--      , Q.QuadComp d DepRel POS comp
+--      -- , SGD.ParamSet comp, NFData comp
+--      )
+--   => TagConfig
+--   -> comp
+--                       -- ^ Network parameters
+--   -> [Sent d]       -- ^ Cupt sentences
+--   -> IO ()
+-- tagMany tagCfg net cupt = do
+--   forM_ cupt $ \sent -> do
+--     T.putStr "# "
+--     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
+--     tag tagCfg net sent
 
 
--- | Tag a single sentence with the given network.
-tag
-  :: ( KnownNat d
-     , Q.QuadComp d DepRel POS comp
-     -- , SGD.ParamSet comp, NFData comp
-     )
-  => TagConfig
-  -- -> N.Param 300 DepRel POS
-  -> comp
-                      -- ^ Network parameters
-  -> Sent d           -- ^ Cupt sentence
-  -> IO ()
-tag tagCfg net sent = do
-  L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
-  where
-    elem = mkElem (const False) sent
-    arcMap = N.evalQ net (N.graph elem)
-    sent' = annotate tagCfg (cuptSent sent) arcMap
+-- -- | Tag a single sentence with the given network.
+-- --
+-- -- TODO: include some element of global inference?
+-- --
+-- tag
+--   :: ( KnownNat d
+--      , B.BiComp d DepRel POS comp
+--      )
+--   => TagConfig
+--   -> comp             -- ^ Network parameters
+--   -> Sent d           -- ^ Cupt sentence
+--   -> IO ()
+-- tag tagCfg net sent = do
+--   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
+--   where
+--     elem = mkElem (const False) sent
+--     arcMap = N.eval net (N.graph elem)
+--     sent' = annotate tagCfg (cuptSent sent) arcMap
 
 
 ----------------------------------------------
 -- Annotation
+--
+-- TODO: copy from MWE
 ----------------------------------------------
 
 
@@ -537,6 +539,8 @@ maxMweID =
 
 ----------------------------------------------
 -- Dhall Utils
+--
+-- TODO: copy from MWE
 ----------------------------------------------
 
 
