@@ -81,6 +81,7 @@ module Net.Graph2
   , Target(..)
   , encode
   , decode
+  , rightInTwo
   ) where
 
 
@@ -99,7 +100,7 @@ import           Lens.Micro.TH (makeLenses)
 
 import           Data.Proxy (Proxy(..))
 -- import           Data.Ord (comparing)
--- import qualified Data.List as L
+import qualified Data.List as List
 import           Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text as T
 import qualified Data.Set as S
@@ -129,6 +130,8 @@ import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
   (R, L, BVar, Reifies, W, (#), (#>), dot)
 import qualified Numeric.LinearAlgebra.Static as LA
+
+import qualified Test.SmallCheck.Series as SC
 
 import           Net.New
 import           Net.Pair
@@ -538,7 +541,10 @@ data Target = Target
     -- ^ Probability/potential of the head
   , depProb :: Double
     -- ^ Probability/potential of the dependent
-  } deriving (Show, Eq, Ord)
+  } deriving (Generic, Show, Eq, Ord)
+
+-- Allows to use SmallCheck to test (decode . encode) == id.
+instance Monad m => SC.Serial m Target
 
 
 -- | Encode the target structure as a potential vector
@@ -605,14 +611,6 @@ cart xs ys = do
 --   * x_1, x_2, ..., x_n, and
 --   * x_(n+1), x_(n+2), ..., x_(2n)
 --
--- Raise an error if not possible.
---
 rightInTwo :: [a] -> ([a], [a])
-rightInTwo =
-  unzip . go
-  where
-    go [] = []
-    go (x : y : xs) = (x, y) : go xs
-    go xs = error $
-      "Graph2.rightInTwo: length of the list not even (" ++
-      show (length xs) ++ ")"
+rightInTwo xs =
+  List.splitAt (length xs `div` 2) xs
