@@ -240,6 +240,15 @@ type Arc1 d a b
 
 
 -- | Arc-factored model (2)
+--
+-- Outcome (LVC.full, French): results much better than both (0) and (1).
+-- Optimal arc probability threshold: 0.25 (tested 0.1, 0.25, 0.5)
+--
+-- Ablation study (LVC.full, French): better than (5), not by far but still
+-- significantly, which suggests that `BiParam` information is useful.  On par
+-- with (6), which suggests that the unordered component may not be so
+-- important after all.
+--
 type Arc2 d a b
    = Q.BiAffExt d 50 a b 100
   :& Q.BiQuad (BiParam a b)
@@ -291,7 +300,7 @@ type PotArc dim h a b
 
 
 -- | Quad-factored model (0) with hidden layers of size 100
-type Quad0 d a b = 
+type Quad0 d a b =
   QuadH d 100 a b
 
 
