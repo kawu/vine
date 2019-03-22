@@ -245,13 +245,20 @@ type Arc1 d a b
 
 -- | Arc-factored model (2)
 --
--- Outcome (LVC.full, French): results much better than both (0) and (1).
+-- Outcome (LVC.full, French, dev): results much better than both (0) and (1).
 -- Optimal arc probability threshold: 0.25 (tested 0.1, 0.25, 0.5)
 --
--- Ablation study (LVC.full, French): better than (5), not by far but still
--- significantly, which suggests that `BiParam` information is useful.  On par
--- with (6), which suggests that the unordered component may not be so
+-- Ablation study (LVC.full, French, dev): better than (5), not by far but
+-- still significantly, which suggests that `BiParam` information is useful.
+-- On par with (6), which suggests that the unordered component may not be so
 -- important after all.
+--
+-- WARNING: this model performs much worse on test than both (6) and (5)!
+-- Funnily enough, (5) is on par with (6) on test.  So it's not necessarily the
+-- lack of the unordered component which makes `Arc2` poor on test, maybe it's
+-- just bad luck.  At the end of the day, it's not clear which of the models is
+-- actually the best.  At least it seems clear that both (5) and (6) are better
+-- than (0) and (1).
 --
 type Arc2 d a b
    = Q.BiAffExt d 50 a b 100
@@ -281,15 +288,14 @@ type Arc6 d a b
   :& Q.BiQuad (BiParam a b)
 
 
--- | Version of `Arc2` with increased size of the hidden layers.
+-- | `Arc5` with increased size of the hidden layers.
 type Arc7 d a b
    = Q.BiAffExt d 50 a b 200
-  :& Q.BiQuad (BiParam a b)
 
 
 -- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
 -- exclusively)
-type BiParam a b 
+type BiParam a b
    = B.Bias
   :& B.HeadPosAff a
   :& B.DepPosAff a
@@ -346,10 +352,10 @@ type QuadH d h a b
   :& Q.Bias
 
 
--- | `Arc2` extended with `Q.TriAff`, to see if such extension can even have
+-- | `Arc5` extended with `Q.TriAff`, to see if such extension can even have
 -- some beneficial impact on the results.
 type Quad2 d a b
-   = Arc2 d a b
+   = Arc5 d a b
   :& Q.TriAff d 100
 
 
