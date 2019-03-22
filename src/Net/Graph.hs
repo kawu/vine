@@ -138,8 +138,10 @@ data Typ
   | Arc4T
   | Arc5T
   | Arc6T
+  | Arc7T
   | Quad0T
   | Quad1T
+  | Quad2T
   deriving (Generic, Binary, Read)
 
 
@@ -203,8 +205,10 @@ exec typ action =
     Arc4T -> Opaque typ <$> (action :: m (Arc4 d a b))
     Arc5T -> Opaque typ <$> (action :: m (Arc5 d a b))
     Arc6T -> Opaque typ <$> (action :: m (Arc6 d a b))
+    Arc7T -> Opaque typ <$> (action :: m (Arc7 d a b))
     Quad0T -> Opaque typ <$> (action :: m (Quad0 d a b))
     Quad1T -> Opaque typ <$> (action :: m (Quad1 d a b))
+    Quad2T -> Opaque typ <$> (action :: m (Quad2 d a b))
 
 
 -- | Create a new network of the given type.
@@ -277,6 +281,12 @@ type Arc6 d a b
   :& Q.BiQuad (BiParam a b)
 
 
+-- | Version of `Arc2` with increased size of the hidden layers.
+type Arc7 d a b
+   = Q.BiAffExt d 50 a b 200
+  :& Q.BiQuad (BiParam a b)
+
+
 -- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
 -- exclusively)
 type BiParam a b 
@@ -334,6 +344,13 @@ type QuadH d h a b
   :& Q.BiAff d h
   :& Q.UnAff d h
   :& Q.Bias
+
+
+-- | `Arc2` extended with `Q.TriAff`, to see if such extension can even have
+-- some beneficial impact on the results.
+type Quad2 d a b
+   = Arc2 d a b
+  :& Q.TriAff d 100
 
 
 ----------------------------------------------
