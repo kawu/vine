@@ -392,6 +392,9 @@ data TagConfig = TagConfig
     -- (with 0.5 being the default)
   , mweTyp :: Cupt.MweTyp
     -- ^ MWE category to annotate
+  , mweGlobal :: Bool
+    -- ^ Use global (tree) inference; if so, the `mweThreshold` option is
+    -- ignored
   } deriving (Show, Eq, Ord)
 
 
@@ -427,10 +430,10 @@ tag tagCfg net sent = do
   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
   where
     elem = mkElem (const False) sent
-    arcMap
-      = N.tagGreedy (mweThreshold tagCfg)
-      . N.eval net
-      $ N.graph elem
+    tag
+      | mweGlobal tagCfg = N.tagTree (N.graph elem)
+      | otherwise = N.tagGreedy (mweThreshold tagCfg)
+    arcMap = tag . N.evalRaw net $ N.graph elem
     sent' = annotate tagCfg (cuptSent sent) arcMap
 
 

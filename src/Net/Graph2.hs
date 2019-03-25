@@ -60,6 +60,7 @@ module Net.Graph2
     new
   , run
   , eval
+  , evalRaw
 
   -- * Opaque
   , Opaque(..)
@@ -90,6 +91,7 @@ module Net.Graph2
 
   -- * Inference
   , tagGreedy
+  , tagTree
   ) where
 
 
@@ -101,7 +103,7 @@ import           GHC.TypeLits (Symbol, KnownSymbol)
 
 import           System.Random (randomRIO)
 
-import           Control.Monad (forM_, forM)
+import           Control.Monad (forM_, forM, guard)
 
 import           Lens.Micro.TH (makeLenses)
 -- import           Lens.Micro ((^.))
@@ -427,16 +429,114 @@ eval net graph =
 --   }
 
 
--- | Greedily pick an arc labeling with high potential based on the given
+-- | Greedily pick the arc labeling with high potential based on the given
 -- potential map.
 tagGreedy
   :: Double -- ^ Probability threshold (e.g. @0.5@)
-  -> M.Map Arc (Vec8 Prob)
+  -> M.Map Arc (Vec8 Pot)
   -> M.Map Arc Bool
--- tagGreedy th m = M.fromList $ do
---   (e, vec) <- M.toList m
---   return (e, arcVal (decode vec) >= th)
-tagGreedy th = fmap $ \vec -> arcVal (decode vec) >= th
+tagGreedy th =
+  let softMax vec = BP.evalBP0 $ B.softmaxVec (BP.auto vec)
+   in fmap (\vec -> arcVal (decode $ softMax vec) >= th)
+
+
+-- | Determine the node/arc labeling which maximizes the global potential over
+-- the given tree and return the resulting arc labeling.
+--
+-- WARNING: This function is only guaranteed to work correctly if the argument
+-- graph is a tree!
+--
+tagTree
+  :: Graph a b
+  -> M.Map Arc (Vec8 Pot)
+  -> M.Map Arc Bool
+tagTree graph labMap =
+  let (trueBest, falseBest) =
+        tagSubTree
+          (treeRoot graph)
+          graph
+          (fmap explicate labMap)
+      best = better trueBest falseBest
+   in bestMap best
+
+
+-- | The best arc labeling for a given subtree.
+data Best = Best
+  { bestMap :: M.Map Arc Bool
+    -- ^ Arc label map
+  , bestPot :: Double
+    -- ^ Total potential
+  }
+
+-- TODO: make sure all the laws are satisfied (given that `bestMap` might not
+-- be disjoint in general).
+instance Semigroup Best where
+  Best m1 p1 <> Best m2 p2 =
+    Best (M.union m1 m2) (p1 + p2)
+
+instance Monoid Best where
+  mempty = Best M.empty 0
+
+
+-- | Choose the better `Best`.
+better :: Best -> Best -> Best
+better b1 b2
+  | bestPot b1 >= bestPot b2 = b1
+  | otherwise = b2
+
+
+-- | Add the given arc, its labeling and the resulting potential to the given
+-- `Best` structure.
+addArc :: Arc -> Bool -> Double -> Best -> Best
+addArc arc lab pot Best{..} = Best
+  { bestMap = M.insert arc lab bestMap
+  , bestPot = bestPot + pot }
+
+
+-- | The function returns two `Best`s:
+--
+--   * The best arc labeling if the label of the root is `True`
+--   * The best arc labeling if the label of the root is `False`
+--
+tagSubTree
+  :: G.Vertex
+    -- ^ Root of the subtree
+  -> Graph a b
+    -- ^ The entire graph
+  -- -> M.Map Arc (Vec8 Prob)
+  -> M.Map Arc (M.Map (Out Bool) Double)
+    -- ^ Explicated labeling potentials
+  -> (Best, Best)
+tagSubTree root graph lmap =
+  (bestWith True, bestWith False)
+  where
+    bestWith rootVal = mconcat $ do
+      child <- Graph.incoming root graph
+      let arc = (child, root)
+          pot arcv depv = (lmap M.! arc) M.!
+            Out {arcVal=arcv, hedVal=rootVal, depVal=depv}
+          (true, false) = tagSubTree child graph lmap
+      return $ List.foldl' better mempty
+        [ addArc arc True  (pot True  True)  true
+        , addArc arc False (pot False True)  true
+        , addArc arc True  (pot True  False) false
+        , addArc arc False (pot False False) false ]
+
+
+-- | Retrieve the root of the given directed graph/tree.  It is assumed that
+-- each arc points in the direction of the parent in the tree.  The function
+-- raises an error if the input graph is not a well-formed tree.
+treeRoot :: Graph a b -> G.Vertex
+treeRoot g =
+  case roots of
+    [v] -> v
+    [] -> error "Graph2.treeRoot: no root found!"
+    _ -> error "Graph2.treeRoot: several roots found!"
+  where
+    roots = do
+      v <- Graph.graphNodes g
+      guard . null $ Graph.outgoing v g
+      return v
 
 
 ----------------------------------------------
@@ -594,27 +694,33 @@ mkTarget el = M.fromList $ do
 ----------------------------------------------
 
 
--- | Output structure
+-- | Output structure in which a value of type @a@ is assigned to an arc and
+-- the two neighboring nodes.
 data Out a = Out
   { arcVal :: a
-    -- ^ Probability/potential of the arc
+    -- ^ Probability/potential/... of the arc
   , hedVal :: a
-    -- ^ Probability/potential of the head
+    -- ^ Probability/potential/... of the head
   , depVal :: a
-    -- ^ Probability/potential of the dependent
+    -- ^ Probability/potential/... of the dependent
   } deriving (Generic, Show, Eq, Ord)
 
 -- Allows to use SmallCheck to test (decode . encode) == id.
 instance (SC.Serial m a) => SC.Serial m (Out a)
 
 
--- | Encode the target structure as a vector
+-- | Encode the output structure *with probabilities* as a vector.
+--
 -- TODO: Out Double -> e.g. Out (Real Prob) or Out (Float Prob)
+--
 encode :: Out Double -> Vec8 Prob
 encode Out{..} = (Vec . encode') [arcVal, hedVal, depVal]
 
 
--- | Decode the target structure from the potential vector
+-- | Decode the output structure from the given probability vector.  This
+-- function is potentially lossy in the sense that `Vec8 Prob` encode a joint
+-- distibution and the resulting `Out Double` three distributions assumed to be
+-- independent.
 decode :: Vec8 Prob -> Out Double
 decode vec =
   case decode' (unVec vec) of

@@ -75,6 +75,8 @@ data TagConfig = TagConfig
     -- ^ MWE category (e.g., LVC) to focus on
   , tagProb :: Double
     -- ^ MWE probability threshold
+  , tagGlobal :: Bool
+    -- ^ Use global (tree) inference; if used, the `tagProb` option is ignored
   , tagModel   :: FilePath
     -- ^ Input model (otherwise, random)
   }
@@ -158,6 +160,11 @@ tagOptions = fmap Tag $ TagConfig
        <> short 'p'
        <> value 0.5
        <> help "MWE probability threshold"
+        )
+  <*> flag False True
+        ( long "global"
+       <> short 'g'
+       <> help "Use global inference"
         )
   <*> strOption
         ( metavar "FILE"
@@ -245,7 +252,8 @@ run cmd =
       where
         cfg = MWE.TagConfig
           { MWE.mweTyp = tagMweCat
-          , MWE.mweThreshold = tagProb 
+          , MWE.mweThreshold = tagProb
+          , MWE.mweGlobal = tagGlobal
           }
 
 
