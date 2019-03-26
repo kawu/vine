@@ -20,7 +20,9 @@ module Format.Cupt
   , TokID (..)
   , MweID
   , MweTyp
+  , Mwe (..)
   , chosen
+  , retrieveMWEs
 
     -- * Parsing
   , readCupt
@@ -130,6 +132,32 @@ type MweID = Int
 
 -- | MWE type.
 type MweTyp = T.Text
+
+
+-- | MWE annotation
+data Mwe = Mwe
+  { mweTyp' :: MweTyp
+  , mweToks :: S.Set Token
+  } deriving (Show, Eq, Ord)
+
+instance Semigroup Mwe where
+  Mwe t1 s1 <> Mwe t2 s2
+    | t1 == t2 = Mwe t1 (S.union s1 s2)
+    | otherwise = error
+        "Cupt.Mwe.<>: multi-type MWE?"
+
+
+-- | Retrieve the set of multiword expressions in the given sentence.
+retrieveMWEs :: Sent -> M.Map MweID Mwe
+retrieveMWEs =
+  List.foldl' update M.empty
+  where
+    update m0 tok =
+      List.foldl' updateOne m0 (mwe tok)
+      where
+        tokSng = S.singleton tok
+        updateOne m (mweId, mweTyp) =
+          M.insertWith (<>) mweId (Mwe mweTyp tokSng) m
 
 
 -----------------------------------

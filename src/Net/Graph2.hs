@@ -92,6 +92,9 @@ module Net.Graph2
   -- * Inference
   , tagGreedy
   , tagTree
+
+  -- * Trees
+  , treeConnectAll
   ) where
 
 
@@ -523,22 +526,6 @@ tagSubTree root graph lmap =
         , addArc arc False (pot False False) false ]
 
 
--- | Retrieve the root of the given directed graph/tree.  It is assumed that
--- each arc points in the direction of the parent in the tree.  The function
--- raises an error if the input graph is not a well-formed tree.
-treeRoot :: Graph a b -> G.Vertex
-treeRoot g =
-  case roots of
-    [v] -> v
-    [] -> error "Graph2.treeRoot: no root found!"
-    _ -> error "Graph2.treeRoot: several roots found!"
-  where
-    roots = do
-      v <- Graph.graphNodes g
-      guard . null $ Graph.outgoing v g
-      return v
-
-
 ----------------------------------------------
 -- Explicating
 ----------------------------------------------
@@ -781,3 +768,112 @@ cartesian xs ys = do
 rightInTwo :: [a] -> ([a], [a])
 rightInTwo xs =
   List.splitAt (length xs `div` 2) xs
+
+
+----------------------------------------------
+-- Tree functions on graphs
+--
+-- TODO: perhaps some of the functions in
+-- this section could be easily tested?
+----------------------------------------------
+    
+    
+-- | Retrieve the root of the given directed graph/tree.  It is assumed that
+-- each arc points in the direction of the parent in the tree.  The function
+-- raises an error if the input graph is not a well-formed tree.
+treeRoot :: Graph a b -> G.Vertex
+treeRoot g =
+  case roots of
+    [v] -> v
+    [] -> error "Graph2.treeRoot: no root found!"
+    _ -> error "Graph2.treeRoot: several roots found!"
+  where
+    roots = do
+      v <- Graph.graphNodes g
+      guard . null $ Graph.outgoing v g
+      return v
+
+
+-- | Determine the set of arcs that allows to connect the two vertices.
+treeConnectAll
+  :: Graph.Graph a b
+  -> S.Set G.Vertex
+  -> S.Set Graph.Arc
+treeConnectAll graph =
+  go . S.toList
+  where
+    go (v:w:us) = treeConnect graph v w `S.union` go (w:us)
+    go _ = S.empty
+
+
+-- | Determine the set of arcs that allows to connect the two vertices.
+treeConnect
+  :: Graph.Graph a b
+  -> G.Vertex
+  -> G.Vertex
+  -> S.Set Graph.Arc
+treeConnect graph v w =
+  arcSet v u `S.union` arcSet w u
+  where
+    arcSet x y = (S.fromList . pathAsArcs) (treePath graph x y)
+    u = treeCommonAncestor graph v w
+
+
+-- | Find tha path from the first to the second vertex.
+treePath :: Graph.Graph a b -> G.Vertex -> G.Vertex -> [G.Vertex]
+treePath graph v w =
+  List.takeWhile (/=w) (treePathToRoot graph v) ++ [w]
+
+
+-- | Convert the list of vertices to a list of arcs on the path.
+pathAsArcs :: [G.Vertex] -> [Graph.Arc]
+pathAsArcs (x:y:xs) = (x, y) : pathAsArcs (y:xs)
+pathAsArcs _ = []
+
+
+-- | Commmon ancestor of the two given nodes
+treeCommonAncestor
+  :: Graph.Graph a b
+  -> G.Vertex
+  -> G.Vertex
+  -> G.Vertex
+treeCommonAncestor graph v w =
+  firstIntersection
+    (treePathToRoot graph v)
+    (treePathToRoot graph w)
+
+
+-- | Find the first common element of the given lists.
+firstIntersection :: Eq a => [a] -> [a] -> a
+firstIntersection xs ys 
+  = fst . safeHead . reverse
+  . List.takeWhile (uncurry (==))
+  $ zip (reverse xs) (reverse ys)
+  where
+    safeHead (e:es) = e
+    safeHead [] =
+      error "Graph2.firstIntersection: no intersection found"
+
+
+-- | Find the path from the given node to the root of the tree.
+treePathToRoot :: Graph.Graph a b -> G.Vertex -> [G.Vertex]
+treePathToRoot graph =
+  go
+  where
+    go v =
+      case Graph.outgoing v graph of
+        [] -> [v]
+        [w] -> v : go w
+        _ -> error "Graph2.treePathToRoot: the given graph is not a tree"
+
+
+-- -- | Determine the set of arcs that allows to connect the given set of
+-- -- vertices.
+-- treeConnect
+--   :: R.Tree G.Vertex
+--   -> S.Set G.Vertex
+--   -> S.Set Graph.Arc
+-- treeConnect tree vset =
+--   goN tree
+--   where
+--     goN (R.Node vid children) =

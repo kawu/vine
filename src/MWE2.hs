@@ -112,6 +112,113 @@ data Sent d = Sent
   } deriving (Show, Generic, Binary)
 
 
+-- -- | Convert the given .cupt file to a training dataset element.  The token IDs
+-- -- are used as vertex identifiers in the resulting graph.
+-- --
+-- --   * @d@ -- embedding size (dimension)
+-- --
+-- mkElem
+--   :: (KnownNat d)
+--   => (Cupt.MweTyp -> Bool)
+--     -- ^ MWE type (category) selection method
+--   -> Sent d
+--     -- ^ Input sentence
+--   -> N.Elem d DepRel POS
+-- mkElem mweSel sent =
+-- 
+--   createElem nodes arcs
+-- 
+--   where
+-- 
+--     -- Cupt sentence with ID range tokens removed
+--     cuptSentF = filter
+--       (\tok -> case Cupt.tokID tok of
+--                  Cupt.TokID _ -> True
+--                  _ -> False
+--       )
+--       (cuptSent sent)
+-- 
+--     -- A map from token IDs to tokens
+--     tokMap = M.fromList
+--       [ (Cupt.tokID tok, tok)
+--       | tok <- cuptSentF 
+--       ]
+--     -- The parent of the given token
+--     tokPar tok = tokMap M.! Cupt.dephead tok
+--     -- Is the token the root?
+--     isRoot tok = Cupt.dephead tok == Cupt.TokID 0
+--     -- The IDs of the MWEs present in the given token
+--     getMweIDs tok
+--       = S.fromList
+--       . map fst
+--       . filter (mweSel . snd)
+--       $ Cupt.mwe tok
+-- 
+--     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
+--     nodes = do
+--       (tok, vec) <- zip cuptSentF (wordEmbs sent)
+--       let node = Graph.Node
+--             { nodeEmb = vec
+--             , nodeLab = Cupt.upos tok
+--             -- | TODO: could be lemma?
+--             , nodeLex = Cupt.orth tok
+--             }
+--       return (tokID tok, node)
+--     -- Labeled arcs of the graph
+--     arcs = do
+--       tok <- cuptSentF
+--       -- Check the token is not a root
+--       guard . not $ isRoot tok
+--       let par = tokPar tok
+--           -- The arc value is `True` if the token and its parent are annoted as
+--           -- a part of the same MWE of the appropriate MWE category
+--           isMwe = (not . S.null)
+--             (getMweIDs tok `S.intersection` getMweIDs par)
+--       return ((tokID tok, tokID par), Cupt.deprel tok, isMwe)
+-- 
+-- 
+-- -- | Create a dataset element based on nodes and labeled arcs.
+-- --
+-- -- Works under the assumption that incoming/outgoing arcs are ,,naturally''
+-- -- ordered in accordance with their corresponding vertex IDs (e.g., for two
+-- -- children nodes x, v, the node with lower ID precedes the other node).
+-- --
+-- createElem
+--   :: (KnownNat d)
+--   => [(G.Vertex, Graph.Node d POS)]
+--   -> [(Graph.Arc, DepRel, Bool)]
+--   -> N.Elem d DepRel POS
+-- createElem nodes arcs0 = N.Elem
+--   { graph = graph
+--   , nodMap = _nodMap
+--   , arcMap = _arcMap
+--   }
+--   where
+--     arcs = List.sortBy (Ord.comparing _1) arcs0
+--     vertices = [v | (v, _) <- nodes]
+--     gStr = G.buildG
+--       (minimum vertices, maximum vertices)
+--       (map _1 arcs)
+--     graph = verify . Graph.mkAsc $ Graph.Graph
+--       { Graph.graphStr = gStr
+--       , Graph.graphInv = G.transposeG gStr
+--       , Graph.nodeLabelMap = M.fromList $ nodes
+--           -- map (\(x, e, pos) -> (x, Graph.Node e pos)) nodes
+--       , Graph.arcLabelMap = M.fromList $
+--           map (\(x, y, _) -> (x, y)) arcs
+--       }
+--     _arcMap = M.fromList $ do
+--       (arc, _arcLab, isMwe) <- arcs
+--       return (arc, if isMwe then 1.0 else 0.0)
+--     _nodMap = M.fromListWith max . concat $ do
+--       ((v, w), _arcLab, isMwe) <- arcs
+--       let mwe = if isMwe then 1.0 else 0.0
+--       return [(v, mwe), (w, mwe)]
+--     _1 (x, _, _) = x
+--     verify g
+--       | Graph.isAsc g = g
+--       | otherwise = error "MWE.createElem: constructed graph not ascending!"
+
 
 -- | Convert the given .cupt file to a training dataset element.  The token IDs
 -- are used as vertex identifiers in the resulting graph.
@@ -127,7 +234,13 @@ mkElem
   -> N.Elem d DepRel POS
 mkElem mweSel sent =
 
-  createElem nodes arcs
+  List.foldl' markMWE
+    (createElem nodes arcs)
+    ( filter (mweSel . Cupt.mweTyp')
+    . M.elems
+    . Cupt.retrieveMWEs
+    $ cuptSent sent
+    )
 
   where
 
@@ -164,21 +277,34 @@ mkElem mweSel sent =
             -- | TODO: could be lemma?
             , nodeLex = Cupt.orth tok
             }
-      return (tokID tok, node)
+          isMwe = (not . S.null) (getMweIDs tok)
+      return (tokID tok, node, isMwe)
     -- Labeled arcs of the graph
     arcs = do
       tok <- cuptSentF
       -- Check the token is not a root
       guard . not $ isRoot tok
       let par = tokPar tok
+          -- TODO: there should be no need to mark arcs as MWE in this version
+          -- of `mkElem`, since `markMWEs` is executed afterwards anyway.
+          --
           -- The arc value is `True` if the token and its parent are annoted as
-          -- a part of the same MWE of the appropriate MWE category
-          arcVal =
-            if (not . S.null)
-                 ((getMweIDs tok) `S.intersection` (getMweIDs par))
-               then True
-               else False
-      return ((tokID tok, tokID par), Cupt.deprel tok, arcVal)
+          -- a part of the same MWE of the appropriate MWE category.
+          isMwe = (not . S.null)
+            (getMweIDs tok `S.intersection` getMweIDs par)
+      return ((tokID tok, tokID par), Cupt.deprel tok, isMwe)
+
+
+-- | Mark MWE in the given dataset element.
+markMWE :: N.Elem d a b -> Cupt.Mwe -> N.Elem d a b
+markMWE el mwe =
+  List.foldl' markArc el (S.toList arcSet)
+  where
+    markArc el arc = el {N.arcMap = M.insert arc 1.0 (N.arcMap el)}
+    arcSet =
+      N.treeConnectAll
+        (N.graph el)
+        (S.fromList . map tokID . S.toList $ Cupt.mweToks mwe)
 
 
 -- | Create a dataset element based on nodes and labeled arcs.
@@ -187,9 +313,11 @@ mkElem mweSel sent =
 -- ordered in accordance with their corresponding vertex IDs (e.g., for two
 -- children nodes x, v, the node with lower ID precedes the other node).
 --
+-- Version of `createElem` in which node labels are explicitly handled.
+--
 createElem
   :: (KnownNat d)
-  => [(G.Vertex, Graph.Node d POS)]
+  => [(G.Vertex, Graph.Node d POS, Bool)]
   -> [(Graph.Arc, DepRel, Bool)]
   -> N.Elem d DepRel POS
 createElem nodes arcs0 = N.Elem
@@ -199,29 +327,68 @@ createElem nodes arcs0 = N.Elem
   }
   where
     arcs = List.sortBy (Ord.comparing _1) arcs0
-    vertices = [v | (v, _) <- nodes]
+    vertices = [v | (v, _, _) <- nodes]
     gStr = G.buildG
       (minimum vertices, maximum vertices)
       (map _1 arcs)
     graph = verify . Graph.mkAsc $ Graph.Graph
       { Graph.graphStr = gStr
       , Graph.graphInv = G.transposeG gStr
-      , Graph.nodeLabelMap = M.fromList $ nodes
-          -- map (\(x, e, pos) -> (x, Graph.Node e pos)) nodes
+      , Graph.nodeLabelMap = M.fromList $
+          map (\(x, y, _) -> (x, y)) nodes
       , Graph.arcLabelMap = M.fromList $
           map (\(x, y, _) -> (x, y)) arcs
       }
     _arcMap = M.fromList $ do
       (arc, _arcLab, isMwe) <- arcs
       return (arc, if isMwe then 1.0 else 0.0)
-    _nodMap = M.fromListWith max . concat $ do
-      ((v, w), _arcLab, isMwe) <- arcs
-      let mwe = if isMwe then 1.0 else 0.0
-      return [(v, mwe), (w, mwe)]
+    _nodMap = M.fromList $ do
+      (v, _nodeLab, isMwe) <- nodes
+      return (v, if isMwe then 1.0 else 0.0)
     _1 (x, _, _) = x
     verify g
       | Graph.isAsc g = g
       | otherwise = error "MWE.createElem: constructed graph not ascending!"
+
+
+
+
+-- -- | Create an unlabeled dataset element based on nodes and arcs.
+-- --
+-- -- Works under the assumption that incoming/outgoing arcs are ,,naturally''
+-- -- ordered in accordance with their corresponding vertex IDs (e.g., for two
+-- -- children nodes x, v, the node with lower ID precedes the other node).
+-- createElem'
+--   :: (KnownNat d)
+--   => [(G.Vertex, Graph.Node d POS)]
+--   -> [(Graph.Arc, DepRel)]
+--   -> N.Elem d DepRel POS
+-- createElem' nodes arcs0 = N.Elem
+--   { graph = graph
+--   , nodMap = _nodMap
+--   , arcMap = _arcMap
+--   }
+--   where
+--     arcs = List.sortBy (Ord.comparing fst) arcs0
+--     vertices = [v | (v, _) <- nodes]
+--     gStr = G.buildG
+--       (minimum vertices, maximum vertices)
+--       (map fst arcs)
+--     graph = verify . Graph.mkAsc $ Graph.Graph
+--       { Graph.graphStr = gStr
+--       , Graph.graphInv = G.transposeG gStr
+--       , Graph.nodeLabelMap = M.fromList nodes
+--       , Graph.arcLabelMap = M.fromList arcs
+--       }
+--     _arcMap = M.fromList $ do
+--       (arc, _arcLab) <- arcs
+--       return (arc, 0.0)
+--     _nodMap = M.fromList $ do
+--       (v, _nodeLab) <- nodes
+--       return (v, 0.0)
+--     verify g
+--       | Graph.isAsc g = g
+--       | otherwise = error "MWE.createElem: constructed graph not ascending!"
 
 
 -- -- | Is MWE or not?
