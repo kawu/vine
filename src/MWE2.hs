@@ -597,11 +597,13 @@ tag tagCfg net sent = do
   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
   where
     elem = mkElem (const False) sent
-    tag
-      | mweGlobal tagCfg = N.tagTree (N.graph elem)
-      | otherwise = N.tagGreedy (mweThreshold tagCfg)
-    arcMap = tag . N.evalRaw net $ N.graph elem
-    sent' = annotate tagCfg (cuptSent sent) arcMap
+--     tag
+--       | mweGlobal tagCfg = N.treeTagGlobal (N.graph elem)
+--       | otherwise = N.tagGreedy (mweThreshold tagCfg)
+    mweChoice ps = geoMean ps >= mweThreshold tagCfg
+    tagF = N.tagGreedy' mweChoice
+    labeling = tagF . N.evalRaw net $ N.graph elem
+    sent' = annotate' (mweTyp tagCfg) (cuptSent sent) labeling
 
 
 -- -- | Tag a single sentence with the given network.
@@ -623,6 +625,68 @@ tag tagCfg net sent = do
 --     sent' = annotate tagCfg (cuptSent sent) arcMap
 
 
+-- | Average of the list of numbers
+average :: Floating a => [a] -> a
+average xs = sum xs / fromIntegral (length xs)
+{-# INLINE average #-}
+
+
+-- | Geometric mean
+geoMean :: Floating a => [a] -> a
+geoMean xs =
+  product xs ** (1.0 / fromIntegral (length xs))
+  -- consider also the version in the log scale:
+  -- exp . (/ fromIntegral (length xs)) . sum $ map log xs
+{-# INLINE geoMean #-}
+
+
+----------------------------------------------
+-- Annotation with both arc and node labels
+----------------------------------------------
+
+
+-- | Annotate the sentence with the given MWE type, given the specified arc and
+-- node labeling.
+annotate'
+  :: Cupt.MweTyp
+    -- ^ MWE type to annotate with
+  -> Cupt.Sent
+    -- ^ .cupt sentence to annotate
+  -> N.Labeling Bool
+    -- ^ Node/arc labeling
+  -> Cupt.Sent
+annotate' mweTyp cupt N.Labeling{..} =
+
+  map enrich cupt
+
+  where
+
+    -- Enrich the token with new MWE information
+    enrich tok = Prelude.maybe tok id $ do
+      Cupt.TokID i <- return (Cupt.tokID tok)
+      mweId <- M.lookup i mweIdMap
+      let newMwe = (mweId, mweTyp)
+      return tok {Cupt.mwe = newMwe : Cupt.mwe tok}
+
+    -- Determine the set of MWE nodes and arcs
+    nodSet = trueKeys nodLab
+    arcSet = trueKeys arcLab
+
+    -- The set of keys with `True` values
+    trueKeys m = S.fromList $ do
+      (x, val) <- M.toList m
+      guard val
+      return x
+
+    -- Determine the mapping from nodes to new MWE id's
+    ccs = findConnectedComponents arcSet
+    mweIdMap = M.fromList . concat $ do
+      (cc, mweId) <- zip ccs [maxMweID cupt + 1 ..]
+      (v, w) <- S.toList cc
+      return $ filter ((`S.member` nodSet) . fst)
+        [(v, mweId), (w, mweId)]
+
+
 ----------------------------------------------
 -- Annotation
 --
@@ -633,7 +697,7 @@ tag tagCfg net sent = do
 -- | Annotate the sentence with the given MWE type, given the network
 -- evaluation results.
 annotate
-  :: TagConfig
+  :: Cupt.MweTyp
   -> Cupt.Sent
     -- ^ Input .cupt sentence
   -- -> M.Map Graph.Arc (R 2)
@@ -641,7 +705,7 @@ annotate
   -> M.Map Graph.Arc Bool
     -- ^ Net evaluation results
   -> Cupt.Sent
-annotate TagConfig{..} cupt arcMap =
+annotate mweTyp cupt arcMap =
 
   map enrich cupt
 

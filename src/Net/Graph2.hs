@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -90,8 +91,10 @@ module Net.Graph2
   , obfuscate
 
   -- * Inference
+  , Labeling(..)
+  , tagGreedy'
   , tagGreedy
-  , tagTree
+  , treeTagGlobal
 
   -- * Trees
   , treeConnectAll
@@ -111,6 +114,7 @@ import           Control.Monad (forM_, forM, guard)
 import           Lens.Micro.TH (makeLenses)
 -- import           Lens.Micro ((^.))
 
+import           Data.Monoid (Sum(..))
 import           Data.Proxy (Proxy(..))
 -- import           Data.Ord (comparing)
 import qualified Data.List as List
@@ -425,11 +429,44 @@ eval net graph =
 ----------------------------------------------
 
 
--- -- | Graph labeling
--- data Labeling = Labeling
---   { nodLab :: M.Map G.Vertex Bool
---   , arcLab :: M.Map Arc Bool
---   }
+-- | Graph node/arc labeling
+data Labeling a = Labeling
+  { nodLab :: M.Map G.Vertex a
+  , arcLab :: M.Map Arc a
+  } deriving (Functor)
+
+instance Semigroup a => Semigroup (Labeling a) where
+  Labeling n1 a1 <> Labeling n2 a2 =
+    Labeling (n1 <> n2) (a1 <> a2)
+
+instance Monoid a => Monoid (Labeling a) where
+  mempty = Labeling M.empty M.empty
+
+
+-- | Collect the vectorized probabilities over arcs and nodes.
+collect :: M.Map Arc (Vec8 Prob) -> Labeling [Double]
+collect =
+  mconcat . map spreadOne . M.toList
+  where
+    spreadOne ((v, w), vec) =
+      let Out{..} = decode vec
+       in Labeling
+            { nodLab = M.fromList [(v, [depVal]), (w, [hedVal])]
+            , arcLab = M.singleton (v, w) [arcVal]
+            }
+
+
+-- | Greedily pick the labeling with high potential based on the given
+-- potential map and the given MWE choice function.
+tagGreedy'
+  :: ([Double] -> Bool)
+    -- ^ MWE choice for a given list of probabilities, independently assigned
+    -- to a given object (arc or node)
+  -> M.Map Arc (Vec8 Pot)
+  -> Labeling Bool
+tagGreedy' mweChoice =
+  let softMax vec = BP.evalBP0 $ B.softmaxVec (BP.auto vec)
+   in fmap mweChoice . collect . fmap softMax
 
 
 -- | Greedily pick the arc labeling with high potential based on the given
@@ -449,11 +486,11 @@ tagGreedy th =
 -- WARNING: This function is only guaranteed to work correctly if the argument
 -- graph is a tree!
 --
-tagTree
+treeTagGlobal
   :: Graph a b
   -> M.Map Arc (Vec8 Pot)
   -> M.Map Arc Bool
-tagTree graph labMap =
+treeTagGlobal graph labMap =
   let (trueBest, falseBest) =
         tagSubTree
           (treeRoot graph)
