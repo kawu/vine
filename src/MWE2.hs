@@ -599,29 +599,10 @@ tag tagCfg net sent = do
     elem = mkElem (const False) sent
     tagF
       | mweGlobal tagCfg = N.treeTagGlobal (N.graph elem)
-      | otherwise = N.tagGreedy' mweChoice
+      | otherwise = N.tagGreedy mweChoice
     mweChoice ps = geoMean ps >= mweThreshold tagCfg
     labeling = tagF . N.evalRaw net $ N.graph elem
-    sent' = annotate' (mweTyp tagCfg) (cuptSent sent) labeling
-
-
--- -- | Tag a single sentence with the given network.
--- tag'
---   :: ( KnownNat d
---      , B.BiComp d DepRel POS comp
---      )
---   => TagConfig
---   -> comp             -- ^ Network parameters
---   -> Sent d           -- ^ Cupt sentence
---   -> IO ()
--- tag' tagCfg net sent = do
---   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
---   where
---     elem = mkElem (const False) sent
---     arcMap 
---       = fmap (N.arcVal . N.decode)
---       $ N.eval net (N.graph elem)
---     sent' = annotate tagCfg (cuptSent sent) arcMap
+    sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
 
 
 -- | Average of the list of numbers
@@ -646,7 +627,7 @@ geoMean xs =
 
 -- | Annotate the sentence with the given MWE type, given the specified arc and
 -- node labeling.
-annotate'
+annotate
   :: Cupt.MweTyp
     -- ^ MWE type to annotate with
   -> Cupt.Sent
@@ -654,7 +635,7 @@ annotate'
   -> N.Labeling Bool
     -- ^ Node/arc labeling
   -> Cupt.Sent
-annotate' mweTyp cupt N.Labeling{..} =
+annotate mweTyp cupt N.Labeling{..} =
 
   map enrich cupt
 
@@ -687,56 +668,8 @@ annotate' mweTyp cupt N.Labeling{..} =
 
 
 ----------------------------------------------
--- Annotation
---
--- TODO: almost copy from MWE
+-- Annotation continued
 ----------------------------------------------
-
-
--- | Annotate the sentence with the given MWE type, given the network
--- evaluation results.
-annotate
-  :: Cupt.MweTyp
-  -> Cupt.Sent
-    -- ^ Input .cupt sentence
-  -- -> M.Map Graph.Arc (R 2)
-  -- -> M.Map Graph.Arc Double
-  -> M.Map Graph.Arc Bool
-    -- ^ Net evaluation results
-  -> Cupt.Sent
-annotate mweTyp cupt arcMap =
-
-  map enrich cupt
-
-  where
-
-    -- Enrich the token with new MWE information
-    enrich tok = Prelude.maybe tok id $ do
-      Cupt.TokID i <- return (Cupt.tokID tok)
-      mweId <- M.lookup i mweIdMap
-      let newMwe = (mweId, mweTyp)
-      return tok {Cupt.mwe = newMwe : Cupt.mwe tok}
-
-    -- Determine the set of MWE arcs
-    arcSet = S.fromList $ do
-      (arc, v) <- M.toList arcMap
-      -- guard $ isMWE v
-      guard v
-      return arc
-
--- --     isMWE = (>= 0.5)
---     isMWE = (>= mweThreshold)
--- --     isMWE statVect =
--- --       let vect = LA.unwrap statVect
--- --           val = vect `LAD.atIndex` 1
--- --        in val > 0.5
-
-    -- Determine the mapping from nodes to new MWE id's
-    ccs = findConnectedComponents arcSet
-    mweIdMap = M.fromList . concat $ do
-      (cc, mweId) <- zip ccs [maxMweID cupt + 1 ..]
-      (v, w) <- S.toList cc
-      return [(v, mweId), (w, mweId)]
 
 
 -- | Given a set of graph arcs, determine all the connected arc subsets in the

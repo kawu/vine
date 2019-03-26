@@ -92,7 +92,6 @@ module Net.Graph2
 
   -- * Inference
   , Labeling(..)
-  , tagGreedy'
   , tagGreedy
   , treeTagGlobal
 
@@ -459,26 +458,15 @@ collect =
 
 -- | Greedily pick the labeling with high potential based on the given
 -- potential map and the given MWE choice function.
-tagGreedy'
+tagGreedy
   :: ([Double] -> Bool)
     -- ^ MWE choice for a given list of probabilities, independently assigned
     -- to a given object (arc or node)
   -> M.Map Arc (Vec8 Pot)
   -> Labeling Bool
-tagGreedy' mweChoice =
+tagGreedy mweChoice =
   let softMax vec = BP.evalBP0 $ B.softmaxVec (BP.auto vec)
    in fmap mweChoice . collect . fmap softMax
-
-
--- | Greedily pick the arc labeling with high potential based on the given
--- potential map.
-tagGreedy
-  :: Double -- ^ Probability threshold (e.g. @0.5@)
-  -> M.Map Arc (Vec8 Pot)
-  -> M.Map Arc Bool
-tagGreedy th =
-  let softMax vec = BP.evalBP0 $ B.softmaxVec (BP.auto vec)
-   in fmap (\vec -> arcVal (decode $ softMax vec) >= th)
 
 
 -- | Determine the node/arc labeling which maximizes the global potential over
@@ -510,8 +498,6 @@ data Best = Best
     -- ^ Total potential
   }
 
--- TODO: make sure all the laws are satisfied (given that `bestMap` might not
--- be disjoint in general).
 instance Semigroup Best where
   Best l1 p1 <> Best l2 p2 =
     Best (l1 <> l2) (p1 + p2)
@@ -916,15 +902,3 @@ treePathToRoot graph =
         [] -> [v]
         [w] -> v : go w
         _ -> error "Graph2.treePathToRoot: the given graph is not a tree"
-
-
--- -- | Determine the set of arcs that allows to connect the given set of
--- -- vertices.
--- treeConnect
---   :: R.Tree G.Vertex
---   -> S.Set G.Vertex
---   -> S.Set Graph.Arc
--- treeConnect tree vset =
---   goN tree
---   where
---     goN (R.Node vid children) =
