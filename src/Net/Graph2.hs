@@ -114,7 +114,8 @@ import           Control.Monad (forM_, forM, guard)
 import           Lens.Micro.TH (makeLenses)
 -- import           Lens.Micro ((^.))
 
-import           Data.Monoid (Sum(..))
+-- import           Data.Monoid (Sum(..))
+import           Data.Monoid (Any(..))
 import           Data.Proxy (Proxy(..))
 -- import           Data.Ord (comparing)
 import qualified Data.List as List
@@ -489,7 +490,7 @@ tagGreedy th =
 treeTagGlobal
   :: Graph a b
   -> M.Map Arc (Vec8 Pot)
-  -> M.Map Arc Bool
+  -> Labeling Bool
 treeTagGlobal graph labMap =
   let (trueBest, falseBest) =
         tagSubTree
@@ -497,13 +498,14 @@ treeTagGlobal graph labMap =
           graph
           (fmap explicate labMap)
       best = better trueBest falseBest
-   in bestMap best
+   in fmap getAny (bestLab best)
 
 
 -- | The best arc labeling for a given subtree.
 data Best = Best
-  { bestMap :: M.Map Arc Bool
-    -- ^ Arc label map
+  { bestLab :: Labeling Any
+    -- ^ Labeling (using `Any` guarantees that disjunction is used in case some
+    -- label is accidentally assigned to a given object twice
   , bestPot :: Double
     -- ^ Total potential
   }
@@ -511,11 +513,11 @@ data Best = Best
 -- TODO: make sure all the laws are satisfied (given that `bestMap` might not
 -- be disjoint in general).
 instance Semigroup Best where
-  Best m1 p1 <> Best m2 p2 =
-    Best (M.union m1 m2) (p1 + p2)
+  Best l1 p1 <> Best l2 p2 =
+    Best (l1 <> l2) (p1 + p2)
 
 instance Monoid Best where
-  mempty = Best M.empty 0
+  mempty = Best mempty 0
 
 
 -- | Choose the better `Best`.
@@ -525,18 +527,30 @@ better b1 b2
   | otherwise = b2
 
 
--- | Add the given arc, its labeling and the resulting potential to the given
+-- | Add the given arc, its labeling, and the resulting potential to the given
 -- `Best` structure.
 addArc :: Arc -> Bool -> Double -> Best -> Best
 addArc arc lab pot Best{..} = Best
-  { bestMap = M.insert arc lab bestMap
-  , bestPot = bestPot + pot }
+  { bestLab = bestLab
+      {arcLab = M.insert arc (Any lab) (arcLab bestLab)}
+  , bestPot = bestPot + pot 
+  }
+
+
+-- | Set label of the given node in the given `Best` structure.  Similar to
+-- `addArc`, but used when the potential of the node has been already accounted
+-- for.
+setNode :: G.Vertex -> Bool -> Best -> Best
+setNode node lab best@Best{..} = best
+  { bestLab = bestLab
+      {nodLab = M.insert node (Any lab) (nodLab bestLab)}
+  }
 
 
 -- | The function returns two `Best`s:
 --
---   * The best arc labeling if the label of the root is `True`
---   * The best arc labeling if the label of the root is `False`
+--   * The best labeling if the label of the root is `True`
+--   * The best labeling if the label of the root is `False`
 --
 tagSubTree
   :: G.Vertex
@@ -550,7 +564,7 @@ tagSubTree
 tagSubTree root graph lmap =
   (bestWith True, bestWith False)
   where
-    bestWith rootVal = mconcat $ do
+    bestWith rootVal = setNode root rootVal . mconcat $ do
       child <- Graph.incoming root graph
       let arc = (child, root)
           pot arcv depv = (lmap M.! arc) M.!

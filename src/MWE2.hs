@@ -597,11 +597,10 @@ tag tagCfg net sent = do
   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
   where
     elem = mkElem (const False) sent
---     tag
---       | mweGlobal tagCfg = N.treeTagGlobal (N.graph elem)
---       | otherwise = N.tagGreedy (mweThreshold tagCfg)
+    tagF
+      | mweGlobal tagCfg = N.treeTagGlobal (N.graph elem)
+      | otherwise = N.tagGreedy' mweChoice
     mweChoice ps = geoMean ps >= mweThreshold tagCfg
-    tagF = N.tagGreedy' mweChoice
     labeling = tagF . N.evalRaw net $ N.graph elem
     sent' = annotate' (mweTyp tagCfg) (cuptSent sent) labeling
 
