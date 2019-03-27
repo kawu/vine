@@ -89,6 +89,7 @@ module Net.Graph2
   , enumerate
   , explicate
   , obfuscate
+  , mask
 
   -- * Inference
   , Labeling(..)
@@ -493,7 +494,7 @@ treeTagGlobal graph labMap =
 data Best = Best
   { bestLab :: Labeling Any
     -- ^ Labeling (using `Any` guarantees that disjunction is used in case some
-    -- label is accidentally assigned to a given object twice
+    -- label is accidentally assigned to a given object twice)
   , bestPot :: Double
     -- ^ Total potential
   }
@@ -563,6 +564,87 @@ tagSubTree root graph lmap =
         , addArc arc False (pot False False) false ]
 
 
+-- ----------------------------------------------
+-- -- Experiments with global training
+-- ----------------------------------------------
+-- 
+-- 
+-- -- | Calculate the *marginal* probabilities of the individual node/arc
+-- -- labelings.  This code is 100% experimental, no idea if it's going to work or
+-- -- if the idea is even sound.
+-- marginalize
+--   :: Graph a b
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--   -> M.Map Arc (BVar s (Vec8 Prob))
+-- marginalize graph potMap =
+--   undefined
+-- 
+-- 
+-- -- -- | Perform the inside pass of the inside-outside algorithm.  On input the
+-- -- -- function takes a map of potential vectors.  On output it should give sth.
+-- -- -- like inside maginal probabilities...  To clarify.
+-- -- inside
+-- --   :: Graph a b
+-- --   -> M.Map Arc (BVar s (Vec8 Pot))
+-- --   -> M.Map Arc (BVar s (Vec8 Prob))
+-- -- inside = undefined
+-- 
+-- 
+-- -- | Inside *potentials*.  For the given vertex, the function (recursively)
+-- -- calculates the sum of potentials of its possible inside labelings.  It also
+-- -- preserves the inside potentials of the descendant vertices.
+-- insideSub
+--   :: (Reifies s W)
+--   => Graph a b
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--   -> G.Vertex
+--   -> M.Map (G.Vertex, Bool) (BVar s Double)
+-- insideSub graph potMap =
+-- 
+--   -- TODO: consider using memoization to calculate a function from (G.Vertex,
+--   -- Bool) to (BVar s Double) rather than storing the result in the map.
+--   undefined -- go
+-- 
+--   where
+-- 
+--     -- Recursively calculate the inside potential for the given node and label.
+--     insidePot w wMwe = sum $ do
+--       -- Loop over all @w@'s children nodes
+--       v <- Graph.incoming w graph
+--       -- Pick the MWE label of the child @v@
+--       vMwe <- [False, True]
+--       -- Pick the MWE label of the arc connecting @v@ with @w@; note that it is
+--       -- possible to calculate the resulting potential faster, without
+--       -- enumerating the possible arc labels
+--       arcMwe <- [False, True]
+--       -- The resulting potential
+--       return $ insidePot v vMwe + arcPot potMap (v, vMwe) (w, wMwe) arcMwe
+-- 
+-- 
+-- -- | Calculates the arc potential given the label of the head and the label of
+-- -- the dependent.
+-- arcPot 
+--   :: forall s. (Reifies s W)
+--   => M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ Potential map (as calculated with the network)
+--   -> (G.Vertex, Bool) 
+--     -- ^ Dependent node and its label
+--   -> (G.Vertex, Bool)
+--     -- ^ Head node and its label
+--   -> Bool
+--     -- ^ Label of the arc
+--   -> BVar s Double
+-- arcPot potMap (dep, depMwe) (hed, hedMwe) arcMwe =
+--   potVec `dot` (BP.coerceVar . BP.constVar) (mask out)
+--   where
+--     potVec = BP.coerceVar (potMap M.! (dep, hed)) :: BVar s (R 8)
+--     out = Out
+--       { arcVal = arcMwe
+--       , depVal = depMwe
+--       , hedVal = hedMwe
+--       }
+
+
 ----------------------------------------------
 -- Explicating
 ----------------------------------------------
@@ -587,6 +669,37 @@ enumerate = do
   b2 <- [False, True]
   b3 <- [False, True]
   return $ Out b1 b2 b3
+
+
+-- | A mask vector which allows to easily obtain (with dot product) the
+-- potential of a given `Out` labeling.
+--
+-- TODO: add tests to make sure this is consistent with, maybe, `obfuscate`?
+-- TODO: the mask could be perhaps calculated using bit-level operattions?
+--
+mask :: Out Bool -> Vec8 p
+mask (Out False False False) = vec18
+mask (Out False False True)  = vec28
+mask (Out False True  False) = vec38
+mask (Out False True  True)  = vec48
+mask (Out True  False False) = vec58
+mask (Out True  False True)  = vec68
+mask (Out True  True  False) = vec78
+mask (Out True  True  True)  = vec88
+
+
+-- | Hard-coded masks
+vec18, vec28, vec38, vec48, vec58, vec68, vec78, vec88 :: Vec8 p
+vec18 = Vec $ LA.vector [1, 0, 0, 0, 0, 0, 0, 0]
+vec28 = Vec $ LA.vector [0, 1, 0, 0, 0, 0, 0, 0]
+vec38 = Vec $ LA.vector [0, 0, 1, 0, 0, 0, 0, 0]
+vec48 = Vec $ LA.vector [0, 0, 0, 1, 0, 0, 0, 0]
+vec58 = Vec $ LA.vector [0, 0, 0, 0, 1, 0, 0, 0]
+vec68 = Vec $ LA.vector [0, 0, 0, 0, 0, 1, 0, 0]
+vec78 = Vec $ LA.vector [0, 0, 0, 0, 0, 0, 1, 0]
+vec88 = Vec $ LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
+
+
 
 
 ----------------------------------------------

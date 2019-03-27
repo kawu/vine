@@ -32,6 +32,9 @@ scProps = testGroup "(checked by SmallCheck)"
       \xs ->
         let m = M.fromList (zip N.enumerate $ pad 8 xs)
          in null xs || (N.explicate . N.obfuscate) m == m
+  , SC.testProperty "explicate (mask x) M.! y == [x == y]" $
+      \x y -> N.explicate (N.mask x) M.! y ==
+        if x == y then 1.0 else 0.0
   ]
 
 
