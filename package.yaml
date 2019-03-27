@@ -52,7 +52,7 @@ library:
   # cpp-options: -DRecursive
 
 executables:
-  bpfun-exe:
+  galago:
     main:                Main.hs
     source-dirs:         app
     ghc-options:

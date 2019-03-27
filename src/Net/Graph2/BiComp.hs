@@ -46,7 +46,8 @@ module Net.Graph2.BiComp
   , PapyPosAff (..)
   , EnkelPosAff (..)
   , BiAff (..)
---   , UnordBiaff (..)
+  , BiAffExt (..)
+  , UnordBiAff (..)
 --   , DirBiaff (..)
 --   , Holi (..)
   ) where
@@ -423,6 +424,98 @@ instance (KnownNat dim, KnownNat h) => BiComp dim a b (BiAff dim h) where
         hv = wordRepr v
         hw = wordRepr w
      in BP.coerceVar $ FFN.run (bi ^^. biAffN) (hv # hw)
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Biaffinity component extended with info about POS and DEP labels.
+--
+--   * @d@ -- word embedding dimension
+--   * @l@ -- label (POS, DEP) embedding dimension
+--   * @h@ -- hidden dimension
+--
+data BiAffExt d l a b h = BiAffExt
+  { _biAffExtN :: FFN (d Nats.+ d Nats.+ l Nats.+ l Nats.+ l) h 8
+    -- ^ The actual bi-affinity net
+  , _biAffHeadPosMap :: M.Map a (R l)
+    -- ^ Head POS repr
+  , _biAffDepPosMap :: M.Map a (R l)
+    -- ^ Dependent POS repr
+  , _biAffArcMap :: M.Map b (R l)
+    -- ^ Arc label repr
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+makeLenses ''BiAffExt
+
+instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b)
+  => New a b (BiAffExt d l a b h) where
+  new xs ys = BiAffExt
+    <$> new xs ys
+    <*> newMap xs xs ys
+    <*> newMap xs xs ys
+    <*> newMap ys xs ys
+
+instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b, Show a, Show b)
+  => BiComp d a b (BiAffExt d l a b h) where
+  runBiComp graph (v, w) bi =
+    let nodeMap = nodeLabelMap graph
+        emb = BP.constVar . nodeEmb . (nodeMap M.!)
+        depPos = depPosRepr . nodeLab $ nodeMap M.! v
+        headPos = headPosRepr . nodeLab $ nodeMap M.! w
+        arc = arcRepr $ arcLabelMap graph M.! (v, w)
+        hv = emb v
+        hw = emb w
+     in BP.coerceVar $ FFN.run (bi ^^. biAffExtN) 
+          (hv # hw # depPos # headPos # arc)
+    where
+      headPosRepr pos = maybe err id $ do
+        bi ^^. biAffHeadPosMap ^^? ixAt pos
+        where
+          err = trace
+            ( "Graph.Holi: unknown POS ("
+            ++ show pos
+            ++ ")" ) 0
+      depPosRepr pos = maybe err id $ do
+        bi ^^. biAffDepPosMap ^^? ixAt pos
+        where
+          err = trace
+            ( "Graph.Holi: unknown POS ("
+            ++ show pos
+            ++ ")" ) 0
+      arcRepr dep = maybe err id $ do
+        bi ^^. biAffArcMap ^^? ixAt dep
+        where
+          err = trace
+            ( "Graph.Holi: unknown arc label ("
+            ++ show dep
+            ++ ")" ) 0
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Unordered bi-affinity component.
+data UnordBiAff d h = UnordBiAff
+  { _unordBiAffN :: FFN (d Nats.+ d) h 1
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+makeLenses ''UnordBiAff
+
+instance (KnownNat d, KnownNat h) => New a b (UnordBiAff d h) where
+  new xs ys = UnordBiAff <$> new xs ys
+
+instance (KnownNat d, KnownNat h) => BiComp d a b (UnordBiAff d h) where
+  runBiComp graph (v, w) bi =
+    let lex x = nodeLex <$> M.lookup x (nodeLabelMap graph)
+        emb = BP.constVar . nodeEmb . (nodeLabelMap graph M.!)
+        (hv, hw) =
+          if lex v <= lex w
+             then (emb v, emb w)
+             else (emb w, emb v)
+     in BP.coerceVar $ FFN.run (bi ^^. unordBiAffN) (hv # hw)
 
 
 ----------------------------------------------

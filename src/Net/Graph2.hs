@@ -180,6 +180,12 @@ import           Debug.Trace (trace)
 data Typ
   = Arc0T
   | Arc1T
+  | Arc2T
+  | Arc3T
+  | Arc4T
+  | Arc5T
+  | Arc6T
+  | Arc7T
   deriving (Generic, Binary, Read)
 
 
@@ -223,6 +229,12 @@ exec typ action =
   case typ of
     Arc0T -> Opaque typ <$> (action :: m (Arc0 d a b))
     Arc1T -> Opaque typ <$> (action :: m (Arc1 d a b))
+    Arc2T -> Opaque typ <$> (action :: m (Arc2 d a b))
+    Arc3T -> Opaque typ <$> (action :: m (Arc3 d a b))
+    Arc4T -> Opaque typ <$> (action :: m (Arc4 d a b))
+    Arc5T -> Opaque typ <$> (action :: m (Arc5 d a b))
+    Arc6T -> Opaque typ <$> (action :: m (Arc6 d a b))
+    Arc7T -> Opaque typ <$> (action :: m (Arc7 d a b))
 
 
 -- | Create a new network of the given type.
@@ -257,33 +269,38 @@ type Arc1 d a b
   :& BiParam a b
 
 
--- -- | Arc-factored model (2)
--- type Arc2 d a b
---    = Q.BiAffExt d 50 a b 100
---   :& Q.BiQuad (BiParam a b)
--- 
--- 
--- -- | Arc-factored model (3)
--- type Arc3 d a b
---   = Q.BiQuad (PotArc d 100 a b)
--- 
--- 
--- -- | Arc-factored model (4); similar to (3), but with (h = d).
--- -- The best for LVC.full in French found so far!
--- type Arc4 d a b
---   = Q.BiQuad (PotArc d d a b)
--- 
--- 
--- -- | Arc-factored model (5): (2) - `BiParam`
--- type Arc5 d a b
---    = Q.BiAffExt d 50 a b 100
--- 
--- 
--- -- | Arc-factored model (6): (2) + `Q.UnordBiAff`
--- type Arc6 d a b
---    = Q.BiAffExt d 50 a b 100
---   :& Q.UnordBiAff d 100
---   :& Q.BiQuad (BiParam a b)
+-- | Arc-factored model (2)
+type Arc2 d a b
+   = B.BiAffExt d 50 a b 100
+  :& BiParam a b
+
+
+-- | Arc-factored model (3)
+type Arc3 d a b
+  = PotArc d 100 a b
+
+
+-- | Arc-factored model (4); similar to (3), but with (h = d).
+-- The best for LVC.full in French found so far!
+type Arc4 d a b
+  = PotArc d d a b
+
+
+-- | Arc-factored model (5): (2) - `BiParam`
+type Arc5 d a b
+   = B.BiAffExt d 50 a b 100
+
+
+-- | Arc-factored model (6): (2) + `Q.UnordBiAff`
+type Arc6 d a b
+   = B.BiAffExt d 50 a b 100
+  :& B.UnordBiAff d 100
+  :& BiParam a b
+
+
+-- | `Arc5` with increased size of the hidden layers.
+type Arc7 d a b
+  = B.BiAffExt d 50 a b 200
 
 
 -- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
@@ -299,15 +316,15 @@ type BiParam a b
   :& B.EnkelArcAff b
 
 
--- -- | The best arc-factored model you found so far (with h = dim).
--- type PotArc dim h a b
---    = B.Biaff dim h
---   :& B.UnordBiaff dim h
---   :& B.HeadAff dim h
---   :& B.DepAff dim h
---   :& BiParam a b
--- 
--- 
+-- | The best arc-factored model you found so far (with h = dim).
+type PotArc dim h a b
+   = B.BiAff dim h
+  :& B.UnordBiAff dim h
+  :& B.HeadAff dim h
+  :& B.DepAff dim h
+  :& BiParam a b
+
+
 -- -- | Quad-factored model (0) with hidden layers of size 100
 -- type Quad0 d a b = 
 --   QuadH d 100 a b
