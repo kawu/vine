@@ -474,21 +474,21 @@ instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b, Show a, Show b)
         bi ^^. biAffHeadPosMap ^^? ixAt pos
         where
           err = trace
-            ( "Graph.Holi: unknown POS ("
+            ( "Graph2.BiComp: unknown POS ("
             ++ show pos
             ++ ")" ) 0
       depPosRepr pos = maybe err id $ do
         bi ^^. biAffDepPosMap ^^? ixAt pos
         where
           err = trace
-            ( "Graph.Holi: unknown POS ("
+            ( "Graph2.BiComp: unknown POS ("
             ++ show pos
             ++ ")" ) 0
       arcRepr dep = maybe err id $ do
         bi ^^. biAffArcMap ^^? ixAt dep
         where
           err = trace
-            ( "Graph.Holi: unknown arc label ("
+            ( "Graph2.BiComp: unknown arc label ("
             ++ show dep
             ++ ")" ) 0
 
@@ -727,20 +727,20 @@ instance (KnownNat d, KnownNat h) => BiComp d a b (UnordBiAff d h) where
 --           holi ^^. holHeadPosMap ^^? ixAt pos
 --           where
 --             err = trace
---               ( "Graph.Holi: unknown POS ("
+--               ( "Graph2.BiComp: unknown POS ("
 --               ++ show pos
 --               ++ ")" ) 0
 --         depPosRepr pos = maybe err id $ do
 --           holi ^^. holDepPosMap ^^? ixAt pos
 --           where
 --             err = trace
---               ( "Graph.Holi: unknown POS ("
+--               ( "Graph2.BiComp: unknown POS ("
 --               ++ show pos
 --               ++ ")" ) 0
 --         arcRepr dep = maybe err id $ do
 --           holi ^^. holArcMap ^^? ixAt dep
 --           where
 --             err = trace
---               ( "Graph.Holi: unknown arc label ("
+--               ( "Graph2.BiComp: unknown arc label ("
 --               ++ show dep
 --               ++ ")" ) 0
