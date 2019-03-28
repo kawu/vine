@@ -47,6 +47,8 @@ data Command
       -- ^ Train a model
     | Tag TagConfig
       -- ^ Tagging
+    | Clear Cupt.MweTyp
+      -- ^ Tagging
 
 
 -- | Training configuration
@@ -77,6 +79,8 @@ data TagConfig = TagConfig
     -- ^ MWE probability threshold
   , tagGlobal :: Bool
     -- ^ Use global (tree) inference; if used, the `tagProb` option is ignored
+  , tagConstrained :: Bool
+    -- ^ Use constrained global inference
   , tagModel   :: FilePath
     -- ^ Input model (otherwise, random)
   }
@@ -166,11 +170,25 @@ tagOptions = fmap Tag $ TagConfig
        <> short 'g'
        <> help "Use global inference"
         )
+  <*> flag False True
+        ( long "constrained"
+       <> short 'c'
+       <> help "Use constrained global inference"
+        )
   <*> strOption
         ( metavar "FILE"
        <> long "model"
        <> short 'm'
        <> help "Input model"
+        )
+
+
+clearOptions :: Parser Command
+clearOptions = Clear
+  <$> strOption
+        ( long "mwe"
+       <> short 't'
+       <> help "MWE category (type) to clear"
         )
 
 
@@ -188,6 +206,10 @@ opts = subparser
     <> command "tag"
     (info (helper <*> tagOptions)
       (progDesc "Tagging")
+    )
+    <> command "clear"
+    (info (helper <*> clearOptions)
+      (progDesc "Clear MWE annotations")
     )
   )
 
@@ -253,8 +275,17 @@ run cmd =
         cfg = MWE.TagConfig
           { MWE.mweTyp = tagMweCat
           , MWE.mweThreshold = tagProb
-          , MWE.mweGlobal = tagGlobal
+          , MWE.mweGlobal = tagGlobal || tagConstrained
+          , MWE.mweConstrained = tagConstrained
           }
+
+    Clear mweTyp -> do
+      cupt <- concat . Cupt.parseCupt <$> TL.getContents
+      let cupt' = map (removeMweAnnotations mweTyp) cupt
+      forM_ cupt' $ \sent -> do
+        T.putStr "# "
+        T.putStrLn . T.unwords $ map Cupt.orth sent
+        TL.putStrLn (Cupt.renderPar [sent])
 
 
 main :: IO ()
@@ -305,3 +336,22 @@ dhallPath path = fromString $
   if isAbsolute path
   then path
   else "./" </> path
+
+
+--------------------------------------------------
+-- Cleaning up
+--------------------------------------------------
+
+
+-- | Clear MWE annotations related to the given MWE category.
+removeMweAnnotations :: Cupt.MweTyp -> Cupt.MaySent -> Cupt.MaySent
+removeMweAnnotations mweTyp 
+  = Cupt.abstract
+  . map clear
+  . Cupt.decorate
+  where
+    clear tok = tok
+      { Cupt.mwe = filter
+          (\(_id, typ) -> typ /= mweTyp)
+          (Cupt.mwe tok)
+      }

@@ -95,6 +95,7 @@ module Net.Graph2
   , Labeling(..)
   , tagGreedy
   , treeTagGlobal
+  , treeTagConstrained
 
   -- * Trees
   , treeConnectAll
@@ -524,6 +525,11 @@ instance Monoid Best where
   mempty = Best mempty 0
 
 
+-- | Impossible labeling (with infinitely poor potential)
+impossible :: Best
+impossible = Best mempty (read "-Infinity")
+
+
 -- | Choose the better `Best`.
 better :: Best -> Best -> Best
 better b1 b2
@@ -574,11 +580,142 @@ tagSubTree root graph lmap =
           pot arcv depv = (lmap M.! arc) M.!
             Out {arcVal=arcv, hedVal=rootVal, depVal=depv}
           (true, false) = tagSubTree child graph lmap
-      return $ List.foldl' better mempty
+      return $ List.foldl1' better
         [ addArc arc True  (pot True  True)  true
         , addArc arc False (pot False True)  true
         , addArc arc True  (pot True  False) false
         , addArc arc False (pot False False) false ]
+
+
+-- | The best labeling
+data Best4 = Best4
+  { true          :: Best
+    -- ^ The label of the root is `True`.  The root's outgoing arc can be
+    -- `True` or `False.
+  , falseZeroTrue :: Best
+    -- ^ The label of the root is `False` and all its incoming arcs are `False`
+    -- too.  The outgoing arc must be `False`.
+  , falseOneTrue  :: Best
+    -- ^ The label of the root is `False` and exactly one of its incoming arcs
+    -- is `True`.  The outgoing arc must be `True`.
+  , falseMoreTrue :: Best
+    -- ^ The label of the root is `False` and more than one of its incoming
+    -- arcs is `True`.  The outgoing arc can be `True` or `False.
+  }
+
+instance Semigroup Best4 where
+  b1 <> b2 = Best4
+    { true =
+        true b1 <> true b2
+    , falseZeroTrue =
+        falseZeroTrue b1 <> falseZeroTrue b2
+    , falseOneTrue = List.foldl1' better
+        [ falseZeroTrue b1 <> falseOneTrue  b2
+        , falseOneTrue  b1 <> falseZeroTrue b2
+        ]
+    , falseMoreTrue = List.foldl1' better
+        [ falseZeroTrue b1 <> falseMoreTrue b2
+        , falseMoreTrue b1 <> falseZeroTrue b2
+        , falseOneTrue  b1 <> falseOneTrue  b2
+        , falseOneTrue  b1 <> falseMoreTrue b2
+        , falseMoreTrue b1 <> falseOneTrue  b2
+        , falseMoreTrue b1 <> falseMoreTrue b2
+        ]
+    }
+
+-- instance Monoid Best4 where
+--   mempty = Best4 mempty mempty impossible impossible
+
+
+-- | Empty `Best4` for a given tree node.  Think of `mempty` with obligatory
+-- vertex argument.
+emptyBest4 :: G.Vertex -> Best4
+emptyBest4 node = Best4
+  { true = setNode node True mempty
+  , falseZeroTrue = setNode node False mempty
+  , falseOneTrue = impossible
+  , falseMoreTrue = impossible
+  }
+
+
+-- | Constrained version of `treeTagGlobal`
+treeTagConstrained
+  :: Graph a b
+  -> M.Map Arc (Vec8 Pot)
+  -> Labeling Bool
+treeTagConstrained graph labMap =
+  let Best4{..} =
+        tagSubTreeC
+          (treeRoot graph)
+          graph
+          (fmap explicate labMap)
+      best = List.foldl1' better
+        -- NOTE: `falseZeroOne` can be excluded in constrained decoding
+        [true, falseZeroTrue, falseMoreTrue]
+   in getAny <$> bestLab best
+
+
+-- | Calculate `Best3` of the subtree.
+tagSubTreeC
+  :: G.Vertex
+    -- ^ Root of the subtree
+  -> Graph a b
+    -- ^ The entire graph (tree)
+  -> M.Map Arc (M.Map (Out Bool) Double)
+    -- ^ Explicated labeling potentials
+  -> Best4
+tagSubTreeC root graph lmap =
+  List.foldl' (<>) (emptyBest4 root) (map bestFor children)
+  where
+    children = Graph.incoming root graph
+    bestFor child =
+      let arc = (child, root)
+          pot arcv hedv depv = (lmap M.! arc) M.!
+            Out {arcVal=arcv, hedVal=hedv, depVal=depv}
+          Best4{..} = tagSubTreeC child graph lmap
+          -- NOTE: some of the configurations below are not allowed in
+          -- constrained decoding and hence are commented out.
+          true' = List.foldl1' better
+            [ addArc arc True  (pot True  True True)  true
+            , addArc arc False (pot False True True)  true
+            -- , addArc arc True  (pot True  True False) falseZeroTrue
+            , addArc arc False (pot False True False) falseZeroTrue
+            , addArc arc True  (pot True  True False) falseOneTrue
+            -- , addArc arc False (pot False True False) falseOneTrue
+            , addArc arc True  (pot True  True False) falseMoreTrue
+            , addArc arc False (pot False True False) falseMoreTrue
+            ]
+          falseZeroTrue' = List.foldl1' better
+            [ addArc arc False (pot False False True)  true
+            , addArc arc False (pot False False False) falseZeroTrue
+            -- , addArc arc False (pot False False False) falseOneTrue
+            , addArc arc False (pot False False False) falseMoreTrue
+            ]
+          falseOneTrue' = List.foldl1' better
+            [ addArc arc True (pot True False True)  true
+            -- , addArc arc True (pot True False False) falseZeroTrue
+            , addArc arc True (pot True False False) falseOneTrue
+            , addArc arc True (pot True False False) falseMoreTrue
+            ]
+       in Best4
+            { true = true'
+            , falseZeroTrue = falseZeroTrue'
+            , falseOneTrue  = falseOneTrue'
+            , falseMoreTrue = impossible
+            }
+
+
+--     bestWith rootVal = setNode root rootVal . mconcat $ do
+--       child <- Graph.incoming root graph
+--       let arc = (child, root)
+--           pot arcv depv = (lmap M.! arc) M.!
+--             Out {arcVal=arcv, hedVal=rootVal, depVal=depv}
+--           (true, false) = tagSubTree child graph lmap
+--       return $ List.foldl' better mempty
+--         [ addArc arc True  (pot True  True)  true
+--         , addArc arc False (pot False True)  true
+--         , addArc arc True  (pot True  False) false
+--         , addArc arc False (pot False False) false ]
 
 
 -- ----------------------------------------------

@@ -562,6 +562,8 @@ data TagConfig = TagConfig
   , mweGlobal :: Bool
     -- ^ Use global (tree) inference; if so, the `mweThreshold` option is
     -- ignored
+  , mweConstrained :: Bool
+    -- ^ Constrained global inference; implies `mweGlobal`
   } deriving (Show, Eq, Ord)
 
 
@@ -598,7 +600,10 @@ tag tagCfg net sent = do
   where
     elem = mkElem (const False) sent
     tagF
-      | mweGlobal tagCfg = N.treeTagGlobal (N.graph elem)
+      | mweConstrained tagCfg =
+          N.treeTagConstrained (N.graph elem)
+      | mweGlobal tagCfg =
+          N.treeTagGlobal (N.graph elem)
       | otherwise = N.tagGreedy mweChoice
     mweChoice ps = geoMean ps >= mweThreshold tagCfg
     labeling = tagF . N.evalRaw net $ N.graph elem
