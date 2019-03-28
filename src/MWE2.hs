@@ -442,16 +442,20 @@ instance Interpret Config
 -- | Select the sgd method
 toSGD
   :: (SGD.ParamSet p)
-  => Method
-    -- ^ SGD method
+  => Config
+    -- ^ Configuration
+  -> Int
+    -- ^ Dataset size
   -> (e -> p -> p)
     -- ^ Gradient
   -> SGD.SGD IO e p
-toSGD method grad =
+toSGD Config{..} dataSize grad =
   case method of
-    Momentum cfg -> Mom.momentum cfg grad
+    Momentum cfg -> Mom.momentum (Mom.scaleTau iterNumEpoch cfg) grad
     AdaDelta cfg -> Ada.adaDelta cfg grad
-    Adam cfg -> Adam.adam cfg grad
+    Adam cfg -> Adam.adam (Adam.scaleTau iterNumEpoch cfg) grad
+  where
+    iterNumEpoch = SGD.iterNumPerEpoch sgd dataSize
 
 
 -- | Depdency relation
@@ -479,15 +483,15 @@ train
     -- ^ Initial network
   -> IO comp
 --   -> IO (N.Param 300)
-train Config{..} mweTyp cupt net0 = do
+train cfg mweTyp cupt net0 = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
   let cupt' = map (mkElem (== mweTyp)) cupt
   net' <- SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     -- net0 <- N.new 300 2
     -- trainProgSGD sgd dataSet globalDepth net0
-    SGD.runIO sgd
-      (toSGD method $ SGD.batchGradPar gradient)
+    SGD.runIO (sgd cfg)
+      (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
       quality dataSet net0
 --   N.printParam net'
   return net'
