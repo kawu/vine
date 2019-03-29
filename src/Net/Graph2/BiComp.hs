@@ -13,6 +13,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFoldable #-}
+-- {-# LANGUAGE DeriveTraversable #-}
 
 -------------------------
 {-# LANGUAGE PolyKinds #-}
@@ -47,9 +50,15 @@ module Net.Graph2.BiComp
   , EnkelPosAff (..)
   , BiAff (..)
   , BiAffExt (..)
+  , BiAffMix (..)
   , UnordBiAff (..)
 --   , DirBiaff (..)
 --   , Holi (..)
+
+
+  -- * Vec3 <-> Vec8 conversion
+  , Out(..)
+  , squash
   ) where
 
 
@@ -58,7 +67,8 @@ import           GHC.TypeNats (KnownNat)
 import qualified GHC.TypeNats as Nats
 
 import           Control.DeepSeq (NFData)
-import           Control.Lens.At (ixAt)
+import           Control.Lens.At (ixAt, ix)
+import qualified Control.Lens.At as At
 import           Control.Monad (forM)
 
 import           Lens.Micro.TH (makeLenses)
@@ -72,8 +82,11 @@ import qualified Data.Map.Strict as M
 
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.), (^^?))
+import qualified Numeric.LinearAlgebra.Static as LA
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
-import           Numeric.LinearAlgebra.Static.Backprop (R, dot, (#))
+import           Numeric.LinearAlgebra.Static.Backprop (R, L, dot, (#), (#>))
+
+import qualified Test.SmallCheck.Series as SC
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
@@ -95,6 +108,123 @@ import           Debug.Trace (trace)
 -- | Remove duplicates.
 nub :: (Ord a) => [a] -> [a]
 nub = S.toList . S.fromList
+
+
+----------------------------------------------
+-- Vec8 <-> Vec3 conversion
+----------------------------------------------
+
+
+-- -- | V8 -> V3 squashing
+-- --
+-- -- The `squash` function is a backpropagation-enabled version of @decode@ from
+-- -- `Net.Graph2`.  The result is a vector of three probability values:
+-- --
+-- --   * Probability of the arc being a MWE
+-- --   * Probability of the head being a MWE
+-- --   * Probability of the dependent being a MWE
+-- --
+-- squash
+--   :: (Reifies s W)
+--   => BVar s (Vec 8 Prob)
+--   -> BVar s (R 3)
+-- squash v8 = undefined
+
+
+-- | Output structure in which a value of type @a@ is assigned to an arc and
+-- the two nodes it connects.
+data Out a = Out
+  { arcVal :: a
+    -- ^ Value assigned to the arc
+  , hedVal :: a
+    -- ^ Value assigned to the head
+  , depVal :: a
+    -- ^ Value assigned to the dependent
+  } deriving (Generic, Show, Eq, Ord, Functor, Foldable) --, Traversable)
+
+-- Allows to use SmallCheck to test (decode . encode) == id.
+instance (SC.Serial m a) => SC.Serial m (Out a)
+
+
+-- -- | Cross entropy between the true and the artificial distributions
+-- crossEntropy
+--   :: forall s. (Reifies s W)
+--   => BVar s (Vec 8 Prob)
+--     -- ^ Target ,,true'' probability distribution
+--   -> BVar s (Vec 8 Prob)
+--     -- ^ Output ,,artificial'' distribution
+--   -> BVar s Double
+-- crossEntropy p0 q0 =
+--   undefined
+
+
+-- | V8 -> V3 squashing
+--
+-- The `squash` function is a backpropagation-enabled version of @decode@ from
+-- `Net.Graph2`.  The result is a vector of three probability values:
+--
+--   * Probability of the arc being a MWE
+--   * Probability of the head being a MWE
+--   * Probability of the dependent being a MWE
+--
+squash :: forall s. (Reifies s W) => BVar s (Vec 8 Prob) -> Out (BVar s Double)
+squash v8_vec = Out
+  { arcVal = BP.auto mask1 `dot` v8
+  , hedVal = BP.auto mask2 `dot` v8
+  , depVal = BP.auto mask3 `dot` v8
+  } 
+  where
+    v8 = BP.coerceVar v8_vec :: BVar s (R 8)
+
+
+-- | V3 -> V8 expansion
+--
+-- TODO: Make some kind of link between `epxand` and @encode@ from
+-- `Net.Graph2`.
+--
+expand
+  :: (Reifies s W)
+  => BVar s (Vec 3 Pot)
+  -> BVar s (Vec 8 Pot)
+expand v3 = BP.coerceVar $ expand' (BP.coerceVar v3)
+
+
+-- | Combine the independent with the joint potential vector (lower-level
+-- function).
+expand' :: (Reifies s W) => BVar s (R 3) -> BVar s (R 8)
+expand' v3 
+  = LBP.vmap (*x1) (BP.auto mask1)
+  + LBP.vmap (*x2) (BP.auto mask2)
+  + LBP.vmap (*x3) (BP.auto mask3)
+  where
+    v3' = LBP.extractV v3
+    x1 = v3' `at` 0
+    x2 = v3' `at` 1
+    x3 = v3' `at` 2
+{-# INLINE expand' #-}
+
+
+-- | Expansion masks
+mask0, mask1, mask2, mask3 :: R 8
+mask0 = LA.vector [0, 1, 1, 1, 1, 1, 1, 1]
+mask1 = LA.vector [0, 0, 0, 0, 1, 1, 1, 1]
+mask2 = LA.vector [0, 0, 1, 1, 0, 0, 1, 1]
+mask3 = LA.vector [0, 1, 0, 1, 0, 1, 0, 1]
+{-# NOINLINE mask0 #-}
+{-# NOINLINE mask1 #-}
+{-# NOINLINE mask2 #-}
+{-# NOINLINE mask3 #-}
+
+
+at
+  :: ( Num (At.IxValue b), Reifies s W, Backprop b
+     , Backprop (At.IxValue b), At.Ixed b
+     )
+  => BVar s b
+  -> At.Index b
+  -> BVar s (At.IxValue b)
+at v k = maybe 0 id $ v ^^? ix k
+{-# INLINE at #-}
 
 
 ----------------------------------------------
@@ -491,6 +621,121 @@ instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b, Show a, Show b)
             ( "Graph2.BiComp: unknown arc label ("
             ++ show dep
             ++ ")" ) 0
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | A version of `BiAffExt` where the decision about the labling of the arc
+-- and its end nodes is taken partially independently.
+--
+--   * @d@ -- word embedding dimension
+--   * @l@ -- label (POS, DEP) embedding dimension
+--   * @h@ -- hidden dimension
+--
+data BiAffMix d l a b h = BiAffMix
+  { _biAffMixL1 :: {-# UNPACK #-} !(L h (d Nats.+ d Nats.+ l Nats.+ l Nats.+ l))
+    -- ^ First layer transforming the input vectors into the hidden
+    -- representation
+  , _biAffMixB1 :: {-# UNPACK #-} !(R h)
+    -- ^ The bias corresponding to the first layer
+  , _biAffMixL2_8 :: {-# UNPACK #-} !(L 8 h)
+    -- ^ Second layer with joint potential attribution
+  , _biAffMixB2_8 :: {-# UNPACK #-} !(R 8)
+    -- ^ The bias corresponding to the second (joint) layer
+  , _biAffMixL2_3 :: {-# UNPACK #-} !(L 3 h)
+    -- ^ Second layer with independent potential attribution
+  , _biAffMixB2_3 :: {-# UNPACK #-} !(R 3)
+    -- ^ The bias corresponding to the second (independent) layer
+  , _biAffMixHeadPosMap :: M.Map a (R l)
+    -- ^ Head POS repr
+  , _biAffMixDepPosMap :: M.Map a (R l)
+    -- ^ Dependent POS repr
+  , _biAffMixArcMap :: M.Map b (R l)
+    -- ^ Arc label repr
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+makeLenses ''BiAffMix
+
+instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b)
+  => New a b (BiAffMix d l a b h) where
+  new xs ys = BiAffMix
+    <$> new xs ys
+    <*> new xs ys
+    <*> new xs ys
+    <*> new xs ys
+    <*> new xs ys
+    <*> new xs ys
+    <*> newMap xs xs ys
+    <*> newMap xs xs ys
+    <*> newMap ys xs ys
+
+instance (KnownNat d, KnownNat h, KnownNat l, Ord a, Ord b, Show a, Show b)
+  => BiComp d a b (BiAffMix d l a b h) where
+
+  runBiComp graph (v, w) bi =
+    
+    -- helper functions
+    let nodeMap = nodeLabelMap graph
+        emb = BP.constVar . nodeEmb . (nodeMap M.!)
+        depPos = depPosRepr . nodeLab $ nodeMap M.! v
+        headPos = headPosRepr . nodeLab $ nodeMap M.! w
+        arc = arcRepr $ arcLabelMap graph M.! (v, w)
+        hv = emb v
+        hw = emb w
+
+        -- input layer
+        x = hv # hw # depPos # headPos # arc
+        -- second layer
+        y = leakyRelu $ (bi ^^. biAffMixL1) #> x + (bi ^^. biAffMixB1)
+        -- joint output
+        z8 = BP.coerceVar $ 
+          (bi ^^. biAffMixL2_8) #> y + (bi ^^. biAffMixB2_8)
+        -- independent output
+        z3 = BP.coerceVar $
+          (bi ^^. biAffMixL2_3) #> y + (bi ^^. biAffMixB2_3)
+
+     -- combine the two outputs to get the result
+     -- (with the first element zeroed out)
+     in  BP.coerceVar (BP.auto mask0) * inject z3 z8
+
+    where
+
+      headPosRepr pos = maybe err id $ do
+        bi ^^. biAffMixHeadPosMap ^^? ixAt pos
+        where
+          err = trace
+            ( "Graph2.BiComp: unknown POS ("
+            ++ show pos
+            ++ ")" ) 0
+
+      depPosRepr pos = maybe err id $ do
+        bi ^^. biAffMixDepPosMap ^^? ixAt pos
+        where
+          err = trace
+            ( "Graph2.BiComp: unknown POS ("
+            ++ show pos
+            ++ ")" ) 0
+
+      arcRepr dep = maybe err id $ do
+        bi ^^. biAffMixArcMap ^^? ixAt dep
+        where
+          err = trace
+            ( "Graph2.BiComp: unknown arc label ("
+            ++ show dep
+            ++ ")" ) 0
+
+
+-- | Combine the independent with the joint potential vector (a type-safe
+-- wrapper over inject').
+inject
+  :: (Reifies s W)
+  => BVar s (Vec 3 Pot)
+  -> BVar s (Vec 8 Pot)
+  -> BVar s (Vec 8 Pot)
+inject v3 v8 = expand v3 + v8
+{-# INLINE inject #-}
 
 
 ----------------------------------------------

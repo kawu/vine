@@ -120,6 +120,7 @@ import           Data.Monoid (Any(..))
 import           Data.Proxy (Proxy(..))
 -- import           Data.Ord (comparing)
 import qualified Data.List as List
+import qualified Data.Foldable as F
 import           Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text as T
 import qualified Data.Set as S
@@ -150,8 +151,6 @@ import           Numeric.LinearAlgebra.Static.Backprop
   (R, L, BVar, Reifies, W, (#), (#>), dot)
 import qualified Numeric.LinearAlgebra.Static as LA
 
-import qualified Test.SmallCheck.Series as SC
-
 import           Net.New
 import           Net.Pair
 import           Net.Util
@@ -165,7 +164,8 @@ import           Net.FeedForward (FFN(..))
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Graph
-import           Net.Graph2.BiComp (Pot, Prob, Vec(..), Vec8)
+import           Net.Graph2.BiComp
+  (Pot, Prob, Vec(..), Vec8, Out(..))
 import qualified Net.Graph2.BiComp as B
 -- import qualified Net.Graph.QuadComp as Q
 
@@ -187,6 +187,8 @@ data Typ
   | Arc5T
   | Arc6T
   | Arc7T
+  | Arc8T
+  | Arc9T
   deriving (Generic, Binary, Read)
 
 
@@ -236,6 +238,8 @@ exec typ action =
     Arc5T -> Opaque typ <$> (action :: m (Arc5 d a b))
     Arc6T -> Opaque typ <$> (action :: m (Arc6 d a b))
     Arc7T -> Opaque typ <$> (action :: m (Arc7 d a b))
+    Arc8T -> Opaque typ <$> (action :: m (Arc8 d a b))
+    Arc9T -> Opaque typ <$> (action :: m (Arc9 d a b))
 
 
 -- | Create a new network of the given type.
@@ -301,7 +305,23 @@ type Arc6 d a b
 
 -- | `Arc5` with increased size of the hidden layers.
 type Arc7 d a b
-  = B.BiAffExt d 50 a b 200
+   = B.BiAffExt d 50 a b 200
+
+
+-- | Version of `Arc7` with mixed joint and independent potential calculation.
+type Arc8 d a b
+   = B.BiAffMix d 50 a b 200
+
+
+-- | `Arc8` + `BiParam`
+type Arc9 d a b
+   = Arc8 d a b
+  :& BiParam a b
+
+
+-- -- | Version of `Arc8` with increased hidden layer
+-- type Arc10 d a b
+--    = B.BiAffMix d 50 a b 300
 
 
 -- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
@@ -899,18 +919,82 @@ type DataSet d a b = [Elem d a b]
 
 
 -- | Cross entropy between the true and the artificial distributions
-crossEntropy
-  :: forall n s. (KnownNat n, Reifies s W)
-  => BVar s (Vec n Prob)
+crossEntropyHard
+  :: forall s. (Reifies s W)
+  => BVar s (Vec8 Prob)
     -- ^ Target ,,true'' distribution
-  -> BVar s (Vec n Prob)
+  -> BVar s (Vec8 Prob)
     -- ^ Output ,,artificial'' distribution
   -> BVar s Double
-crossEntropy p0 q0 =
+crossEntropyHard p0 q0 =
   negate (p `dot` LBP.vmap' log q)
   where
-    p = BP.coerceVar p0 :: BVar s (R n)
+    p = BP.coerceVar p0 :: BVar s (R 8)
     q = BP.coerceVar q0
+
+
+-- | Cross-entropy between the true and the artificial distributions
+crossEntropyOne
+  :: (Reifies s W)
+  => BVar s Double
+    -- ^ Target ,,true'' MWE probability
+  -> BVar s Double
+    -- ^ Output ,,artificial'' MWE probability
+  -> BVar s Double
+crossEntropyOne p q = negate
+  ( p0 * log q0
+  + p1 * log q1
+  )
+  where
+    p1 = p
+    p0 = 1 - p1
+    q1 = q
+    q0 = 1 - q1
+
+
+-- -- | Cross-entropy over `Foldable`
+-- sumOver
+--   :: (Reifies s W, Foldable f)
+--   => (BVar s Double -> BVar s Double -> BVar s Double)
+--     -- ^ 
+--   -> f (BVar s Double)
+--     -- ^ Target probabilities
+--   -> f (BVar s Double)
+--     -- ^ Output probabilities
+--   -> BVar s Double
+-- crossEntropyOver f1 f2
+--   = sum . map (uncurry (+))
+--   $ zip (F.toList f1) (F.toList f2)
+
+
+-- | Soft version of `crossEntropy`
+crossEntropySoft
+  :: forall s. (Reifies s W)
+  => BVar s (Vec8 Prob)
+    -- ^ Target ,,true'' distribution
+  -> BVar s (Vec8 Prob)
+    -- ^ Output ,,artificial'' distribution
+  -> BVar s Double
+crossEntropySoft p q
+  = sum
+  . map (uncurry crossEntropyOne)
+  $ zip (flatten p) (flatten q)
+  where
+    flatten = F.toList . B.squash
+
+
+-- | Selected version of cross-entropy.
+crossEntropy
+  :: forall s. (Reifies s W)
+  => BVar s (Vec8 Prob)
+    -- ^ Target ,,true'' distribution
+  -> BVar s (Vec8 Prob)
+    -- ^ Output ,,artificial'' distribution
+  -> BVar s Double
+crossEntropy =
+  crossEntropySoft
+  -- crossEntropyHard
+{-# crossEntropy #-}
 
 
 -- | Cross entropy between the target and the output values
@@ -921,7 +1005,7 @@ errorOne
   -> M.Map a (BVar s (Vec8 Prob))
     -- ^ Output values
   -> BVar s Double
-errorOne target output = PB.sum . BP.collectVar $ do
+errorOne target output = sum $ do
   (key, tval) <- M.toList target
   let oval = output M.! key
   return $ crossEntropy tval oval
@@ -981,23 +1065,13 @@ mkTarget el = M.fromList $ do
 
 
 ----------------------------------------------
--- Encoding
+-- Soft error utils
 ----------------------------------------------
 
 
--- | Output structure in which a value of type @a@ is assigned to an arc and
--- the two neighboring nodes.
-data Out a = Out
-  { arcVal :: a
-    -- ^ Probability/potential/... of the arc
-  , hedVal :: a
-    -- ^ Probability/potential/... of the head
-  , depVal :: a
-    -- ^ Probability/potential/... of the dependent
-  } deriving (Generic, Show, Eq, Ord)
-
--- Allows to use SmallCheck to test (decode . encode) == id.
-instance (SC.Serial m a) => SC.Serial m (Out a)
+----------------------------------------------
+-- Encoding
+----------------------------------------------
 
 
 -- | Encode the output structure *with probabilities* as a vector.
@@ -1009,20 +1083,20 @@ encode Out{..} = (Vec . encode') [arcVal, hedVal, depVal]
 
 
 -- | Decode the output structure from the given probability vector.  This
--- function is potentially lossy in the sense that `Vec8 Prob` encode a joint
--- distibution and the resulting `Out Double` three distributions assumed to be
--- independent.
+-- function is potentially lossy in the sense that `Vec8 Prob` encodes a joint
+-- distibution and the resulting `Out Double` encodes three distributions
+-- assumed to be independent.
 decode :: Vec8 Prob -> Out Double
-decode vec =
-  case decode' (unVec vec) of
-    [arcP, hedP, depP] -> Out
-      { arcVal = arcP
-      , hedVal = hedP
-      , depVal = depP
-      }
-    xs -> error $
-      "Graph2.decode: unsupported list length (" ++
-       show xs ++ ")"
+decode = BP.evalBP $ BP.collectVar . B.squash
+--   case decode' (unVec vec) of
+--     [arcP, hedP, depP] -> Out
+--       { arcVal = arcP
+--       , hedVal = hedP
+--       , depVal = depP
+--       }
+--     xs -> error $
+--       "Graph2.decode: unsupported list length (" ++
+--        show xs ++ ")"
 
 
 -- | Encode a list of probabilities of length @n@ as a vector of length @2^n@.
@@ -1039,21 +1113,21 @@ encode' =
     go [] = [1]
 
 
--- | Decode the list of probabilities/potentials from the given vector.
-decode'
-  :: (KnownNat n)
-  => R n
-  -> [Double]
-decode' =
-  go . toList
-  where
-    go []  = []
-    go [_] = []
-    go xs =
-      let (left, right) = rightInTwo xs
-          -- p0 = sum left
-          p1 = sum right
-       in p1 : go (map (uncurry (+)) (zip left right))
+-- -- | Decode the list of probabilities/potentials from the given vector.
+-- decode'
+--   :: (KnownNat n)
+--   => R n
+--   -> [Double]
+-- decode' =
+--   go . toList
+--   where
+--     go []  = []
+--     go [_] = []
+--     go xs =
+--       let (left, right) = rightInTwo xs
+--           -- p0 = sum left
+--           p1 = sum right
+--        in p1 : go (map (uncurry (+)) (zip left right))
 
 
 -- | Cartesian product of two lists
