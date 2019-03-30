@@ -189,6 +189,7 @@ data Typ
   | Arc7T
   | Arc8T
   | Arc9T
+  | Arc10T
   deriving (Generic, Binary, Read)
 
 
@@ -240,6 +241,7 @@ exec typ action =
     Arc7T -> Opaque typ <$> (action :: m (Arc7 d a b))
     Arc8T -> Opaque typ <$> (action :: m (Arc8 d a b))
     Arc9T -> Opaque typ <$> (action :: m (Arc9 d a b))
+    Arc10T -> Opaque typ <$> (action :: m (Arc10 d a b))
 
 
 -- | Create a new network of the given type.
@@ -317,6 +319,11 @@ type Arc8 d a b
 type Arc9 d a b
    = Arc8 d a b
   :& BiParam a b
+
+
+-- | `Arc8` with increased hidden layer (200 -> 400)
+type Arc10 d a b
+   = B.BiAffMix d 50 a b 400
 
 
 -- -- | Version of `Arc8` with increased hidden layer
