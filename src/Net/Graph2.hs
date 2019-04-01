@@ -937,8 +937,7 @@ crossEntropyHard p0 q0 =
     -- avoid NaN when p = 0 and q = 0
     log' x
       | x > 0 = log x
-      | otherwise = eps
-    eps = 1.0e-8
+      | otherwise = -1.0e8
 
 
 -- -- | Cross entropy between the true and the artificial distributions
