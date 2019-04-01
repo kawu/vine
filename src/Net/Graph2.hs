@@ -62,6 +62,7 @@ module Net.Graph2
   , run
   , eval
   , evalRaw
+  , ProbTyp(..)
 
   -- * Opaque
   , Opaque(..)
@@ -86,10 +87,10 @@ module Net.Graph2
   , rightInTwo
 
   -- * Explicating
-  , enumerate
+  , B.enumerate
   , explicate
   , obfuscate
-  , mask
+  , B.mask
 
   -- * Inference
   , Labeling(..)
@@ -172,7 +173,7 @@ import qualified Net.List as NL
 import           Net.Graph2.BiComp
   (Pot, Prob, Vec(..), Vec8, Out(..))
 import qualified Net.Graph2.BiComp as B
--- import qualified Net.Graph.QuadComp as Q
+import qualified Net.Graph2.Marginals as Margs
 
 import           Debug.Trace (trace)
 
@@ -395,6 +396,19 @@ type PotArc dim h a b
 ----------------------------------------------
 
 
+-- | Typ of probabilities to employ
+data ProbTyp
+  = SoftMax
+    -- ^ Just softmax
+  | Marginals -- Int
+    -- ^ Marginals (approximated)
+  | Constrained -- Int
+    -- ^ Constrained version of marginals
+  deriving (Generic)
+
+instance Interpret ProbTyp
+
+
 -- | Run the given (bi-affine) network over the given graph within the context
 -- of back-propagation.
 runRaw
@@ -418,15 +432,18 @@ run
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
      , B.BiComp dim a b comp
      )
-  => BVar s comp
+  => ProbTyp
+  -> BVar s comp
     -- ^ Graph network / params
   -> Graph (Node dim a) b
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s (Vec8 Prob))
     -- ^ Output map with output potential values
-run net graph =
-  -- fmap B.softmaxVec . runRaw net
-  approxMarginals graph (runRaw net graph) 1
+run probTyp net graph =
+  case probTyp of
+    SoftMax -> fmap B.softmaxVec (runRaw net graph)
+    Marginals -> Margs.approxMarginals graph (runRaw net graph) 1
+    Constrained -> Margs.approxMarginalsC graph (runRaw net graph) 1
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
@@ -458,15 +475,16 @@ eval
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
      , B.BiComp dim a b comp
      )
-  => comp
+  => ProbTyp
+  -> comp
     -- ^ Graph network / params
   -> Graph (Node dim a) b
     -- ^ Input graph labeled with initial hidden states (word embeddings)
   -> M.Map Arc (Vec8 Prob)
-eval net graph =
+eval probTyp net graph =
   BP.evalBP0
     ( BP.collectVar
-    $ run
+    $ run probTyp
         (BP.constVar net)
         graph
     )
@@ -852,50 +870,12 @@ tagSubTreeC root graph lmap =
 -- | Determine the values assigned to different labellings of the given arc and
 -- nodes.
 explicate :: Vec8 p -> M.Map (Out Bool) Double
-explicate = M.fromList . zip enumerate . toList . unVec
+explicate = M.fromList . zip B.enumerate . toList . unVec
 
 
 -- | The inverse of `explicate`.
 obfuscate :: M.Map (Out Bool) Double -> Vec8 p
 obfuscate = Vec . LA.vector . M.elems
-
-
--- | Enumerate the possible arc/node labelings in order consistent with the
--- encoding/decoding format.
-enumerate :: [Out Bool]
-enumerate = do
-  b1 <- [False, True]
-  b2 <- [False, True]
-  b3 <- [False, True]
-  return $ Out b1 b2 b3
-
-
--- | A mask vector which allows to easily obtain (with dot product) the
--- potential of a given `Out` labeling.
---
--- TODO: the mask could be perhaps calculated using bit-level operattions?
---
-mask :: Out Bool -> R 8
-mask (Out False False False) = vec18
-mask (Out False False True)  = vec28
-mask (Out False True  False) = vec38
-mask (Out False True  True)  = vec48
-mask (Out True  False False) = vec58
-mask (Out True  False True)  = vec68
-mask (Out True  True  False) = vec78
-mask (Out True  True  True)  = vec88
-
-
--- | Hard-coded masks
-vec18, vec28, vec38, vec48, vec58, vec68, vec78, vec88 :: R 8
-vec18 = LA.vector [1, 0, 0, 0, 0, 0, 0, 0]
-vec28 = LA.vector [0, 1, 0, 0, 0, 0, 0, 0]
-vec38 = LA.vector [0, 0, 1, 0, 0, 0, 0, 0]
-vec48 = LA.vector [0, 0, 0, 1, 0, 0, 0, 0]
-vec58 = LA.vector [0, 0, 0, 0, 1, 0, 0, 0]
-vec68 = LA.vector [0, 0, 0, 0, 0, 1, 0, 0]
-vec78 = LA.vector [0, 0, 0, 0, 0, 0, 1, 0]
-vec88 = LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
 
 
 ----------------------------------------------
@@ -1044,13 +1024,14 @@ netError
      , Ord a, Show a, Ord b, Show b
      , B.BiComp dim a b comp
      )
-  => DataSet dim a b
+  => ProbTyp
+  -> DataSet dim a b
   -> BVar s comp
   -> BVar s Double
-netError dataSet net =
+netError ptyp dataSet net =
   let
     inputs = map graph dataSet
-    outputs = map (run net) inputs
+    outputs = map (run ptyp net) inputs
     targets = map (fmap BP.auto . mkTarget) dataSet
   in
     errorMany targets outputs
@@ -1069,186 +1050,6 @@ mkTarget el = M.fromList $ do
         , hedVal = wP
         , depVal = vP }
   return ((v, w), encode target)
-
-
-----------------------------------------------
--- Approximate marginal probabilities
---
--- (version without constraints)
-----------------------------------------------
-
-
--- | Approximate marginal probabilities
-approxMarginals
-  :: (Reifies s W)
-  => Graph a b
-  -> M.Map Arc (BVar s (Vec8 Pot))
-  -> Int -- ^ Depth
-  -> M.Map Arc (BVar s (Vec8 Prob))
-approxMarginals graph potMap k = M.fromList $ do
-  arc <- M.keys potMap
-  return (arc, approxMarginals1 graph potMap arc k)
-
-
--- | Approx the marginal probabilities of the given arc.  If @depth = 0@, only
--- the potential of the arc is taken into account.
-approxMarginals1
-  :: (Reifies s W)
-  => Graph a b
-  -> M.Map Arc (BVar s (Vec8 Pot))
-  -> Arc
-  -> Int -- ^ Depth
-  -> BVar s (Vec8 Prob)
-  -- -> M.Map (Out Bool) (BVar s Double)
-approxMarginals1 graph potMap (v, w) k = 
-  obfuscateBP . M.fromList $ zip arcValues pots
-  where
-    pots = NL.normalize $ do
-      out <- arcValues
-      return
-        $ inside graph potMap v (depVal out) k
-        * outside graph potMap (v, w) (hedVal out) k
-        * arcPotExp potMap (v, w) out
-
-
--- | A semi-lifted version of `obfuscate`
---
--- TODO: this uses `VS.fromList` which is supposedly very inefficient in case
--- of long lists.
---
--- TODO: relate to `obfuscate` in tests?  Or maybe have a unified
--- implementation?
---
-obfuscateBP
-  :: forall s p. (Reifies s W)
-  => M.Map (Out Bool) (BVar s Double)
-  -> BVar s (Vec8 p)
-obfuscateBP =
-  BP.coerceVar . LBP.vector . from . M.elems
-  where
-    from = just . VS.fromList :: [a] -> VS.Vector 8 a
-    just Nothing =
-      error "Net.Graph2.mkVec: got Nothing"
-    just (Just x) = x
-
-
--- | Outside computation
-outside
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ The corresponding potential map
-  -> Arc
-    -- ^ The arc in question
-  -> Bool
-    -- ^ The value assigned to the node
-  -> Int
-    -- ^ Depth (optional?)
-  -> BVar s Double
-    -- ^ The resulting (sum of) potential(s)
-outside graph potMap (v, w) x k
-  | k <= 0 = 1
-  | otherwise = up * down
-  where
-    up = product $ do
-      -- for each parent (should be only one!)
-      p <- outgoing w graph
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the dependent of the value = x
-        guard $ depVal y == x
-        -- return the resulting (exponential) potential
-        return $ arcPotExp potMap (w, p) y
-               * outside graph potMap (w, p) (hedVal y) (k-1)
-    down = product $ do
-      -- for each child
-      c <- incoming w graph
-      -- different than v
-      guard $ c /= v
-      -- return the corresponding sum
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the head of the value = x
-        guard $ hedVal y == x
-        -- return the resulting (exponential) potential
-        return $ arcPotExp potMap (c, w) y
-               * inside graph potMap c (depVal y) (k-1)
-
-
--- | Inside pass
-inside
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ The corresponding potential map
-  -> G.Vertex
-    -- ^ The node in question
-  -> Bool
-    -- ^ The value assigned to the node
-  -> Int
-    -- ^ Depth (optional?)
-  -> BVar s Double
-    -- ^ The resulting (sum of) potential(s)
-inside graph potMap v x k
-  | k <= 0 = 1
-  | otherwise = product $ do
-      -- for each child
-      c <- incoming v graph
-      -- return the corresponding sum
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the head of the value = x
-        guard $ hedVal y == x
-        -- return the resulting (exponential) potential
-        return $ arcPotExp potMap (c, v) y
-               * inside graph potMap c (depVal y) (k-1)
-
-
--- | The list of possible values of an arc
-arcValues :: [Out Bool]
-arcValues = enumerate
-
-
--- | Potential of the given arc
-arcPotExp
-  :: forall s. (Reifies s W)
-  => M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ Potential map
-  -> Arc
-    -- ^ The arc in question
-  -> Out Bool
-    -- ^ The value
-  -> BVar s Double
-arcPotExp potMap arc out =
-  exp $ potVec `dot` BP.constVar (mask out)
-  where
-    potVec = BP.coerceVar (potMap M.! arc)
-
-
-----------------------------------------------
--- Log
-----------------------------------------------
-
-
--- | Potential of the given arc
-arcPotExpLog
-  :: forall s. (Reifies s W)
-  => M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ Potential map
-  -> Arc
-    -- ^ The arc in question
-  -> Out Bool
-    -- ^ The value
-  -> BVar s Double
-arcPotExpLog potMap arc out =
-  potVec `dot` BP.constVar (mask out)
-  where
-    potVec = BP.coerceVar (potMap M.! arc)
 
 
 ----------------------------------------------

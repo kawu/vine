@@ -434,6 +434,7 @@ instance Interpret Method where
 data Config = Config
   { sgd :: SGD.Config
   , method :: Method
+  , probTyp :: N.ProbTyp
   } deriving (Generic)
 
 instance Interpret Config
@@ -496,8 +497,8 @@ train cfg mweTyp cupt net0 = do
 --   N.printParam net'
   return net'
   where
-    gradient x = BP.gradBP (N.netError [x])
-    quality x = BP.evalBP (N.netError [x])
+    gradient x = BP.gradBP (N.netError (probTyp cfg) [x])
+    quality x = BP.evalBP (N.netError (probTyp cfg) [x])
 
 
 -- | Extract dependeny relations present in the given dataset.

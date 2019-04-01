@@ -58,6 +58,8 @@ module Net.Graph2.BiComp
 
   -- * Vec3 <-> Vec8 conversion
   , Out(..)
+  , enumerate
+  , mask
   , squash
   ) where
 
@@ -144,6 +146,44 @@ data Out a = Out
 
 -- Allows to use SmallCheck to test (decode . encode) == id.
 instance (SC.Serial m a) => SC.Serial m (Out a)
+
+
+-- | Enumerate the possible arc/node labelings in order consistent with the
+-- encoding/decoding format.
+enumerate :: [Out Bool]
+enumerate = do
+  b1 <- [False, True]
+  b2 <- [False, True]
+  b3 <- [False, True]
+  return $ Out b1 b2 b3
+
+
+-- | A mask vector which allows to easily obtain (with dot product) the
+-- potential of a given `Out` labeling.
+--
+-- TODO: the mask could be perhaps calculated using bit-level operattions?
+--
+mask :: Out Bool -> R 8
+mask (Out False False False) = vec18
+mask (Out False False True)  = vec28
+mask (Out False True  False) = vec38
+mask (Out False True  True)  = vec48
+mask (Out True  False False) = vec58
+mask (Out True  False True)  = vec68
+mask (Out True  True  False) = vec78
+mask (Out True  True  True)  = vec88
+
+
+-- | Hard-coded masks
+vec18, vec28, vec38, vec48, vec58, vec68, vec78, vec88 :: R 8
+vec18 = LA.vector [1, 0, 0, 0, 0, 0, 0, 0]
+vec28 = LA.vector [0, 1, 0, 0, 0, 0, 0, 0]
+vec38 = LA.vector [0, 0, 1, 0, 0, 0, 0, 0]
+vec48 = LA.vector [0, 0, 0, 1, 0, 0, 0, 0]
+vec58 = LA.vector [0, 0, 0, 0, 1, 0, 0, 0]
+vec68 = LA.vector [0, 0, 0, 0, 0, 1, 0, 0]
+vec78 = LA.vector [0, 0, 0, 0, 0, 0, 1, 0]
+vec88 = LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
 
 
 -- -- | Cross entropy between the true and the artificial distributions
