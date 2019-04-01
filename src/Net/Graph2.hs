@@ -141,7 +141,8 @@ import           Codec.Compression.Zlib (compress, decompress)
 -- import qualified Text.ParserCombinators.ReadP as R
 
 -- import qualified Data.Map.Lens as ML
-import           Control.Lens.At (ixAt)
+-- import           Control.Lens.At (ixAt)
+import           Control.Lens.At (ix)
 import           Control.Lens (Lens)
 import           Control.DeepSeq (NFData)
 
@@ -929,10 +930,52 @@ crossEntropyHard
     -- ^ Output ,,artificial'' distribution
   -> BVar s Double
 crossEntropyHard p0 q0 =
-  negate (p `dot` LBP.vmap' log q)
+  negate (p `dot` LBP.vmap' log' q)
   where
     p = BP.coerceVar p0 :: BVar s (R 8)
     q = BP.coerceVar q0
+    -- avoid NaN when p = 0 and q = 0
+    log' x
+      | x > 0 = log x
+      | otherwise = eps
+    eps = 1.0e-8
+
+
+-- -- | Cross entropy between the true and the artificial distributions
+-- crossEntropyHard
+--   :: forall s. (Reifies s W)
+--   => BVar s (Vec8 Prob)
+--     -- ^ Target ,,true'' distribution
+--   -> BVar s (Vec8 Prob)
+--     -- ^ Output ,,artificial'' distribution
+--   -> BVar s Double
+-- crossEntropyHard p0 q0
+--   | vp `at` 0 > 0 && vq `at` 0 <= 0 = error "1"
+--   | vp `at` 1 > 0 && vq `at` 1 <= 0 = error "2"
+--   | vp `at` 2 > 0 && vq `at` 2 <= 0 = error "3"
+--   | vp `at` 3 > 0 && vq `at` 3 <= 0 = error "4"
+--   | vp `at` 4 > 0 && vq `at` 4 <= 0 = error "5"
+--   | vp `at` 5 > 0 && vq `at` 5 <= 0 = error "6"
+--   | vp `at` 6 > 0 && vq `at` 6 <= 0 = error "7"
+--   | vp `at` 7 > 0 && vq `at` 7 <= 0 = error "8"
+--   | vq `at` 0 <= 0 = error "1.2"
+--   | vq `at` 1 <= 0 = error "2.2"
+--   | vq `at` 2 <= 0 = error "3.2"
+--   | vq `at` 3 <= 0 = error "4.2"
+--   | vq `at` 4 <= 0 = error (show $ map (\x -> vp `at` 4 > BP.auto x) [-0.1, 0.0 .. 1.0])
+--   | vq `at` 5 <= 0 = error "6.2"
+--   | vq `at` 6 <= 0 = error "7.2"
+--   | vq `at` 7 <= 0 = error "8.2"
+--   | otherwise = result
+--   where
+--     result = negate (p `dot` LBP.vmap' log q)
+--     p = BP.coerceVar p0 :: BVar s (R 8)
+--     q = BP.coerceVar q0
+-- 
+--     vp = LBP.extractV p
+--     vq = LBP.extractV q
+-- 
+--     at v k = maybe 0 id $ v ^^? ix k
 
 
 -- -- | Cross-entropy between the true and the artificial distributions

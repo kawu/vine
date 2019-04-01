@@ -1,13 +1,20 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 
 module Net.Graph2.Marginals
   ( approxMarginals
   , approxMarginalsC
+
+  , Res(..)
   ) where
 
+
+import           GHC.Generics (Generic)
 
 import           Control.Monad (guard)
 
@@ -15,6 +22,8 @@ import qualified Data.Map.Strict as M
 import qualified Data.Vector.Sized as VS
 import qualified Data.Graph as G
 import qualified Data.List as List
+
+import qualified Test.SmallCheck.Series as SC
 
 import qualified Numeric.Backprop as BP
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
@@ -232,7 +241,10 @@ data Res a = Res
     -- ^ One of the incoming arcs is `True`.
   , moreTrue :: a
     -- ^ More than one of the incoming arcs is `True`.
-  }
+  } deriving (Generic, Show, Eq, Ord)
+
+-- Allows to use SmallCheck.
+instance (SC.Serial m a) => SC.Serial m (Res a)
 
 instance Num a => Num (Res a) where
   r1 * r2 = Res
@@ -259,7 +271,8 @@ instance Num a => Num (Res a) where
   negate (Res x y z) = Res (negate x) (negate y) (negate z)
   abs (Res x y z) = Res (abs x) (abs y) (abs z)
   signum (Res x y z) = Res (signum x) (signum y) (signum z)
-  fromInteger x = Res (fromInteger x) (fromInteger x) (fromInteger x)
+  -- fromInteger x = Res (fromInteger x) (fromInteger x) (fromInteger x)
+  fromInteger x = Res (fromInteger x) 0 0
 
 
 justZero :: Num a => a -> Res a
@@ -297,6 +310,13 @@ insideC
     -- ^ The resulting (sum of) potential(s)
 insideC graph potMap v x xArc k
   | k <= 0 = 1
+--   | otherwise = zeroTrue down + oneTrue down + moreTrue down
+--   | null (incoming v graph) =
+--       case (x, xArc) of
+--         (True,   True) -> 1
+--         (False,  True) -> 0
+--         (True,  False) -> 1
+--         (False, False) -> 1
   | x = zeroTrue down + oneTrue down + moreTrue down
   | not x && not xArc = zeroTrue down + moreTrue down
   | not x && xArc = oneTrue down + moreTrue down
@@ -311,9 +331,12 @@ insideC graph potMap v x xArc k
         y <- arcValues
         -- such that the head of the value = x
         guard $ hedVal y == x
+        -- determine the lower inside value
+        let ins = insideC graph potMap c (depVal y) (arcVal y) (k-1)
+--         -- and ignore it if 0
+--         guard $ ins > 0
         -- the resulting (exponential) potential
-        let val = arcPotExp potMap (c, v) y
-                * insideC graph potMap c (depVal y) (arcVal y) (k-1)
+        let val = arcPotExp potMap (c, v) y * ins
         return $
           if arcVal y
              then justOne val
@@ -339,6 +362,7 @@ outsideC
     -- ^ The resulting (sum of) potential(s)
 outsideC graph potMap (v, w) x xArc k
   | k <= 0 = 1
+--   | otherwise = zeroTrue both + oneTrue both + moreTrue both
   | x = zeroTrue both + oneTrue both + moreTrue both
   | not x && not xArc = zeroTrue both + moreTrue both
   | not x && xArc = oneTrue both + moreTrue both
@@ -346,7 +370,7 @@ outsideC graph potMap (v, w) x xArc k
   where
     both = up * down
     up = product $ do
-      -- for each parent (should be only one!)
+      -- for each parent (should be at most one!)
       p <- outgoing w graph
       return . sum $ do
         -- for each corresponding arc value
@@ -368,9 +392,12 @@ outsideC graph potMap (v, w) x xArc k
         y <- arcValues
         -- such that the head of the value = x
         guard $ hedVal y == x
+        -- inside value
+        let ins = insideC graph potMap c (depVal y) (arcVal y) (k-1)
+--         -- ignore if 0
+--         guard $ ins > 0
         -- return the resulting (exponential) potential
-        let val = arcPotExp potMap (c, w) y
-                * insideC graph potMap c (depVal y) (arcVal y) (k-1)
+        let val = arcPotExp potMap (c, w) y * ins
         return $ if arcVal y then justOne val else justZero val
 
 

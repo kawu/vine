@@ -6,6 +6,7 @@ import qualified Data.Map.Strict as M
 
 import qualified Net.Graph2 as N
 import qualified Net.Graph2.BiComp as B
+import qualified Net.Graph2.Marginals as Margs
 
 
 main :: IO ()
@@ -36,6 +37,18 @@ scProps = testGroup "(checked by SmallCheck)"
   , SC.testProperty "explicate (mask x) M.! y == [x == y]" $
       \x y -> N.explicate (B.Vec $ N.mask x) M.! y ==
         if x == y then 1.0 else 0.0
+  , Tasty.localOption (SC.SmallCheckDepth 4) .
+    SC.testProperty "Res: additive identity" $
+      \x -> x + 0 == (x :: Margs.Res Int)
+  , Tasty.localOption (SC.SmallCheckDepth 4) .
+    SC.testProperty "Res: multiplicative identity" $
+      \x -> x * 1 == (x :: Margs.Res Int)
+  , Tasty.localOption (SC.SmallCheckDepth 2) .
+    SC.testProperty "Res: distributive law" $
+      \x y z -> x * (y + z :: Margs.Res Int) == x*y + x*z
+  , Tasty.localOption (SC.SmallCheckDepth 2) .
+    SC.testProperty "Res: associative multiplication" $
+      \x y z -> x * (y * z :: Margs.Res Int) == (x * y) * z
   ]
 
 
