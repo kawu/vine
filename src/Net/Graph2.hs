@@ -130,7 +130,11 @@ import qualified Data.Array as A
 import           Data.Binary (Binary)
 import qualified Data.Binary as Bin
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Vector.Sized as VS
 import           Codec.Compression.Zlib (compress, decompress)
+
+-- import qualified Data.Number.LogFloat as LF
+-- import           Data.Number.LogFloat (LogFloat)
 
 -- import qualified Text.Read as R
 -- import qualified Text.ParserCombinators.ReadP as R
@@ -164,6 +168,7 @@ import           Net.FeedForward (FFN(..))
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Graph
+import qualified Net.List as NL
 import           Net.Graph2.BiComp
   (Pot, Prob, Vec(..), Vec8, Out(..))
 import qualified Net.Graph2.BiComp as B
@@ -326,11 +331,6 @@ type Arc10 d a b
    = B.BiAffMix d 50 a b 400
 
 
--- -- | Version of `Arc8` with increased hidden layer
--- type Arc10 d a b
---    = B.BiAffMix d 50 a b 300
-
-
 -- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
 -- exclusively)
 type BiParam a b 
@@ -413,7 +413,7 @@ runRaw net graph = M.fromList $ do
   return (arc, x)
 
 
--- | `runRaw` + softmax
+-- | `runRaw` + \remove{softmax} approximate marginals
 run
   :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
      , B.BiComp dim a b comp
@@ -424,7 +424,9 @@ run
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s (Vec8 Prob))
     -- ^ Output map with output potential values
-run net = fmap B.softmaxVec . runRaw net
+run net graph =
+  -- fmap B.softmaxVec . runRaw net
+  approxMarginals graph (runRaw net graph) 1
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
@@ -471,7 +473,9 @@ eval net graph =
 
 
 ----------------------------------------------
--- Inference
+----------------------------------------------
+-- Inference/decoding/tagging
+----------------------------------------------
 ----------------------------------------------
 
 
@@ -487,6 +491,11 @@ instance Semigroup a => Semigroup (Labeling a) where
 
 instance Monoid a => Monoid (Labeling a) where
   mempty = Labeling M.empty M.empty
+
+
+----------------------------------------------
+-- Greedy decoding
+----------------------------------------------
 
 
 -- | Collect the vectorized probabilities over arcs and nodes.
@@ -514,6 +523,10 @@ tagGreedy mweChoice =
   let softMax vec = BP.evalBP0 $ B.softmaxVec (BP.auto vec)
    in fmap mweChoice . collect . fmap softMax
 
+
+----------------------------------------------
+-- Global decoding
+----------------------------------------------
 
 -- | Determine the node/arc labeling which maximizes the global potential over
 -- the given tree and return the resulting arc labeling.
@@ -612,6 +625,11 @@ tagSubTree root graph lmap =
         , addArc arc False (pot False True)  true
         , addArc arc True  (pot True  False) false
         , addArc arc False (pot False False) false ]
+
+
+----------------------------------------------
+-- Constrained decoding
+----------------------------------------------
 
 
 -- | The best labeling
@@ -800,8 +818,8 @@ tagSubTreeC root graph lmap =
 --       arcMwe <- [False, True]
 --       -- The resulting potential
 --       return $ insidePot v vMwe + arcPot potMap (v, vMwe) (w, wMwe) arcMwe
--- 
--- 
+
+
 -- -- | Calculates the arc potential given the label of the head and the label of
 -- -- the dependent.
 -- arcPot 
@@ -816,9 +834,9 @@ tagSubTreeC root graph lmap =
 --     -- ^ Label of the arc
 --   -> BVar s Double
 -- arcPot potMap (dep, depMwe) (hed, hedMwe) arcMwe =
---   potVec `dot` (BP.coerceVar . BP.constVar) (mask out)
+--   potVec `dot` BP.constVar (mask out)
 --   where
---     potVec = BP.coerceVar (potMap M.! (dep, hed)) :: BVar s (R 8)
+--     potVec = BP.coerceVar (potMap M.! (dep, hed))
 --     out = Out
 --       { arcVal = arcMwe
 --       , depVal = depMwe
@@ -855,10 +873,9 @@ enumerate = do
 -- | A mask vector which allows to easily obtain (with dot product) the
 -- potential of a given `Out` labeling.
 --
--- TODO: add tests to make sure this is consistent with, maybe, `obfuscate`?
 -- TODO: the mask could be perhaps calculated using bit-level operattions?
 --
-mask :: Out Bool -> Vec8 p
+mask :: Out Bool -> R 8
 mask (Out False False False) = vec18
 mask (Out False False True)  = vec28
 mask (Out False True  False) = vec38
@@ -870,17 +887,15 @@ mask (Out True  True  True)  = vec88
 
 
 -- | Hard-coded masks
-vec18, vec28, vec38, vec48, vec58, vec68, vec78, vec88 :: Vec8 p
-vec18 = Vec $ LA.vector [1, 0, 0, 0, 0, 0, 0, 0]
-vec28 = Vec $ LA.vector [0, 1, 0, 0, 0, 0, 0, 0]
-vec38 = Vec $ LA.vector [0, 0, 1, 0, 0, 0, 0, 0]
-vec48 = Vec $ LA.vector [0, 0, 0, 1, 0, 0, 0, 0]
-vec58 = Vec $ LA.vector [0, 0, 0, 0, 1, 0, 0, 0]
-vec68 = Vec $ LA.vector [0, 0, 0, 0, 0, 1, 0, 0]
-vec78 = Vec $ LA.vector [0, 0, 0, 0, 0, 0, 1, 0]
-vec88 = Vec $ LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
-
-
+vec18, vec28, vec38, vec48, vec58, vec68, vec78, vec88 :: R 8
+vec18 = LA.vector [1, 0, 0, 0, 0, 0, 0, 0]
+vec28 = LA.vector [0, 1, 0, 0, 0, 0, 0, 0]
+vec38 = LA.vector [0, 0, 1, 0, 0, 0, 0, 0]
+vec48 = LA.vector [0, 0, 0, 1, 0, 0, 0, 0]
+vec58 = LA.vector [0, 0, 0, 0, 1, 0, 0, 0]
+vec68 = LA.vector [0, 0, 0, 0, 0, 1, 0, 0]
+vec78 = LA.vector [0, 0, 0, 0, 0, 0, 1, 0]
+vec88 = LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
 
 
 ----------------------------------------------
@@ -940,54 +955,39 @@ crossEntropyHard p0 q0 =
     q = BP.coerceVar q0
 
 
--- | Cross-entropy between the true and the artificial distributions
-crossEntropyOne
-  :: (Reifies s W)
-  => BVar s Double
-    -- ^ Target ,,true'' MWE probability
-  -> BVar s Double
-    -- ^ Output ,,artificial'' MWE probability
-  -> BVar s Double
-crossEntropyOne p q = negate
-  ( p0 * log q0
-  + p1 * log q1
-  )
-  where
-    p1 = p
-    p0 = 1 - p1
-    q1 = q
-    q0 = 1 - q1
-
-
--- -- | Cross-entropy over `Foldable`
--- sumOver
---   :: (Reifies s W, Foldable f)
---   => (BVar s Double -> BVar s Double -> BVar s Double)
---     -- ^ 
---   -> f (BVar s Double)
---     -- ^ Target probabilities
---   -> f (BVar s Double)
---     -- ^ Output probabilities
+-- -- | Cross-entropy between the true and the artificial distributions
+-- crossEntropyOne
+--   :: (Reifies s W)
+--   => BVar s Double
+--     -- ^ Target ,,true'' MWE probability
 --   -> BVar s Double
--- crossEntropyOver f1 f2
---   = sum . map (uncurry (+))
---   $ zip (F.toList f1) (F.toList f2)
-
-
--- | Soft version of `crossEntropy`
-crossEntropySoft
-  :: forall s. (Reifies s W)
-  => BVar s (Vec8 Prob)
-    -- ^ Target ,,true'' distribution
-  -> BVar s (Vec8 Prob)
-    -- ^ Output ,,artificial'' distribution
-  -> BVar s Double
-crossEntropySoft p q
-  = sum
-  . map (uncurry crossEntropyOne)
-  $ zip (flatten p) (flatten q)
-  where
-    flatten = F.toList . B.squash
+--     -- ^ Output ,,artificial'' MWE probability
+--   -> BVar s Double
+-- crossEntropyOne p q = negate
+--   ( p0 * log q0
+--   + p1 * log q1
+--   )
+--   where
+--     p1 = p
+--     p0 = 1 - p1
+--     q1 = q
+--     q0 = 1 - q1
+-- 
+-- 
+-- -- | Soft version of `crossEntropy`
+-- crossEntropySoft
+--   :: forall s. (Reifies s W)
+--   => BVar s (Vec8 Prob)
+--     -- ^ Target ,,true'' distribution
+--   -> BVar s (Vec8 Prob)
+--     -- ^ Output ,,artificial'' distribution
+--   -> BVar s Double
+-- crossEntropySoft p q
+--   = sum
+--   . map (uncurry crossEntropyOne)
+--   $ zip (flatten p) (flatten q)
+--   where
+--     flatten = F.toList . B.squash
 
 
 -- | Selected version of cross-entropy.
@@ -999,8 +999,8 @@ crossEntropy
     -- ^ Output ,,artificial'' distribution
   -> BVar s Double
 crossEntropy =
-  crossEntropySoft
-  -- crossEntropyHard
+  -- crossEntropySoft
+  crossEntropyHard
 {-# crossEntropy #-}
 
 
@@ -1072,8 +1072,183 @@ mkTarget el = M.fromList $ do
 
 
 ----------------------------------------------
--- Soft error utils
+-- Approximate marginal probabilities
+--
+-- (version without constraints)
 ----------------------------------------------
+
+
+-- | Approximate marginal probabilities
+approxMarginals
+  :: (Reifies s W)
+  => Graph a b
+  -> M.Map Arc (BVar s (Vec8 Pot))
+  -> Int -- ^ Depth
+  -> M.Map Arc (BVar s (Vec8 Prob))
+approxMarginals graph potMap k = M.fromList $ do
+  arc <- M.keys potMap
+  return (arc, approxMarginals1 graph potMap arc k)
+
+
+-- | Approx the marginal probabilities of the given arc.  If @depth = 0@, only
+-- the potential of the arc is taken into account.
+approxMarginals1
+  :: (Reifies s W)
+  => Graph a b
+  -> M.Map Arc (BVar s (Vec8 Pot))
+  -> Arc
+  -> Int -- ^ Depth
+  -> BVar s (Vec8 Prob)
+  -- -> M.Map (Out Bool) (BVar s Double)
+approxMarginals1 graph potMap (v, w) k = 
+  obfuscateBP . M.fromList $ zip arcValues pots
+  where
+    pots = NL.normalize $ do
+      out <- arcValues
+      return
+        $ inside graph potMap v (depVal out) k
+        * outside graph potMap (v, w) (hedVal out) k
+        * arcPotExp potMap (v, w) out
+
+
+-- | A semi-lifted version of `obfuscate`
+--
+-- TODO: this uses `VS.fromList` which is supposedly very inefficient in case
+-- of long lists.
+--
+-- TODO: relate to `obfuscate` in tests?  Or maybe have a unified
+-- implementation?
+--
+obfuscateBP
+  :: forall s p. (Reifies s W)
+  => M.Map (Out Bool) (BVar s Double)
+  -> BVar s (Vec8 p)
+obfuscateBP =
+  BP.coerceVar . LBP.vector . from . M.elems
+  where
+    from = just . VS.fromList :: [a] -> VS.Vector 8 a
+    just Nothing =
+      error "Net.Graph2.mkVec: got Nothing"
+    just (Just x) = x
+
+
+-- | Outside computation
+outside
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ The corresponding potential map
+  -> Arc
+    -- ^ The arc in question
+  -> Bool
+    -- ^ The value assigned to the node
+  -> Int
+    -- ^ Depth (optional?)
+  -> BVar s Double
+    -- ^ The resulting (sum of) potential(s)
+outside graph potMap (v, w) x k
+  | k <= 0 = 1
+  | otherwise = up * down
+  where
+    up = product $ do
+      -- for each parent (should be only one!)
+      p <- outgoing w graph
+      return . sum $ do
+        -- for each corresponding arc value
+        y <- arcValues
+        -- such that the dependent of the value = x
+        guard $ depVal y == x
+        -- return the resulting (exponential) potential
+        return $ arcPotExp potMap (w, p) y
+               * outside graph potMap (w, p) (hedVal y) (k-1)
+    down = product $ do
+      -- for each child
+      c <- incoming w graph
+      -- different than v
+      guard $ c /= v
+      -- return the corresponding sum
+      return . sum $ do
+        -- for each corresponding arc value
+        y <- arcValues
+        -- such that the head of the value = x
+        guard $ hedVal y == x
+        -- return the resulting (exponential) potential
+        return $ arcPotExp potMap (c, w) y
+               * inside graph potMap c (depVal y) (k-1)
+
+
+-- | Inside pass
+inside
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ The corresponding potential map
+  -> G.Vertex
+    -- ^ The node in question
+  -> Bool
+    -- ^ The value assigned to the node
+  -> Int
+    -- ^ Depth (optional?)
+  -> BVar s Double
+    -- ^ The resulting (sum of) potential(s)
+inside graph potMap v x k
+  | k <= 0 = 1
+  | otherwise = product $ do
+      -- for each child
+      c <- incoming v graph
+      -- return the corresponding sum
+      return . sum $ do
+        -- for each corresponding arc value
+        y <- arcValues
+        -- such that the head of the value = x
+        guard $ hedVal y == x
+        -- return the resulting (exponential) potential
+        return $ arcPotExp potMap (c, v) y
+               * inside graph potMap c (depVal y) (k-1)
+
+
+-- | The list of possible values of an arc
+arcValues :: [Out Bool]
+arcValues = enumerate
+
+
+-- | Potential of the given arc
+arcPotExp
+  :: forall s. (Reifies s W)
+  => M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Potential map
+  -> Arc
+    -- ^ The arc in question
+  -> Out Bool
+    -- ^ The value
+  -> BVar s Double
+arcPotExp potMap arc out =
+  exp $ potVec `dot` BP.constVar (mask out)
+  where
+    potVec = BP.coerceVar (potMap M.! arc)
+
+
+----------------------------------------------
+-- Log
+----------------------------------------------
+
+
+-- | Potential of the given arc
+arcPotExpLog
+  :: forall s. (Reifies s W)
+  => M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Potential map
+  -> Arc
+    -- ^ The arc in question
+  -> Out Bool
+    -- ^ The value
+  -> BVar s Double
+arcPotExpLog potMap arc out =
+  potVec `dot` BP.constVar (mask out)
+  where
+    potVec = BP.coerceVar (potMap M.! arc)
 
 
 ----------------------------------------------

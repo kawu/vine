@@ -5,6 +5,7 @@ import qualified Test.Tasty.SmallCheck as SC
 import qualified Data.Map.Strict as M
 
 import qualified Net.Graph2 as N
+import qualified Net.Graph2.BiComp as B
 
 
 main :: IO ()
@@ -33,7 +34,7 @@ scProps = testGroup "(checked by SmallCheck)"
         let m = M.fromList (zip N.enumerate $ pad 8 xs)
          in null xs || (N.explicate . N.obfuscate) m == m
   , SC.testProperty "explicate (mask x) M.! y == [x == y]" $
-      \x y -> N.explicate (N.mask x) M.! y ==
+      \x y -> N.explicate (B.Vec $ N.mask x) M.! y ==
         if x == y then 1.0 else 0.0
   ]
 
