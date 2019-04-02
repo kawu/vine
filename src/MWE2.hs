@@ -25,6 +25,7 @@ module MWE2
   ( Sent(..)
 
   -- * New
+  , N.new
   , N.newO
   , N.Typ
 
@@ -32,14 +33,17 @@ module MWE2
   , Config(..)
   , Method(..)
   , trainO
+  , trainT
   , depRelsIn
   , posTagsIn
 
   -- * Tagging
   , TagConfig(..)
   , tag
+  , tagT
   , tagMany
   , tagManyO
+  , tagManyT
   ) where
 
 
@@ -52,12 +56,15 @@ import           GHC.TypeNats (KnownNat)
 import           Control.Monad (guard, forM_)
 import           Control.DeepSeq (NFData)
 
+import           Lens.Micro ((^.))
+
 -- import qualified System.Directory as D
 -- import           System.FilePath ((</>))
 
 import           Numeric.LinearAlgebra.Static.Backprop (R)
 -- import qualified Numeric.LinearAlgebra.Static as LA
 -- import qualified Numeric.LinearAlgebra as LAD
+import           Numeric.Backprop (Reifies, W, BVar, (^^.))
 import qualified Numeric.Backprop as BP
 
 import           Dhall -- (Interpret)
@@ -65,6 +72,7 @@ import           Dhall.Core (Expr(..))
 import qualified Dhall.Map as Map
 -- import qualified Data.Aeson as JSON
 
+import qualified Data.Proxy as Proxy
 import qualified Data.Foldable as Fold
 import           Data.Semigroup (Max(..))
 import qualified Data.Graph as G
@@ -94,6 +102,7 @@ import qualified Format.Cupt as Cupt
 import qualified Graph
 import qualified Net.Graph2 as N
 import qualified Net.Graph2.BiComp as B
+import qualified Net.Input as I
 
 -- import Debug.Trace (trace)
 
@@ -231,7 +240,7 @@ mkElem
     -- ^ MWE type (category) selection method
   -> Sent d
     -- ^ Input sentence
-  -> N.Elem d DepRel POS
+  -> N.Elem (R d)
 mkElem mweSel sent =
 
   List.foldl' markMWE
@@ -271,12 +280,13 @@ mkElem mweSel sent =
     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
     nodes = do
       (tok, vec) <- zip cuptSentF (wordEmbs sent)
-      let node = Graph.Node
-            { nodeEmb = vec
-            , nodeLab = Cupt.upos tok
-            -- | TODO: could be lemma?
-            , nodeLex = Cupt.orth tok
-            }
+      let node = (tok, vec)
+--       let node = Graph.Node
+--             { nodeEmb = vec
+--             , nodeLab = Cupt.upos tok
+--             -- | TODO: could be lemma?
+--             , nodeLex = Cupt.orth tok
+--             }
           isMwe = (not . S.null) (getMweIDs tok)
       return (tokID tok, node, isMwe)
     -- Labeled arcs of the graph
@@ -292,11 +302,12 @@ mkElem mweSel sent =
           -- a part of the same MWE of the appropriate MWE category.
           isMwe = (not . S.null)
             (getMweIDs tok `S.intersection` getMweIDs par)
-      return ((tokID tok, tokID par), Cupt.deprel tok, isMwe)
+      -- return ((tokID tok, tokID par), Cupt.deprel tok, isMwe)
+      return ((tokID tok, tokID par), isMwe)
 
 
 -- | Mark MWE in the given dataset element.
-markMWE :: N.Elem d a b -> Cupt.Mwe -> N.Elem d a b
+markMWE :: N.Elem d -> Cupt.Mwe -> N.Elem d
 markMWE el mwe =
   List.foldl' markArc el (S.toList arcSet)
   where
@@ -317,33 +328,36 @@ markMWE el mwe =
 --
 createElem
   :: (KnownNat d)
-  => [(G.Vertex, Graph.Node d POS, Bool)]
-  -> [(Graph.Arc, DepRel, Bool)]
-  -> N.Elem d DepRel POS
+  => [(G.Vertex, (Cupt.Token, R d), Bool)]
+  -> [(Graph.Arc, Bool)]
+  -> N.Elem (R d)
 createElem nodes arcs0 = N.Elem
   { graph = graph
   , nodMap = _nodMap
   , arcMap = _arcMap
+  , tokMap = M.fromList [(v, tok) | (v, (tok, _), _) <- nodes]
   }
   where
-    arcs = List.sortBy (Ord.comparing _1) arcs0
+    -- arcs = List.sortBy (Ord.comparing _1) arcs0
+    arcs = List.sortBy (Ord.comparing fst) arcs0
     vertices = [v | (v, _, _) <- nodes]
     gStr = G.buildG
       (minimum vertices, maximum vertices)
-      (map _1 arcs)
+      (map fst arcs)
     graph = verify . Graph.mkAsc $ Graph.Graph
       { Graph.graphStr = gStr
       , Graph.graphInv = G.transposeG gStr
       , Graph.nodeLabelMap = M.fromList $
-          map (\(x, y, _) -> (x, y)) nodes
+          map (\(x, y, _) -> (x, snd y)) nodes
       , Graph.arcLabelMap = M.fromList $
-          map (\(x, y, _) -> (x, y)) arcs
+          map (\(x, _) -> (x, ())) arcs
       }
     _arcMap = M.fromList $ do
-      (arc, _arcLab, isMwe) <- arcs
+      -- (arc, _arcLab, isMwe) <- arcs
+      (arc, isMwe) <- arcs
       return (arc, if isMwe then 1.0 else 0.0)
     _nodMap = M.fromList $ do
-      (v, _nodeLab, isMwe) <- nodes
+      (v, _, isMwe) <- nodes
       return (v, if isMwe then 1.0 else 0.0)
     _1 (x, _, _) = x
     verify g
@@ -470,7 +484,7 @@ type POS = T.Text
 -- | Train the MWE identification network.
 train
   :: ( KnownNat d
-     , B.BiComp d DepRel POS comp
+     , B.BiComp d comp
      , SGD.ParamSet comp, NFData comp
      )
   => Config
@@ -497,8 +511,8 @@ train cfg mweTyp cupt net0 = do
 --   N.printParam net'
   return net'
   where
-    gradient x = BP.gradBP (N.netError (probTyp cfg) [x])
-    quality x = BP.evalBP (N.netError (probTyp cfg) [x])
+    gradient x = BP.gradBP (N.netError (probTyp cfg) [fmap BP.auto x])
+    quality x = BP.evalBP (N.netError (probTyp cfg) [fmap BP.auto x])
 
 
 -- | Extract dependeny relations present in the given dataset.
@@ -551,6 +565,82 @@ tagManyO cfg = \case
 
 
 ----------------------------------------------
+-- Trainin with input transformations
+----------------------------------------------
+
+
+-- -- | Train the MWE identification network.
+-- trainI
+--   :: forall inp comp d i.
+--      ( KnownNat d, KnownNat i
+--      , I.Input inp d i
+--      , SGD.ParamSet inp, NFData inp
+--      , B.BiComp i comp
+--      , SGD.ParamSet comp, NFData comp
+--      )
+--   => Config
+--     -- ^ General training confiration
+--   -> Proxy.Proxy i
+--     -- ^ A proxy to learn the internal dimension
+--     -- TODO: could be a part of the config, I guess?
+--   -> Cupt.MweTyp
+--     -- ^ Selected MWE type (category)
+--   -> [Sent d]
+--     -- ^ Training dataset
+--   -> inp -> comp
+--     -- ^ Initial networks
+--   -> IO (inp, comp)
+-- --   -> IO (N.Param 300)
+-- trainI cfg _proxy mweTyp cupt inp0 net0 = do
+--   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+--   let cupt' = map (mkElem (== mweTyp)) cupt
+--   SGD.withDisk cupt' $ \dataSet -> do
+--     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
+--     SGD.runIO (sgd cfg)
+--       (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
+--       quality dataSet (inp0, net0)
+--   where
+--     gradient x (inp0, net0) = BP.gradBP2 (netError x) inp0 net0
+--     quality x (inp, net) = BP.evalBP2 (netError x) inp0 net0
+--     netError 
+--       :: forall s. (Reifies s W)
+--       => N.Elem (R d)
+--       -> BVar s inp
+--       -> BVar s comp
+--       -> BVar s Double
+--     netError x inp net =
+--       let toksEmbs = N.tokens x
+--           embs' = I.runInput inp toksEmbs :: [BVar s (R i)]
+--           x' = N.replace embs' x
+--        in N.netError (probTyp cfg) [x'] net
+
+
+-- | Train the MWE identification network.
+trainT
+  :: Config
+    -- ^ General training confiration
+  -> Cupt.MweTyp
+    -- ^ Selected MWE type (category)
+  -> [Sent 300]
+    -- ^ Training dataset
+  -> N.Transparent
+    -- ^ Initial networks
+  -> IO N.Transparent
+--   -> IO (N.Param 300)
+trainT cfg mweTyp cupt tra0 = do
+  -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+  let cupt' = map (mkElem (== mweTyp)) cupt
+  SGD.withDisk cupt' $ \dataSet -> do
+    putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
+    SGD.runIO (sgd cfg)
+      (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
+      quality dataSet tra0
+  where
+    gradient x = BP.gradBP (N.netErrorT (probTyp cfg) x)
+    quality x = BP.evalBP (N.netErrorT (probTyp cfg) x)
+
+
+----------------------------------------------
 -- Tagging
 --
 -- TODO: copy from MWE, apart from `tag`
@@ -576,7 +666,7 @@ data TagConfig = TagConfig
 -- network.  The output is directed to stdout.
 tagMany
   :: ( KnownNat d
-     , B.BiComp d DepRel POS comp
+     , B.BiComp d comp
      -- , SGD.ParamSet comp, NFData comp
      )
   => TagConfig
@@ -594,7 +684,7 @@ tagMany tagCfg net cupt = do
 -- | Tag a single sentence with the given network.
 tag
   :: ( KnownNat d
-     , B.BiComp d DepRel POS comp
+     , B.BiComp d comp
      )
   => TagConfig
   -> comp             -- ^ Network parameters
@@ -613,6 +703,34 @@ tag tagCfg net sent = do
     mweChoice ps = geoMean ps >= mweThreshold tagCfg
     labeling = tagF . N.evalRaw net $ N.graph elem
     sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
+
+
+-- | Tag a single sentence with the given network.
+tagT
+  :: TagConfig
+  -> N.Transparent   -- ^ Network parameters
+  -> Sent 300        -- ^ Cupt sentence
+  -> IO ()
+tagT cfg net sent =
+  tag cfg (net ^. N.biaMod) $ Sent
+    { cuptSent = cuptSent sent
+    , wordEmbs = I.evalInput
+        (net ^. N.inpMod)
+        (zip (cuptSent sent) (wordEmbs sent))
+    }
+
+
+-- | Tag sentences with the opaque network.
+tagManyT
+  :: TagConfig
+  -> N.Transparent
+  -> [Sent 300]
+  -> IO ()
+tagManyT cfg net cupt = do
+  forM_ cupt $ \sent -> do
+    T.putStr "# "
+    T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
+    tagT cfg net sent
 
 
 -- | Average of the list of numbers

@@ -69,13 +69,20 @@ module Net.Graph2
   , Typ(..)
   , newO
 
+  -- * Transparent
+  , Transparent(..)
+  , inpMod
+  , biaMod
+  , netErrorT
+
   -- * Serialization
   , save
   , load
 
   -- * Data set
-  , DataSet
   , Elem(..)
+  , tokens
+  , replace
 
   -- * Error
   , netError
@@ -169,14 +176,93 @@ import           Net.FeedForward (FFN(..))
 -- import qualified GradientDescent.AdaDelta as Ada
 import           Numeric.SGD.ParamSet (ParamSet)
 
+import qualified Format.Cupt as Cupt
+
 import           Graph
 import qualified Net.List as NL
 import           Net.Graph2.BiComp
   (Pot, Prob, Vec(..), Vec8, Out(..))
 import qualified Net.Graph2.BiComp as B
 import qualified Net.Graph2.Marginals as Margs
+import qualified Net.Input as I
 
 import           Debug.Trace (trace)
+
+
+----------------------------------------------
+-- Transparent
+----------------------------------------------
+
+
+-- | Should be rather named sth. like `Fixed`...
+data Transparent = Transparent
+  { _inpMod :: I.PosDepInp 50 50
+  , _biaMod :: B.BiAff 400 200
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+-- data Transparent = Transparent
+--   { _inpMod :: I.RawInp
+--   , _biaMod :: B.BiAff 300 100
+--   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+makeLenses ''Transparent
+
+instance (a ~ T.Text, b ~ T.Text) => New a b Transparent where
+  new xs ys = Transparent <$> new xs ys <*> new xs ys
+
+
+-- | Net error with `Transparent`
+netErrorT
+  :: (Reifies s W)
+  => ProbTyp
+  -> Elem (R 300)
+  -> BVar s Transparent
+  -> BVar s Double
+netErrorT ptyp x net =
+  let toksEmbs = tokens x
+      embs' = I.runInput (net ^^. inpMod) toksEmbs
+      x' = replace embs' x
+   in netError ptyp [x'] (net ^^. biaMod)
+
+
+----------------------------------------------
+-- Opaque2
+----------------------------------------------
+
+-- -- | Each constructor of `ITyp` corresponds to a specific feature extraction
+-- -- architecture.  The parameter @i@ corresponds to the size of the output.
+-- data ITyp = PosDep
+--   deriving (Generic, Binary, Read)
+-- 
+-- 
+-- data Opaque2 :: Nats.Nat -> * -> * -> * where
+--   Opaque2 
+--     :: ( Binary p, NFData p, ParamSet p, I.Input p d 350
+--        , Binary q, NFData q, ParamSet q, B.BiComp 350 q
+--        )
+--     => ITyp -> p
+--     -> Typ -> q
+--     -> Opaque2 d a b
+-- 
+-- 
+-- instance (KnownNat d) => Binary (Opaque2 d a b) where
+--   put (Opaque2 typ p ityp q) = do
+--     Bin.put ityp
+--     Bin.put q
+--     Bin.put typ
+--     Bin.put p
+--   get = do
+--     typ <- Bin.get
+--     p <- case typ of
+--       Arc0T -> Bin.get :: Bin.Get (Arc0 d)
+-- --       Arc1T -> Opaque typ <$> (action :: m (Arc1 d))
+-- --       Arc2T -> Opaque typ <$> (action :: m (Arc2 d))
+-- --       Arc3T -> Opaque typ <$> (action :: m (Arc3 d))
+--     ityp <- Bin.get
+--     q <- case ityp of
+--       PosDep -> Bin.get :: Bin.Get (I.PosDepInp 25 25)
+--     return $ Opaque2 ityp q typ p
+-- --     ityp <- Bin.get
 
 
 ----------------------------------------------
@@ -190,13 +276,6 @@ data Typ
   | Arc1T
   | Arc2T
   | Arc3T
-  | Arc4T
-  | Arc5T
-  | Arc6T
-  | Arc7T
-  | Arc8T
-  | Arc9T
-  | Arc10T
   deriving (Generic, Binary, Read)
 
 
@@ -209,15 +288,11 @@ data Typ
 -- what `Opaque` preserves.
 data Opaque :: Nats.Nat -> * -> * -> * where
   Opaque 
-    :: (Binary p, NFData p, ParamSet p, B.BiComp d a b p)
+    :: (Binary p, NFData p, ParamSet p, B.BiComp d p)
     => Typ -> p -> Opaque d a b
 
 
-instance ( KnownNat d
-         , Binary a, Binary b, NFData a, NFData b
-         , Ord a, Ord b, Show a, Show b
-         )
-  => Binary (Opaque d a b) where
+instance (KnownNat d) => Binary (Opaque d a b) where
   put (Opaque typ p) = Bin.put typ >> Bin.put p
   get = do
     typ <- Bin.get
@@ -227,36 +302,24 @@ instance ( KnownNat d
 -- | Execute the action within the context of the given model type.  Just a
 -- helper function, really, which allows to avoid boilerplate code.
 exec
-  :: forall d a b m.
-    ( KnownNat d
-    , Binary a, NFData a, Show a, Ord a
-    , Binary b, NFData b, Show b, Ord b
-    , Functor m
-    )
+  :: forall d a b m. (KnownNat d, Functor m)
   => Typ
   -> (forall p. (Binary p, New a b p) => m p)
   -> m (Opaque d a b)
 exec typ action =
   case typ of
-    Arc0T -> Opaque typ <$> (action :: m (Arc0 d a b))
-    Arc1T -> Opaque typ <$> (action :: m (Arc1 d a b))
-    Arc2T -> Opaque typ <$> (action :: m (Arc2 d a b))
-    Arc3T -> Opaque typ <$> (action :: m (Arc3 d a b))
-    Arc4T -> Opaque typ <$> (action :: m (Arc4 d a b))
-    Arc5T -> Opaque typ <$> (action :: m (Arc5 d a b))
-    Arc6T -> Opaque typ <$> (action :: m (Arc6 d a b))
-    Arc7T -> Opaque typ <$> (action :: m (Arc7 d a b))
-    Arc8T -> Opaque typ <$> (action :: m (Arc8 d a b))
-    Arc9T -> Opaque typ <$> (action :: m (Arc9 d a b))
-    Arc10T -> Opaque typ <$> (action :: m (Arc10 d a b))
+    Arc0T -> Opaque typ <$> (action :: m (Arc0 d))
+    Arc1T -> Opaque typ <$> (action :: m (Arc1 d))
+    Arc2T -> Opaque typ <$> (action :: m (Arc2 d))
+    Arc3T -> Opaque typ <$> (action :: m (Arc3 d))
 
 
 -- | Create a new network of the given type.
 newO
   :: forall d a b.
     ( KnownNat d
-    , Binary a, NFData a, Show a, Ord a
-    , Binary b, NFData b, Show b, Ord b
+--     , Binary a, NFData a, Show a, Ord a
+--     , Binary b, NFData b, Show b, Ord b
     )
   => Typ     -- ^ Network type, which determines its architecture
   -> S.Set a -- ^ The set of node labels
@@ -272,124 +335,23 @@ newO typ xs ys =
 
 
 -- | Arc-factored model (0)
-type Arc0 d a b
+type Arc0 d
    = B.BiAff d 100
-  :& B.Bias
 
 
 -- | Arc-factored model (1)
-type Arc1 d a b
-   = B.BiAff d 100
-  :& BiParam a b
-
-
--- | Arc-factored model (2)
-type Arc2 d a b
-   = B.BiAffExt d 50 a b 100
-  :& BiParam a b
-
-
--- | Arc-factored model (3)
-type Arc3 d a b
-  = PotArc d 100 a b
-
-
--- | Arc-factored model (4); similar to (3), but with (h = d).
--- The best for LVC.full in French found so far!
-type Arc4 d a b
-  = PotArc d d a b
-
-
--- | Arc-factored model (5): (2) - `BiParam`
-type Arc5 d a b
-   = B.BiAffExt d 50 a b 100
-
-
--- | Arc-factored model (6): (2) + `Q.UnordBiAff`
-type Arc6 d a b
-   = B.BiAffExt d 50 a b 100
-  :& B.UnordBiAff d 100
-  :& BiParam a b
-
-
--- | `Arc5` with increased size of the hidden layers.
-type Arc7 d a b
-   = B.BiAffExt d 50 a b 200
+type Arc1 d
+   = B.BiAff d 200
 
 
 -- | Version of `Arc7` with mixed joint and independent potential calculation.
-type Arc8 d a b
-   = B.BiAffMix d 50 a b 200
-
-
--- | `Arc8` + `BiParam`
-type Arc9 d a b
-   = Arc8 d a b
-  :& BiParam a b
+type Arc2 d
+   = B.BiAffMix d 200
 
 
 -- | `Arc8` with increased hidden layer (200 -> 400)
-type Arc10 d a b
-   = B.BiAffMix d 50 a b 400
-
-
--- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
--- exclusively)
-type BiParam a b 
-   = B.Bias
-  :& B.HeadPosAff a
-  :& B.DepPosAff a
-  :& B.PapyPosAff a
-  :& B.EnkelPosAff a
-  :& B.ArcBias b
-  :& B.PapyArcAff b
-  :& B.EnkelArcAff b
-
-
--- | The best arc-factored model you found so far (with h = dim).
-type PotArc dim h a b
-   = B.BiAff dim h
-  :& B.UnordBiAff dim h
-  :& B.HeadAff dim h
-  :& B.DepAff dim h
-  :& BiParam a b
-
-
--- -- | Quad-factored model (0) with hidden layers of size 100
--- type Quad0 d a b = 
---   QuadH d 100 a b
--- 
--- 
--- -- | Quad-factored model (1); (0) + unordered bi-affine component.  That's the
--- -- last model you tried on cl-srv2.  Turned out better than `Quad0`, the
--- -- `Q.UnordBiAff` seems to make a difference.
--- --
--- -- Now you could try to do some ablation/enriching study:
--- --
--- --   * What if you remove `Q.TriAff` and `Q.SibAff`?
--- --   * What if you also remove `Q.UnAff`?
--- --
--- -- You can also try `Arc3`, a simplified (with dim = 100) version of the best
--- -- model obtained so far (`Arc4`).  Just to see how much you potentialy (well,
--- -- it can depend on training anyway...) lose by using smaller dimension.
--- --
--- -- The next thing to do would be to check if you can gain somethin by using
--- -- POS/DEP embeddings.  For instance by enriching `Arc3` or `Arc4` with
--- -- `Q.BiAffExt` (see `Arc2`).  In fact, it makes sense to test `Arc1`, `Arc2`,
--- -- and `Arc3` first and see what they give.
--- --
--- type Quad1 d a b
---    = QuadH d 100 a b
---   :& Q.UnordBiAff d 100
--- 
--- 
--- -- | Quad-factored model with underspecified size of the hidden layers
--- type QuadH d h a b
---    = Q.TriAff d h
---   :& Q.SibAff d h
---   :& Q.BiAff d h
---   :& Q.UnAff d h
---   :& Q.Bias
+type Arc3 d
+   = B.BiAffMix d 400
 
 
 ----------------------------------------------
@@ -413,12 +375,13 @@ instance Interpret ProbTyp
 -- | Run the given (bi-affine) network over the given graph within the context
 -- of back-propagation.
 runRaw
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
-     , B.BiComp dim a b comp
+  :: ( KnownNat dim --, Ord a, Show a, Ord b, Show b
+     , Reifies s W
+     , B.BiComp dim comp
      )
   => BVar s comp
     -- ^ Graph network / params
-  -> Graph (Node dim a) b
+  -> Graph (BVar s (R dim)) ()
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s (Vec8 Pot))
     -- ^ Output map with output potential values
@@ -428,15 +391,16 @@ runRaw net graph = M.fromList $ do
   return (arc, x)
 
 
--- | `runRaw` + \remove{softmax} approximate marginals
+-- | `runRaw` + softmax / approximate marginals
 run
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
-     , B.BiComp dim a b comp
+  :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
+     , Reifies s W
+     , B.BiComp dim comp
      )
   => ProbTyp
   -> BVar s comp
     -- ^ Graph network / params
-  -> Graph (Node dim a) b
+  -> Graph (BVar s (R dim)) ()
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s (Vec8 Prob))
     -- ^ Output map with output potential values
@@ -450,12 +414,12 @@ run probTyp net graph =
 -- | Evaluate the network over the given graph.  User-friendly (and without
 -- back-propagation) version of `runRaw`.
 evalRaw
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
-     , B.BiComp dim a b comp
+  :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
+     , B.BiComp dim comp
      )
   => comp
     -- ^ Graph network / params
-  -> Graph (Node dim a) b
+  -> Graph (R dim) ()
     -- ^ Input graph labeled with initial hidden states (word embeddings)
   -> M.Map Arc (Vec8 Pot)
 evalRaw net graph =
@@ -463,7 +427,7 @@ evalRaw net graph =
     ( BP.collectVar
     $ runRaw
         (BP.constVar net)
-        graph
+        (nmap BP.auto graph)
     )
 
 
@@ -473,13 +437,13 @@ evalRaw net graph =
 -- TODO: lot's of code common with `evalRaw`.
 --
 eval
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
-     , B.BiComp dim a b comp
+  :: ( KnownNat dim --, Ord a, Show a, Ord b, Show b
+     , B.BiComp dim comp
      )
   => ProbTyp
   -> comp
     -- ^ Graph network / params
-  -> Graph (Node dim a) b
+  -> Graph (R dim) ()
     -- ^ Input graph labeled with initial hidden states (word embeddings)
   -> M.Map Arc (Vec8 Prob)
 eval probTyp net graph =
@@ -487,7 +451,7 @@ eval probTyp net graph =
     ( BP.collectVar
     $ run probTyp
         (BP.constVar net)
-        graph
+        (nmap BP.auto graph)
     )
 
 
@@ -902,18 +866,42 @@ load path =
 
 
 -- | Dataset element
-data Elem dim a b = Elem
-  { graph :: Graph (Node dim a) b
+data Elem a = Elem
+  { graph :: Graph a ()
     -- ^ Input graph
   , arcMap :: M.Map Arc Double
     -- ^ Target arc probabilities
   , nodMap :: M.Map G.Vertex Double
     -- ^ Target node probabilities
+  , tokMap :: M.Map G.Vertex Cupt.Token
+    -- ^ Map of .cupt tokens
   } deriving (Show, Generic, Binary)
 
+instance Functor Elem where
+  fmap f el = el {graph = nmap f (graph el)}
 
--- | DataSet: a list of dataset elements
-type DataSet d a b = [Elem d a b]
+
+-- | Get the list of tokens with the corresponding labels present in the given
+-- training element.
+tokens :: Elem a -> [(Cupt.Token, a)]
+tokens el = do
+  (v, tok) <- M.toList (tokMap el)
+  let y = just $ nodeLabAt (graph el) v
+  return (tok, y)
+  where
+    just Nothing = error "Neg.Graph2.tokens: got Nothing"
+    just (Just x) = x
+
+
+-- | Replace the labels in the given training element.
+replace :: [b] -> Elem a -> Elem b
+replace xs el =
+  el {graph = nmap' update (graph el)}
+  where
+    update v _ = newMap M.! v
+    newMap = M.fromList $ do
+      ((v, _tok), x) <- zip (M.toList $ tokMap el) xs
+      return (v, x)
 
 
 ----------------------------------------------
@@ -1063,27 +1051,29 @@ errorMany targets outputs =
 -- | Network error on a given dataset.
 netError
   :: ( Reifies s W, KnownNat dim
-     , Ord a, Show a, Ord b, Show b
-     , B.BiComp dim a b comp
+     -- , Ord a, Show a, Ord b, Show b
+     , B.BiComp dim comp
      )
   => ProbTyp
-  -> DataSet dim a b
+  -> [Elem (BVar s (R dim))]
   -> BVar s comp
   -> BVar s Double
 netError ptyp dataSet net =
   let
     inputs = map graph dataSet
     outputs = map (run ptyp net) inputs
-    targets = map (fmap BP.auto . mkTarget) dataSet
+    -- targets = map (fmap BP.auto . mkTarget) dataSet
+    targets = map mkTarget dataSet
   in
     errorMany targets outputs
 
 
 -- | Create the target map from the given dataset element.
 mkTarget
-  :: Elem dim a b
-  -> M.Map Arc (Vec8 Prob)
-mkTarget el = M.fromList $ do
+  :: (Reifies s W)
+  => Elem (BVar s a)
+  -> M.Map Arc (BVar s (Vec8 Prob))
+mkTarget el = fmap BP.auto . M.fromList $ do
   ((v, w), arcP) <- M.toList (arcMap el)
   let vP = nodMap el M.! v
       wP = nodMap el M.! w
@@ -1092,6 +1082,28 @@ mkTarget el = M.fromList $ do
         , hedVal = wP
         , depVal = vP }
   return ((v, w), encode target)
+
+
+-- -- | A version of `netError working on transformed embeddings
+-- netError'
+--   :: ( Reifies s W, KnownNat d
+--      , Ord a, Show a, Ord b, Show b
+--      , B.BiComp d a b comp
+--      )
+--   => ProbTyp
+-- --   -> Proxy d
+-- --     -- ^ TODO: remove; we don't actually need @d@!
+--   -> [(Elem d a b, [BVar s (R i)])]
+--     -- ^ Input elements + transformed embeddings
+--   -> BVar s comp
+--   -> BVar s Double
+-- netError' ptyp dataSet net =
+--   let
+--     inputs = map graph (map fst dataSet)
+--     outputs = map (run ptyp net) inputs
+--     targets = map (fmap BP.auto . mkTarget) (map fst dataSet)
+--   in
+--     errorMany targets outputs
 
 
 ----------------------------------------------

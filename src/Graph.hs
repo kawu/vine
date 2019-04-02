@@ -18,9 +18,9 @@
 
 module Graph
   ( Graph(..)
-  , Node(..)
   , Arc
   , nmap
+  , nmap'
   , amap
   , nodeLabAt
   , arcLabAt
@@ -84,6 +84,12 @@ nmap f g =
   g {nodeLabelMap = fmap f (nodeLabelMap g)}
 
 
+-- | Node label mapping with node IDs
+nmap' :: (G.Vertex -> a -> c) -> Graph a b -> Graph c b
+nmap' f g =
+  g {nodeLabelMap = M.mapWithKey f (nodeLabelMap g)}
+
+
 -- | Arc label mapping
 amap :: (b -> c) -> Graph a b -> Graph a c
 amap f g =
@@ -94,24 +100,13 @@ amap f g =
 type Arc = (G.Vertex, G.Vertex)
 
 
--- | Structured node
-data Node dim nlb = Node
-  { nodeEmb :: R dim
-    -- ^ Node embedding vector
-  , nodeLab :: nlb
-    -- ^ Node label (e.g., POS tag)
-  , nodeLex :: T.Text
-    -- ^ Lexical content (used for ,,unordered'' biaffinity)
-  } deriving (Show, Binary, Generic)
-
-
 -- | Node label of the given vertex.
-nodeLabAt :: Graph (Node d a) b -> G.Vertex -> Maybe a
-nodeLabAt g v = nodeLab <$> M.lookup v (nodeLabelMap g)
+nodeLabAt :: Graph a b -> G.Vertex -> Maybe a
+nodeLabAt g v = M.lookup v (nodeLabelMap g)
 
 
 -- | Arc label of the given arc. 
-arcLabAt :: Graph (Node d a) b -> Arc -> Maybe b
+arcLabAt :: Graph a b -> Arc -> Maybe b
 arcLabAt g e = M.lookup e (arcLabelMap g)
 
 

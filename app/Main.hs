@@ -28,7 +28,7 @@ import qualified Dhall as Dhall
 
 import           System.FilePath (isAbsolute, (</>))
 
-import qualified Net.Graph as Graph
+import qualified Net.Graph2 as Graph
 import qualified MWE2 as MWE
 import qualified Format.Embedding as Emb
 import qualified Format.Cupt as Cupt
@@ -55,7 +55,7 @@ data Command
 data TrainConfig = TrainConfig
   { trainCupt :: FilePath
   , trainEmbs :: FilePath
-  , trainModelTyp :: MWE.Typ
+  -- , trainModelTyp :: MWE.Typ
   , trainMweCat :: T.Text
     -- ^ MWE category (e.g., LVC) to focus on
   , trainSgdCfgPath :: FilePath
@@ -105,10 +105,10 @@ trainOptions = fmap Train $ TrainConfig
        <> short 'e'
        <> help "Input embedding file"
         )
-  <*> option auto
-        ( long "typ"
-       <> help "MWE model type (Arc1, Arc2, ...)"
-        )
+--   <*> option auto
+--         ( long "typ"
+--        <> help "MWE model type (Arc1, Arc2, ...)"
+--         )
   <*> strOption
         ( long "mwe"
        <> short 't'
@@ -244,15 +244,16 @@ run cmd =
               <$> Cupt.readCupt trainCupt
             posTagSet <- MWE.posTagsIn . concat
               <$> Cupt.readCupt trainCupt
-            -- Graph.new posTagSet depRelSet -- netCfg
-            MWE.newO trainModelTyp posTagSet depRelSet -- netCfg
+            -- Graph.new posTagSet depRelSet
+            -- MWE.newO trainModelTyp posTagSet depRelSet
+            MWE.new posTagSet depRelSet
           Just path -> Graph.load path
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
-      net <- MWE.trainO sgdCfg trainMweCat
+      net <- MWE.trainT sgdCfg trainMweCat
         (mkInput cupt embs) net0
       case trainOutModel of
         Nothing -> return ()
@@ -269,7 +270,7 @@ run cmd =
         <$> Cupt.readCupt tagCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings tagEmbs
-      MWE.tagManyO cfg net
+      MWE.tagManyT cfg net
         (mkInput cupt embs)
       where
         cfg = MWE.TagConfig
