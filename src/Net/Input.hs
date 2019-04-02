@@ -50,7 +50,11 @@ module Net.Input
 
     -- * Transform
   , Transform(..)
+  , evalTransform
+
+  , NoTrans(..)
   , Scale(..)
+  , ScaleLeakyRelu(..)
   ) where
 
 
@@ -121,11 +125,23 @@ evalInput bp0 xs =
 
 -- | Input transformation layer
 class (KnownNat i, KnownNat o, Backprop bp) => Transform bp i o where
-  runTransform 
+  runTransform
     :: (Reifies s W)
     => BVar s bp
     -> [BVar s (R i)]
     -> [BVar s (R o)]
+
+
+evalTransform
+  :: forall bp i o. (Transform bp i o)
+  => bp
+  -> [R i]
+  -> [R o]
+evalTransform bp0 xs =
+  BP.evalBP run bp0
+  where
+    run :: forall s. (Reifies s W) => BVar s bp -> BVar s [R o]
+    run bp = BP.collectVar . runTransform bp $ map BP.auto xs
 
 
 -- instance (Transform bp1 i k, Transform bp2 k o)
@@ -211,6 +227,23 @@ instance
 ----------------------------------------------
      
     
+-- | No transformation
+data NoTrans = NoTrans
+  deriving (Show, Generic, Binary, NFData, ParamSet, Num, Backprop)
+
+makeLenses ''NoTrans
+
+instance New a b NoTrans where
+  new xs ys = pure NoTrans
+
+instance (KnownNat i, i ~ o) => Transform NoTrans i o where
+  runTransform _ = id
+
+
+----------------------------------------------
+----------------------------------------------
+     
+    
 -- | Simple scaling layer which allows to scale down the size of vector
 -- representations.
 newtype Scale i o = Scale
@@ -221,7 +254,11 @@ newtype Scale i o = Scale
 
 makeLenses ''Scale
 
-instance (KnownNat i, KnownNat o) => Transform (Scale i o) i o where
+instance (KnownNat i, KnownNat o) => New a b (Scale i o) where
+  new xs ys = Scale <$> new xs ys
+
+instance (KnownNat i, KnownNat o, i ~ i', o ~ o')
+  => Transform (Scale i o) i' o' where
   runTransform bp = map (bp ^^. contractL #>)
 
 
@@ -234,7 +271,11 @@ newtype ScaleLeakyRelu i o = ScaleLeakyRelu
 
 makeLenses ''ScaleLeakyRelu
 
-instance (KnownNat i, KnownNat o) => Transform (ScaleLeakyRelu i o) i o where
+instance (KnownNat i, KnownNat o) => New a b (ScaleLeakyRelu i o) where
+  new xs ys = ScaleLeakyRelu <$> new xs ys
+
+instance (KnownNat i, KnownNat o, i ~ i', o ~ o')
+  => Transform (ScaleLeakyRelu i o) i' o' where
   runTransform bp = map (U.leakyRelu . (bp ^^. contractLRL #>))
 
 

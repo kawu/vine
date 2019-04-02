@@ -714,9 +714,10 @@ tagT
 tagT cfg net sent =
   tag cfg (net ^. N.biaMod) $ Sent
     { cuptSent = cuptSent sent
-    , wordEmbs = I.evalInput
-        (net ^. N.inpMod)
-        (zip (cuptSent sent) (wordEmbs sent))
+    , wordEmbs 
+        = I.evalTransform (net ^. N.traMod)
+        . I.evalInput (net ^. N.inpMod)
+        $ zip (cuptSent sent) (wordEmbs sent)
     }
 
 

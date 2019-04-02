@@ -72,6 +72,7 @@ module Net.Graph2
   -- * Transparent
   , Transparent(..)
   , inpMod
+  , traMod
   , biaMod
   , netErrorT
 
@@ -183,6 +184,7 @@ import qualified Net.List as NL
 import           Net.Graph2.BiComp
   (Pot, Prob, Vec(..), Vec8, Out(..))
 import qualified Net.Graph2.BiComp as B
+import qualified Net.Graph2.UniComp as U
 import qualified Net.Graph2.Marginals as Margs
 import qualified Net.Input as I
 
@@ -196,8 +198,11 @@ import           Debug.Trace (trace)
 
 -- | Should be rather named sth. like `Fixed`...
 data Transparent = Transparent
-  { _inpMod :: I.PosDepInp 50 50
-  , _biaMod :: B.BiAff 400 200
+  { _inpMod :: I.PosDepInp 25 25
+  -- , _traMod :: I.ScaleLeakyRelu 350 150
+  , _traMod :: I.Scale 350 150
+  , _uniMod :: U.UniAff 150 100
+  , _biaMod :: B.BiAff 150 100
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 -- data Transparent = Transparent
@@ -208,7 +213,8 @@ data Transparent = Transparent
 makeLenses ''Transparent
 
 instance (a ~ T.Text, b ~ T.Text) => New a b Transparent where
-  new xs ys = Transparent <$> new xs ys <*> new xs ys
+  new xs ys = Transparent
+    <$> new xs ys <*> new xs ys <*> new xs ys <*> new xs ys
 
 
 -- | Net error with `Transparent`
@@ -219,10 +225,14 @@ netErrorT
   -> BVar s Transparent
   -> BVar s Double
 netErrorT ptyp x net =
+  -- TODO: maybe should rely on `Sent`, as defined in the `MWE2` module?  Also
+  -- have a look at `tagT` in `MWE2`.
   let toksEmbs = tokens x
-      embs' = I.runInput (net ^^. inpMod) toksEmbs
+      embs' = I.runTransform (net ^^. traMod) 
+            . I.runInput (net ^^. inpMod) 
+            $ toksEmbs
       x' = replace embs' x
-   in netError ptyp [x'] (net ^^. biaMod)
+   in netError' ptyp [x'] (net ^^. biaMod) (net ^^. uniMod)
 
 
 ----------------------------------------------
@@ -391,6 +401,25 @@ runRaw net graph = M.fromList $ do
   return (arc, x)
 
 
+-- | Run the given uni-affine network over the given graph within the context
+-- of back-propagation.
+runRawUni
+  :: ( KnownNat dim
+     , Reifies s W
+     , U.UniComp dim comp
+     )
+  => BVar s comp
+    -- ^ Graph network / params
+  -> Graph (BVar s (R dim)) ()
+    -- ^ Input graph labeled with hidden states
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ Output map with output potential values
+runRawUni net graph = M.fromList $ do
+  v <- graphNodes graph
+  let x = U.runUniComp graph v net
+  return (v, x)
+
+
 -- | `runRaw` + softmax / approximate marginals
 run
   :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
@@ -409,6 +438,31 @@ run probTyp net graph =
     SoftMax -> fmap B.softmaxVec (runRaw net graph)
     Marginals -> Margs.approxMarginals graph (runRaw net graph) 1
     Constrained -> Margs.approxMarginalsC graph (runRaw net graph) 1
+
+
+-- | `runRaw` + `runRawUni` + softmax / approximate marginals
+runBoth
+  :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
+     , Reifies s W
+     , B.BiComp dim comp
+     , U.UniComp dim comp'
+     )
+  => ProbTyp
+  -> BVar s comp
+  -> BVar s comp'
+  -> Graph (BVar s (R dim)) ()
+    -- ^ Input graph labeled with initial hidden states
+  -> M.Map Arc (BVar s (Vec8 Prob))
+    -- ^ Output map with output potential values
+runBoth probTyp net netU graph =
+  case probTyp of
+    SoftMax -> error "runBoth: softmax not implemented"
+    Marginals ->
+      Margs.approxMarginals' graph
+        (runRaw net graph) 
+        (runRawUni netU graph)
+        1
+    Constrained -> error "runBoth: constrained not implemented"
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
@@ -453,6 +507,22 @@ eval probTyp net graph =
         (BP.constVar net)
         (nmap BP.auto graph)
     )
+
+
+----------------------------------------------
+-- Merging
+----------------------------------------------
+
+
+-- -- | Merge results from affinity and biaffinity components.
+-- merge
+--   :: M.Map G.Vertex (BVar s Double)
+--     -- ^ Node potentials
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ Arc potentials
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+-- merge nodPotMap arcPotMap = M.fromList $ do
+--   ((v, w), v8) <- M.toList arcPotMap
 
 
 ----------------------------------------------
@@ -508,8 +578,70 @@ tagGreedy mweChoice =
 
 
 ----------------------------------------------
+-- Global decoding'
+----------------------------------------------
+
+
+-- | Determine the node/arc labeling which maximizes the global potential over
+-- the given tree and return the resulting arc labeling.
+--
+-- WARNING: This function is only guaranteed to work correctly if the argument
+-- graph is a tree!
+--
+treeTagGlobal'
+  :: Graph a b
+  -> M.Map Arc (Vec8 Pot)
+  -> M.Map G.Vertex Double
+  -> Labeling Bool
+treeTagGlobal' graph labMap nodMap =
+  let (trueBest, falseBest) =
+        tagSubTree'
+          (treeRoot graph)
+          graph
+          (fmap explicate labMap)
+          nodMap
+      best = better trueBest falseBest
+   in fmap getAny (bestLab best)
+
+
+-- | The function returns two `Best`s:
+--
+--   * The best labeling if the label of the root is `True`
+--   * The best labeling if the label of the root is `False`
+--
+tagSubTree'
+  :: G.Vertex
+    -- ^ Root of the subtree
+  -> Graph a b
+    -- ^ The entire graph
+  -> M.Map Arc (M.Map (Out Bool) Double)
+    -- ^ Explicated labeling potentials
+  -> M.Map G.Vertex Double
+    -- ^ Node labeling potentials
+  -> (Best, Best)
+tagSubTree' root graph lmap nmap =
+  (bestWith True, bestWith False)
+  where
+    nodePot rootVal
+      | rootVal = nmap M.! root
+      | otherwise = 0.0
+    bestWith rootVal = addNode root rootVal (nodePot rootVal) . mconcat $ do
+      child <- Graph.incoming root graph
+      let arc = (child, root)
+          pot arcv depv = (lmap M.! arc) M.!
+            Out {arcVal=arcv, hedVal=rootVal, depVal=depv}
+          (true, false) = tagSubTree' child graph lmap nmap
+      return $ List.foldl1' better
+        [ addArc arc True  (pot True  True)  true
+        , addArc arc False (pot False True)  true
+        , addArc arc True  (pot True  False) false
+        , addArc arc False (pot False False) false ]
+
+
+----------------------------------------------
 -- Global decoding
 ----------------------------------------------
+
 
 -- | Determine the node/arc labeling which maximizes the global potential over
 -- the given tree and return the resulting arc labeling.
@@ -580,6 +712,16 @@ setNode node lab best@Best{..} = best
   }
 
 
+-- | Add the given node, its labeling, and the resulting potential to the given
+-- `Best` structure.
+addNode :: G.Vertex -> Bool -> Double -> Best -> Best
+addNode node lab pot Best{..} = Best
+  { bestLab = bestLab
+      {nodLab = M.insert node (Any lab) (nodLab bestLab)}
+  , bestPot = bestPot + pot
+  }
+
+
 -- | The function returns two `Best`s:
 --
 --   * The best labeling if the label of the root is `True`
@@ -608,6 +750,84 @@ tagSubTree root graph lmap =
         , addArc arc False (pot False True)  true
         , addArc arc True  (pot True  False) false
         , addArc arc False (pot False False) false ]
+
+
+----------------------------------------------
+-- Constrained decoding'
+----------------------------------------------
+
+
+-- | Constrained version of `treeTagGlobal`
+treeTagConstrained'
+  :: Graph a b
+  -> M.Map Arc (Vec8 Pot)
+  -> M.Map G.Vertex Double
+  -> Labeling Bool
+treeTagConstrained' graph labMap nodMap =
+  let Best4{..} =
+        tagSubTreeC'
+          (treeRoot graph)
+          graph
+          (fmap explicate labMap)
+          nodMap
+      best = List.foldl1' better
+        -- NOTE: `falseZeroOne` can be excluded in constrained decoding
+        [true, falseZeroTrue, falseMoreTrue]
+   in getAny <$> bestLab best
+
+
+-- | Calculate `Best3` of the subtree.
+tagSubTreeC'
+  :: G.Vertex
+    -- ^ Root of the subtree
+  -> Graph a b
+    -- ^ The entire graph (tree)
+  -> M.Map Arc (M.Map (Out Bool) Double)
+    -- ^ Explicated labeling potentials
+  -> M.Map G.Vertex Double
+    -- ^ Node labeling potentials
+  -> Best4
+tagSubTreeC' root graph lmap nmap =
+  List.foldl' (<>)
+    (emptyBest4 root $ nmap M.! root)
+    (map bestFor children)
+  where
+    children = Graph.incoming root graph
+    bestFor child =
+      let arc = (child, root)
+          pot arcv hedv depv = (lmap M.! arc) M.!
+            Out {arcVal=arcv, hedVal=hedv, depVal=depv}
+          Best4{..} = tagSubTreeC' child graph lmap nmap
+          -- NOTE: some of the configurations below are not allowed in
+          -- constrained decoding and hence are commented out.
+          true' = List.foldl1' better
+            [ addArc arc True  (pot True  True True)  true
+            , addArc arc False (pot False True True)  true
+            -- , addArc arc True  (pot True  True False) falseZeroTrue
+            , addArc arc False (pot False True False) falseZeroTrue
+            , addArc arc True  (pot True  True False) falseOneTrue
+            -- , addArc arc False (pot False True False) falseOneTrue
+            , addArc arc True  (pot True  True False) falseMoreTrue
+            , addArc arc False (pot False True False) falseMoreTrue
+            ]
+          falseZeroTrue' = List.foldl1' better
+            [ addArc arc False (pot False False True)  true
+            , addArc arc False (pot False False False) falseZeroTrue
+            -- , addArc arc False (pot False False False) falseOneTrue
+            , addArc arc False (pot False False False) falseMoreTrue
+            ]
+          falseOneTrue' = List.foldl1' better
+            [ addArc arc True (pot True False True)  true
+            -- , addArc arc True (pot True False False) falseZeroTrue
+            , addArc arc True (pot True False False) falseOneTrue
+            , addArc arc True (pot True False False) falseMoreTrue
+            ]
+       in Best4
+            { true = true'
+            , falseZeroTrue = falseZeroTrue'
+            , falseOneTrue  = falseOneTrue'
+            , falseMoreTrue = impossible
+            }
 
 
 ----------------------------------------------
@@ -656,11 +876,11 @@ instance Semigroup Best4 where
 
 
 -- | Empty `Best4` for a given tree node.  Think of `mempty` with obligatory
--- vertex argument.
-emptyBest4 :: G.Vertex -> Best4
-emptyBest4 node = Best4
-  { true = setNode node True mempty
-  , falseZeroTrue = setNode node False mempty
+-- vertex and potential argument.
+emptyBest4 :: G.Vertex -> Double -> Best4
+emptyBest4 node pot = Best4
+  { true = addNode node True pot mempty
+  , falseZeroTrue = addNode node False 0.0 mempty
   , falseOneTrue = impossible
   , falseMoreTrue = impossible
   }
@@ -693,7 +913,7 @@ tagSubTreeC
     -- ^ Explicated labeling potentials
   -> Best4
 tagSubTreeC root graph lmap =
-  List.foldl' (<>) (emptyBest4 root) (map bestFor children)
+  List.foldl' (<>) (emptyBest4 root 0.0) (map bestFor children)
   where
     children = Graph.incoming root graph
     bestFor child =
@@ -731,19 +951,6 @@ tagSubTreeC root graph lmap =
             , falseOneTrue  = falseOneTrue'
             , falseMoreTrue = impossible
             }
-
-
---     bestWith rootVal = setNode root rootVal . mconcat $ do
---       child <- Graph.incoming root graph
---       let arc = (child, root)
---           pot arcv depv = (lmap M.! arc) M.!
---             Out {arcVal=arcv, hedVal=rootVal, depVal=depv}
---           (true, false) = tagSubTree child graph lmap
---       return $ List.foldl' better mempty
---         [ addArc arc True  (pot True  True)  true
---         , addArc arc False (pot False True)  true
---         , addArc arc True  (pot True  False) false
---         , addArc arc False (pot False False) false ]
 
 
 -- ----------------------------------------------
@@ -1051,7 +1258,6 @@ errorMany targets outputs =
 -- | Network error on a given dataset.
 netError
   :: ( Reifies s W, KnownNat dim
-     -- , Ord a, Show a, Ord b, Show b
      , B.BiComp dim comp
      )
   => ProbTyp
@@ -1063,6 +1269,27 @@ netError ptyp dataSet net =
     inputs = map graph dataSet
     outputs = map (run ptyp net) inputs
     -- targets = map (fmap BP.auto . mkTarget) dataSet
+    targets = map mkTarget dataSet
+  in
+    errorMany targets outputs
+
+
+-- | Network error on a given dataset.
+netError'
+  :: ( Reifies s W, KnownNat dim
+     , B.BiComp dim comp
+     , U.UniComp dim comp'
+     )
+  => ProbTyp
+  -> [Elem (BVar s (R dim))]
+  -> BVar s comp
+  -> BVar s comp'
+  -> BVar s Double
+netError' ptyp dataSet net netU =
+  let
+    inputs = map graph dataSet
+    outputs = map (runBoth ptyp net netU) inputs
+    -- outputs = map (run ptyp net) inputs
     targets = map mkTarget dataSet
   in
     errorMany targets outputs
