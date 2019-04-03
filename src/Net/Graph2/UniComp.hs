@@ -31,6 +31,7 @@ module Net.Graph2.UniComp
   ( UniComp (..)
   , Bias (..)
   , UniAff (..)
+  , NoUni
   ) where
 
 
@@ -144,3 +145,21 @@ at
   -> BVar s (At.IxValue b)
 at v k = maybe 0 id $ v ^^? ix k
 {-# INLINE at #-}
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Word affinity component
+data NoUni = NoUni
+  deriving (Generic, Binary, NFData, ParamSet)
+
+instance Backprop NoUni
+makeLenses ''NoUni
+
+instance New a b NoUni where
+  new _ _ = pure NoUni
+
+instance (KnownNat dim) => UniComp dim NoUni where
+  runUniComp _ _ _ = 0.0

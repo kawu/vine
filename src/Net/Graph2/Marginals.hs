@@ -58,8 +58,7 @@ approxMarginals' graph potMap nodMap k = M.fromList $ do
 
 
 -- | Approximate the marginal probabilities of the given arc.  If @depth = 0@,
--- only the potential of the arc is taken into account (in case of arcs) and
--- the direct node potential in case of nodes.
+-- only the potential of the arc is taken into account.
 approxMarginals1'
   :: (Reifies s W)
   => Graph a b
@@ -77,44 +76,6 @@ approxMarginals1' graph potMap nodMap (v, w) k =
         $ inside' graph potMap nodMap v (depVal out) k
         * outside' graph potMap nodMap (v, w) (hedVal out) k
         * arcPotExp potMap (v, w) out
-
-
--- -- | Deterine the node marginals based on arc marginals.
--- --
--- -- TODO: we still need to account for the root!
--- --
--- toNodeMarginals
---   :: (Reifies s W)
---   => M.Map Arc (BVar s (Vec8 Prob))
---   -> M.Map G.Vertex (BVar s Double)
--- toNodeMarginals = undefined
-
-
--- -- | Approximate the marginal probability of the given node being labeled with
--- -- `True`.
--- approxNodeMarginal1
---   :: (Reifies s W)
---   => Graph a b
---   -> M.Map Arc (BVar s (Vec8 Pot))
---   -> M.Map G.Vertex (BVar s Double)
---   -- -> G.Vertex
---   -> Arc
---   -> Int -- ^ Depth
---   -> BVar s Double
--- approxNodeMarginal1 graph potMap nodMap (v, w) k =
---   probs !! 1
---   where
---     probs = NL.normalize $ do
---       x <- [False, True]
---       return
---         $ inside' graph potMap nodMap v (depVal out) k
---         * outside' graph potMap nodMap (v, w) (hedVal out) k
---         * arcPotExp potMap (v, w) out
-
-
--- -- | Retrieve the parent of the given node.
--- parent :: Graph a b -> G.Vertex -> Maybe G.Vertex
--- parent = undefined
 
 
 -- | Inside pass

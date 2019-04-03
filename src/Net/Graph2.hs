@@ -62,6 +62,8 @@ module Net.Graph2
   , run
   , eval
   , evalRaw
+  , evalRawUni
+  -- , evalBoth
   , ProbTyp(..)
 
   -- * Opaque
@@ -74,7 +76,9 @@ module Net.Graph2
   , inpMod
   , traMod
   , biaMod
+  , uniMod
   , netErrorT
+  , evalInp
 
   -- * Serialization
   , save
@@ -104,7 +108,9 @@ module Net.Graph2
   , Labeling(..)
   , tagGreedy
   , treeTagGlobal
+  , treeTagGlobal'
   , treeTagConstrained
+  , treeTagConstrained'
 
   -- * Trees
   , treeConnectAll
@@ -122,7 +128,7 @@ import           System.Random (randomRIO)
 import           Control.Monad (forM_, forM, guard)
 
 import           Lens.Micro.TH (makeLenses)
--- import           Lens.Micro ((^.))
+import           Lens.Micro ((^.))
 
 -- import           Data.Monoid (Sum(..))
 import           Data.Monoid (Any(..))
@@ -199,9 +205,15 @@ import           Debug.Trace (trace)
 -- | Should be rather named sth. like `Fixed`...
 data Transparent = Transparent
   { _inpMod :: I.PosDepInp 25 25
+  -- { _inpMod :: I.RawInp
   -- , _traMod :: I.ScaleLeakyRelu 350 150
   , _traMod :: I.Scale 350 150
-  , _uniMod :: U.UniAff 150 100
+  -- , _traMod :: I.Scale 300 150
+  -- , _traMod :: I.NoTrans
+  -- , _uniMod :: U.UniAff 150 100
+  -- , _uniMod :: U.UniAff 300 100
+  , _uniMod :: U.NoUni
+  -- , _biaMod :: B.BiAff 150 100
   , _biaMod :: B.BiAff 150 100
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
@@ -217,6 +229,7 @@ instance (a ~ T.Text, b ~ T.Text) => New a b Transparent where
     <$> new xs ys <*> new xs ys <*> new xs ys <*> new xs ys
 
 
+-- !!! TODO MARKED !!!
 -- | Net error with `Transparent`
 netErrorT
   :: (Reifies s W)
@@ -227,12 +240,64 @@ netErrorT
 netErrorT ptyp x net =
   -- TODO: maybe should rely on `Sent`, as defined in the `MWE2` module?  Also
   -- have a look at `tagT` in `MWE2`.
-  let toksEmbs = tokens x
-      embs' = I.runTransform (net ^^. traMod) 
-            . I.runInput (net ^^. inpMod) 
-            $ toksEmbs
-      x' = replace embs' x
+  let x' = runInp x net
    in netError' ptyp [x'] (net ^^. biaMod) (net ^^. uniMod)
+
+
+-- | Run the input transformation layers.
+runInp
+  :: (Reifies s W)
+  => Elem (R 300) 
+  -> BVar s Transparent
+  -> Elem (BVar s (R 150))
+runInp x net =
+  let toksEmbs = tokens x
+      embs' = I.runTransform (net ^^. traMod)
+            . I.runInput (net ^^. inpMod)
+            $ toksEmbs
+   in replace embs' x
+
+
+-- | Evaluate the input transformation layers.
+evalInp
+  :: Elem (R 300) 
+  -> Transparent
+  -- -> Elem (R 150)
+  -> Elem (R 150)
+evalInp x net =
+  let toksEmbs = tokens x
+      embs' = I.evalTransform (net ^. traMod)
+            . I.evalInput (net ^. inpMod)
+            $ toksEmbs
+   in replace embs' x
+
+
+-- -- !!! TODO MARKED !!!
+-- -- | Net error with `Transparent`
+-- netErrorT
+--   :: (Reifies s W)
+--   => ProbTyp
+--   -> Elem (R 300)
+--   -> BVar s Transparent
+--   -> BVar s Double
+-- netErrorT ptyp x net =
+--   let toksEmbs = tokens x
+--       embs' = I.runTransform (net ^^. traMod) 
+--             . I.runInput (net ^^. inpMod) 
+--             $ toksEmbs
+--       x' = replace embs' x
+--    in netError ptyp [x'] (net ^^. biaMod)
+
+
+-- -- | Net error with `Transparent`
+-- netErrorT
+--   :: (Reifies s W)
+--   => ProbTyp
+--   -> Elem (R 300)
+--   -> BVar s Transparent
+--   -> BVar s Double
+-- netErrorT ptyp x net =
+--   netError ptyp [fmap BP.auto x] (net ^^. biaMod)
 
 
 ----------------------------------------------
@@ -483,6 +548,50 @@ evalRaw net graph =
         (BP.constVar net)
         (nmap BP.auto graph)
     )
+
+
+-- | Evaluate the network over the given graph.  User-friendly (and without
+-- back-propagation) version of `runRawUni`.
+evalRawUni
+  :: ( KnownNat dim
+     , U.UniComp dim comp
+     )
+  => comp
+    -- ^ Graph network / params
+  -> Graph (R dim) ()
+    -- ^ Input graph labeled with initial hidden states (word embeddings)
+  -> M.Map G.Vertex Double
+evalRawUni net graph =
+  BP.evalBP0
+    ( BP.collectVar
+    $ runRawUni
+        (BP.constVar net)
+        (nmap BP.auto graph)
+    )
+
+
+-- -- | Evaluate the network over the given graph.  User-friendly (and without
+-- -- back-propagation) version of `runBoth`.
+-- evalRawBoth
+--   :: ( KnownNat dim
+--      , B.BiComp dim comp
+--      , U.UniComp dim comp'
+--      )
+--   => comp
+--     -- ^ Graph network / params
+--   -> comp'
+--     -- ^ Graph network / params
+--   -> Graph (R dim) ()
+--     -- ^ Input graph labeled with initial hidden states (word embeddings)
+--   -> M.Map Arc (Vec8 Pot)
+-- evalRawBoth net netU graph =
+--   BP.evalBP0
+--     ( BP.collectVar
+--     $ runBoth
+--         (BP.auto net)
+--         (BP.auto netU)
+--         (nmap BP.auto graph)
+--     )
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without

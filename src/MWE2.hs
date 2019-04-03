@@ -102,6 +102,7 @@ import qualified Format.Cupt as Cupt
 import qualified Graph
 import qualified Net.Graph2 as N
 import qualified Net.Graph2.BiComp as B
+import qualified Net.Graph2.UniComp as U
 import qualified Net.Input as I
 
 -- import Debug.Trace (trace)
@@ -241,30 +242,36 @@ mkElem
   -> Sent d
     -- ^ Input sentence
   -> N.Elem (R d)
-mkElem mweSel sent =
+mkElem mweSel sent0 =
 
   List.foldl' markMWE
     (createElem nodes arcs)
     ( filter (mweSel . Cupt.mweTyp')
     . M.elems
     . Cupt.retrieveMWEs
+    -- TODO: what would happen if a MWE were marked on a token with ID range!?
     $ cuptSent sent
     )
 
   where
 
-    -- Cupt sentence with ID range tokens removed
-    cuptSentF = filter
-      (\tok -> case Cupt.tokID tok of
-                 Cupt.TokID _ -> True
-                 _ -> False
-      )
-      (cuptSent sent)
+    -- Sentence with ID range tokens removed
+    sent = discardMerged sent0
+
+--     WARNING: The code below was incorrect!  We cannot remove tokens but
+--     leave the embeddings!
+--     -- Cupt sentence with ID range tokens removed
+--     cuptSentF = filter
+--       (\tok -> case Cupt.tokID tok of
+--                  Cupt.TokID _ -> True
+--                  _ -> False
+--       )
+--       (cuptSent sent)
 
     -- A map from token IDs to tokens
     tokMap = M.fromList
       [ (Cupt.tokID tok, tok)
-      | tok <- cuptSentF 
+      | tok <- cuptSent sent
       ]
     -- The parent of the given token
     tokPar tok = tokMap M.! Cupt.dephead tok
@@ -279,7 +286,7 @@ mkElem mweSel sent =
 
     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
     nodes = do
-      (tok, vec) <- zip cuptSentF (wordEmbs sent)
+      (tok, vec) <- zipSafe (cuptSent sent) (wordEmbs sent)
       let node = (tok, vec)
 --       let node = Graph.Node
 --             { nodeEmb = vec
@@ -291,7 +298,7 @@ mkElem mweSel sent =
       return (tokID tok, node, isMwe)
     -- Labeled arcs of the graph
     arcs = do
-      tok <- cuptSentF
+      tok <- cuptSent sent
       -- Check the token is not a root
       guard . not $ isRoot tok
       let par = tokPar tok
@@ -304,6 +311,18 @@ mkElem mweSel sent =
             (getMweIDs tok `S.intersection` getMweIDs par)
       -- return ((tokID tok, tokID par), Cupt.deprel tok, isMwe)
       return ((tokID tok, tokID par), isMwe)
+
+
+discardMerged :: (KnownNat d) => Sent d -> Sent d
+discardMerged sent0 
+  = uncurry Sent . unzip
+  $ filter cond 
+  $ zip (cuptSent sent0) (wordEmbs sent0)
+  where
+    cond (tok, emb) =
+      case Cupt.tokID tok of
+        Cupt.TokID _ -> True
+        _ -> False
 
 
 -- | Mark MWE in the given dataset element.
@@ -705,20 +724,109 @@ tag tagCfg net sent = do
     sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
 
 
+-- -- | Tag a single sentence with the given network.
+-- tag'
+--   :: ( KnownNat d
+--      , B.BiComp d comp
+--      , U.UniComp d comp'
+--      )
+--   => TagConfig
+--   -> comp             -- ^ Network parameters
+--   -> comp'            -- ^ Network parameters (uni)
+--   -> Sent d           -- ^ Cupt sentence
+--   -> IO ()
+-- tag' tagCfg net netU sent = do
+--   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
+--   where
+--     elem = mkElem (const False) sent
+--     tagF
+--       | mweConstrained tagCfg =
+--           N.treeTagConstrained' (N.graph elem)
+--       | mweGlobal tagCfg =
+--           N.treeTagGlobal' (N.graph elem)
+--       | otherwise =
+--           error "tag': greedy not implemented"
+--           -- N.tagGreedy mweChoice
+--     mweChoice ps = geoMean ps >= mweThreshold tagCfg
+--     labeling = tagF
+--       (N.evalRaw net (N.graph elem))
+--       (N.evalRawUni netU (N.graph elem))
+--     sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
+
+
+-- -- !!! TODO MARKED !!!
+-- -- | Tag a single sentence with the given network.
+-- tagT
+--   :: TagConfig
+--   -> N.Transparent   -- ^ Network parameters
+--   -> Sent 300        -- ^ Cupt sentence
+--   -> IO ()
+-- tagT cfg net sent =
+--   tag' cfg (net ^. N.biaMod) (net ^. N.uniMod) $ Sent
+--     { cuptSent = cuptSent sent
+--     , wordEmbs
+--         = I.evalTransform (net ^. N.traMod)
+--         . I.evalInput (net ^. N.inpMod)
+--         $ zipSafe (cuptSent sent) (wordEmbs sent)
+--     }
+
+
+zipSafe :: [a] -> [b] -> [(a, b)]
+zipSafe xs ys
+  | length xs == length ys = zip xs ys
+  | otherwise = error "zipSafe: length not the same!"
+
+
 -- | Tag a single sentence with the given network.
 tagT
   :: TagConfig
   -> N.Transparent   -- ^ Network parameters
   -> Sent 300        -- ^ Cupt sentence
   -> IO ()
-tagT cfg net sent =
-  tag cfg (net ^. N.biaMod) $ Sent
-    { cuptSent = cuptSent sent
-    , wordEmbs 
-        = I.evalTransform (net ^. N.traMod)
-        . I.evalInput (net ^. N.inpMod)
-        $ zip (cuptSent sent) (wordEmbs sent)
-    }
+tagT tagCfg net sent =
+  L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
+  where
+    elem = N.evalInp (mkElem (const False) sent) net
+    tagF
+      | mweConstrained tagCfg =
+          N.treeTagConstrained' (N.graph elem)
+      | mweGlobal tagCfg =
+          N.treeTagGlobal' (N.graph elem)
+      | otherwise =
+          error "tag': greedy not implemented"
+          -- N.tagGreedy mweChoice
+    mweChoice ps = geoMean ps >= mweThreshold tagCfg
+    labeling = tagF
+      (N.evalRaw (net ^. N.biaMod) (N.graph elem))
+      (N.evalRawUni (net ^. N.uniMod) (N.graph elem))
+    sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
+
+
+-- -- !!! TODO MARKED !!!
+-- -- | Tag a single sentence with the given network.
+-- tagT
+--   :: TagConfig
+--   -> N.Transparent   -- ^ Network parameters
+--   -> Sent 300        -- ^ Cupt sentence
+--   -> IO ()
+-- tagT cfg net sent =
+--   tag cfg (net ^. N.biaMod) $ Sent
+--     { cuptSent = cuptSent sent
+--     , wordEmbs 
+--         = I.evalTransform (net ^. N.traMod)
+--         . I.evalInput (net ^. N.inpMod)
+--         $ zip (cuptSent sent) (wordEmbs sent)
+--     }
+
+
+-- -- | Tag a single sentence with the given network.
+-- tagT
+--   :: TagConfig
+--   -> N.Transparent   -- ^ Network parameters
+--   -> Sent 300        -- ^ Cupt sentence
+--   -> IO ()
+-- tagT cfg net sent =
+--   tag cfg (net ^. N.biaMod) sent
 
 
 -- | Tag sentences with the opaque network.
