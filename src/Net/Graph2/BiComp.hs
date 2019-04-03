@@ -40,6 +40,8 @@ module Net.Graph2.BiComp
   , BiAff (..)
   , BiAffMix (..)
 
+  , NoBi (..)
+
   -- * Vec3 <-> Vec8 conversion
   , Out(..)
   , enumerate
@@ -312,6 +314,23 @@ instance (BiComp dim comp1, BiComp dim comp2)
   => BiComp dim (comp1 :& comp2) where
   runBiComp graph arc (comp1 :&& comp2) =
     runBiComp graph arc comp1 + runBiComp graph arc comp2
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Global bias
+data NoBi = NoBi
+  deriving (Show, Generic, Binary, NFData, ParamSet)
+
+instance Backprop NoBi
+
+instance New a b NoBi where
+  new _ _ = pure NoBi
+
+instance BiComp dim NoBi where
+  runBiComp _ _ _ = BP.auto (Vec 0.0)
 
 
 ----------------------------------------------

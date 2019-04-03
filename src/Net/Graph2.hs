@@ -204,23 +204,18 @@ import           Debug.Trace (trace)
 
 -- | Should be rather named sth. like `Fixed`...
 data Transparent = Transparent
-  { _inpMod :: I.PosDepInp 25 25
+  { _inpMod :: I.PosDepInp 50 50
   -- { _inpMod :: I.RawInp
-  -- , _traMod :: I.ScaleLeakyRelu 350 150
-  , _traMod :: I.Scale 350 150
-  -- , _traMod :: I.Scale 300 150
-  -- , _traMod :: I.NoTrans
-  -- , _uniMod :: U.UniAff 150 100
-  -- , _uniMod :: U.UniAff 300 100
+  , _traMod :: I.NoTrans
+  -- , _traMod :: I.ScaleLeakyRelu 400 200
+  -- , _traMod :: I.Scale 400 200
   , _uniMod :: U.NoUni
+  -- , _uniMod :: U.UniAff 400 200
+  -- , _biaMod :: B.BiAff 400 200
+  , _biaMod :: B.BiAffMix 400 200
   -- , _biaMod :: B.BiAff 150 100
-  , _biaMod :: B.BiAff 150 100
+  -- , _biaMod :: B.NoBi
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
-
--- data Transparent = Transparent
---   { _inpMod :: I.RawInp
---   , _biaMod :: B.BiAff 300 100
---   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''Transparent
 
@@ -249,7 +244,7 @@ runInp
   :: (Reifies s W)
   => Elem (R 300) 
   -> BVar s Transparent
-  -> Elem (BVar s (R 150))
+  -> Elem (BVar s (R 400))
 runInp x net =
   let toksEmbs = tokens x
       embs' = I.runTransform (net ^^. traMod)
@@ -262,8 +257,7 @@ runInp x net =
 evalInp
   :: Elem (R 300) 
   -> Transparent
-  -- -> Elem (R 150)
-  -> Elem (R 150)
+  -> Elem (R 400)
 evalInp x net =
   let toksEmbs = tokens x
       embs' = I.evalTransform (net ^. traMod)
@@ -500,7 +494,11 @@ run
     -- ^ Output map with output potential values
 run probTyp net graph =
   case probTyp of
-    SoftMax -> fmap B.softmaxVec (runRaw net graph)
+    SoftMax ->
+      error . unwords $
+        [ "Graph2.run: SoftMax has to be reimplemented"
+        , "to take the node potentials into account" ]
+      -- fmap B.softmaxVec (runRaw net graph)
     Marginals -> Margs.approxMarginals graph (runRaw net graph) 1
     Constrained -> Margs.approxMarginalsC graph (runRaw net graph) 1
 
@@ -523,17 +521,15 @@ runBoth probTyp net netU graph =
   case probTyp of
     SoftMax -> error "runBoth: softmax not implemented"
     Marginals ->
-      Margs.approxMarginals' graph
-        (runRaw net graph) 
-        (runRawUni netU graph)
-        1
-    Constrained -> error "runBoth: constrained not implemented"
+      Margs.approxMarginals' graph (runRaw net graph) (runRawUni netU graph) 1
+    Constrained ->
+      Margs.approxMarginalsC' graph (runRaw net graph) (runRawUni netU graph) 1
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
 -- back-propagation) version of `runRaw`.
 evalRaw
-  :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
+  :: ( KnownNat dim
      , B.BiComp dim comp
      )
   => comp
