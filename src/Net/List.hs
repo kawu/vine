@@ -40,12 +40,12 @@ normalize
   :: (Reifies s W)
   => [BVar s Double]
   -> [BVar s Double]
-normalize x =
-  map (/norm) x
-  where
-    norm = sum x
--- normalize x
---   | any (<0) x = error "Net.List: negative element"
---   | otherwise = map (/norm) x
+-- normalize x =
+--   map (/norm) x
 --   where
 --     norm = sum x
+normalize x
+  | any (<0) x = error "Net.List: negative element"
+  | otherwise = map (/norm) x
+  where
+    norm = sum x
