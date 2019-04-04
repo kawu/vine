@@ -115,7 +115,6 @@ data Sent d = Sent
   } deriving (Show, Generic, Binary)
 
 
-
 -- | Convert the given .cupt file to a training dataset element.  The token IDs
 -- are used as vertex identifiers in the resulting graph.
 --
@@ -128,24 +127,26 @@ mkElem
   -> Sent d
     -- ^ Input sentence
   -> Elem d DepRel POS
-mkElem mweSel sent =
+mkElem mweSel sent0 =
 
   createElem nodes arcs
 
   where
 
-    -- Cupt sentence with ID range tokens removed
-    cuptSentF = filter
-      (\tok -> case Cupt.tokID tok of
-                 Cupt.TokID _ -> True
-                 _ -> False
-      )
-      (cuptSent sent)
+    sent = discardMerged sent0
+
+--     -- Cupt sentence with ID range tokens removed
+--     cuptSentF = filter
+--       (\tok -> case Cupt.tokID tok of
+--                  Cupt.TokID _ -> True
+--                  _ -> False
+--       )
+--       (cuptSent sent)
 
     -- A map from token IDs to tokens
     tokMap = M.fromList
       [ (Cupt.tokID tok, tok)
-      | tok <- cuptSentF 
+      | tok <- cuptSent sent 
       ]
     -- The parent of the given token
     tokPar tok = tokMap M.! Cupt.dephead tok
@@ -160,7 +161,7 @@ mkElem mweSel sent =
 
     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
     nodes = do
-      (tok, vec) <- zip cuptSentF (wordEmbs sent)
+      (tok, vec) <- zipSafe (cuptSent sent) (wordEmbs sent)
       let node = Graph.Node
             { nodeEmb = vec
             , nodeLab = Cupt.upos tok
@@ -170,7 +171,7 @@ mkElem mweSel sent =
       return (tokID tok, node)
     -- Labeled arcs of the graph
     arcs = do
-      tok <- cuptSentF
+      tok <- cuptSent sent
       -- Check the token is not a root
       guard . not $ isRoot tok
       let par = tokPar tok
@@ -182,6 +183,26 @@ mkElem mweSel sent =
                then True
                else False
       return ((tokID tok, tokID par), Cupt.deprel tok, arcVal)
+
+
+-- | Discard the (token, embedding) pairs with token range IDs.
+discardMerged :: (KnownNat d) => Sent d -> Sent d
+discardMerged sent0
+  = uncurry Sent . unzip
+  $ filter cond
+  $ zipSafe (cuptSent sent0) (wordEmbs sent0)
+  where
+    cond (tok, _emb) =
+      case Cupt.tokID tok of
+        Cupt.TokID _ -> True
+        _ -> False
+
+-- | A "safe" version of `zip` which simply fails in case the two input lists
+-- are not of the same length.
+zipSafe :: [a] -> [b] -> [(a, b)]
+zipSafe xs ys
+  | length xs == length ys = zip xs ys
+  | otherwise = error "zipSafe: length not the same!"
 
 
 -- | Create a dataset element based on nodes and labeled arcs.
