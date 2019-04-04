@@ -526,7 +526,8 @@ train cfg mweTyp cupt net0 = do
     -- trainProgSGD sgd dataSet globalDepth net0
     SGD.runIO (sgd cfg)
       (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
-      quality dataSet net0
+      (SGD.reportObjective quality dataSet)
+      dataSet net0
 --   N.printParam net'
   return net'
   where
@@ -644,19 +645,25 @@ trainT
     -- ^ Training dataset
   -> N.Transparent
     -- ^ Initial networks
+  -> (N.Transparent -> IO ())
+    -- ^ Action to execute at the end of each epoch
   -> IO N.Transparent
 --   -> IO (N.Param 300)
-trainT cfg mweTyp cupt tra0 = do
+trainT cfg mweTyp cupt tra0 action = do
   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
   let cupt' = map (mkElem (== mweTyp)) cupt
   SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     SGD.runIO (sgd cfg)
       (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
-      quality dataSet tra0
-  where
+      (reportAndExec dataSet) dataSet tra0
+  where 
     gradient x = BP.gradBP (N.netErrorT (probTyp cfg) x)
     quality x = BP.evalBP (N.netErrorT (probTyp cfg) x)
+    reportAndExec dataSet tra = do
+      x <- SGD.reportObjective quality dataSet tra
+      action tra
+      return x
 
 
 ----------------------------------------------

@@ -21,12 +21,13 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy.IO as TL
+import qualified Data.IORef as IORef
 
 import qualified Numeric.LinearAlgebra.Static as LA
 
 import qualified Dhall as Dhall
 
-import           System.FilePath (isAbsolute, (</>))
+import           System.FilePath (isAbsolute, (</>), (<.>))
 
 import qualified Net.Graph2 as Graph
 import qualified MWE2 as MWE
@@ -253,13 +254,25 @@ run cmd =
         <$> Cupt.readCupt trainCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
+      epochRef <- IORef.newIORef (0 :: Int)
       net <- MWE.trainT sgdCfg trainMweCat
-        (mkInput cupt embs) net0
+        (mkInput cupt embs) net0 $ \net ->
+          case trainOutModel of
+            Nothing -> return ()
+            Just pathBase -> do
+              path <- do
+                k <- IORef.readIORef epochRef
+                IORef.writeIORef epochRef (k+1)
+                return $ pathBase <.> show k
+              Graph.save path net
+              putStr "Saved the current model to: "
+              putStrLn path
       case trainOutModel of
         Nothing -> return ()
         Just path -> do
-          putStrLn "Saving model..."
           Graph.save path net
+          putStr "Saved the final model to: "
+          putStrLn path
       putStrLn "Done!"
 
     Tag TagConfig{..} -> do
