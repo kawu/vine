@@ -70,19 +70,32 @@ reluSmooth :: Floating a => a -> a
 reluSmooth x = log(1 + exp(x))
 
 
-relu :: Floating a => a -> a
--- relu x = max 0 x
+relu :: (Floating a) => a -> a
 relu x = (x + abs x) / 2
+-- relu :: (Floating a, Ord a) => a -> a
+-- relu x = max 0 x
+{-# INLINE relu #-}
 
 
-leakyRelu :: Floating a => a -> a
+--  | Not a true leaky relu, why this works so well!?
+leakyRelu :: (Floating a) => a -> a
 leakyRelu x
   = relu x
-  + 0.01 * relu (-x)
+  - 0.01 * relu (-x)
+  -- + 0.01 * relu (-x)
+{-# INLINE leakyRelu #-}
+
+--  | Correct leaky Relu implementation, somehow yields poor results!
 -- leakyRelu :: (Ord a, Floating a) => a -> a
 -- leakyRelu x
 --   | x < 0 = 0.01*x
 --   | otherwise = x
+-- {-# INLINE leakyRelu #-}
+
+-- -- | Dummy implementation, due to problems with `leakyRelu`
+-- leakyRelu :: (Ord a, Floating a) => a -> a
+-- leakyRelu = relu
+-- {-# INLINE leakyRelu #-}
 
 
 -- | Apply the softmax layer to a vector.
@@ -91,10 +104,11 @@ softmax
   => BVar s (R n)
   -> BVar s (R n)
 softmax x0 =
-  LBP.vmap (/norm) x
-  where
-    x = LBP.vmap' exp x0
-    norm = LBP.norm_1V x
+  error "Util.softmax: this function might not be numerically stable!"
+--   LBP.vmap (/norm) x
+--   where
+--     x = LBP.vmap' exp x0
+--     norm = LBP.norm_1V x
 
 
 ------------------------------------

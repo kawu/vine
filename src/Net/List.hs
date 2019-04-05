@@ -1,8 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 
 module Net.List
-  ( softmax
+  ( softMax
+  , softMaxLog
   , normalize
   ) where
 
@@ -13,11 +16,11 @@ import           Numeric.Backprop (BVar, Reifies, W)
 
 
 -- -- | Apply softmax to a list.
--- softmax
+-- softMax
 --   :: (Reifies s W)
 --   => BVar s [Double]
 --   -> BVar s [Double]
--- softmax x0 =
+-- softMax x0 =
 --   PB.fmap (/norm) x
 --   where
 --     -- TODO: the following line can be perhaps implemented more efficiently.
@@ -28,11 +31,24 @@ import           Numeric.Backprop (BVar, Reifies, W)
 
 
 -- | Apply softmax to a list (alternative version).
-softmax
+softMax
   :: (Reifies s W)
   => [BVar s Double]
   -> [BVar s Double]
-softmax = normalize . map exp
+softMax = normalize . map exp
+
+
+-- | Softmax in log domain (a.k.a. exp-normalize, see
+-- https://timvieira.github.io/blog/post/2014/02/11/exp-normalize-trick)
+softMaxLog
+  :: forall s. (Reifies s W)
+  => [BVar s Double]
+  -> [BVar s Double]
+softMaxLog xs =
+  let b = maximum xs -- :: BVar s Double
+      ys = map (exp . (\x -> x - b)) xs
+      norm = sum ys
+   in map (/norm) ys
 
 
 -- | Normalize a list of non-negative values.

@@ -485,9 +485,10 @@ instance (KnownNat d, KnownNat h)
         -- input layer
         x = hv # hw
         -- second layer
+        -- y = LBP.vmap' leakyRelu $ (bi ^^. biAffMixL1) #> x + (bi ^^. biAffMixB1)
         y = leakyRelu $ (bi ^^. biAffMixL1) #> x + (bi ^^. biAffMixB1)
         -- joint output
-        z8 = BP.coerceVar $ 
+        z8 = BP.coerceVar $
           (bi ^^. biAffMixL2_8) #> y + (bi ^^. biAffMixB2_8)
         -- independent output
         z3 = BP.coerceVar $

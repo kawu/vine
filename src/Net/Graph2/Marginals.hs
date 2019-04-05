@@ -7,9 +7,10 @@
 
 
 module Net.Graph2.Marginals
-  ( approxMarginals
-  , approxMarginals'
-  , approxMarginalsC
+  ( 
+  --   approxMarginals
+    approxMarginals'
+  -- , approxMarginalsC
   , approxMarginalsC'
 
   , Res(..)
@@ -36,6 +37,67 @@ import qualified Net.List as NL
 import           Net.Graph2.BiComp (Pot, Prob, Vec(..), Vec8, Out(..))
 import qualified Net.Graph2.BiComp as B
 import           Graph (Graph, Arc, incoming, outgoing)
+
+
+----------------------------------------------
+-- Utils
+----------------------------------------------
+ 
+
+-- | The list of possible values of an arc
+arcValues :: [Out Bool]
+arcValues = B.enumerate
+
+
+-- | Potential of the given arc
+arcPot
+  :: forall s. (Reifies s W)
+  => M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Potential map
+  -> Arc
+    -- ^ The arc in question
+  -> Out Bool
+    -- ^ The value
+  -> BVar s Double
+arcPot potMap arc out =
+  potVec `dot` BP.constVar (B.mask out)
+  where
+    potVec = BP.coerceVar (potMap M.! arc)
+
+
+-- | (Exp-)potential of the given arc  (exp . arcPot)
+arcPotExp
+  :: forall s. (Reifies s W)
+  => M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Potential map
+  -> Arc
+    -- ^ The arc in question
+  -> Out Bool
+    -- ^ The value
+  -> BVar s Double
+arcPotExp potMap arc =
+  exp . arcPot potMap arc
+
+
+-- | A semi-lifted version of `obfuscate` in the `Net.Graph2` module.
+--
+-- TODO: this uses `VS.fromList` which is supposedly very inefficient in case
+-- of long lists.  But our list isn't long, is it?
+--
+-- TODO: relate to `obfuscate` in tests?  Or maybe have a unified
+-- implementation?
+--
+obfuscateBP
+  :: forall s p. (Reifies s W)
+  => M.Map (Out Bool) (BVar s Double)
+  -> BVar s (Vec8 p)
+obfuscateBP =
+  BP.coerceVar . LBP.vector . from . M.elems
+  where
+    from = just . VS.fromList :: [a] -> VS.Vector 8 a
+    just Nothing =
+      error "Net.Graph2.mkVec: got Nothing"
+    just (Just x) = x
 
 
 ----------------------------------------------
@@ -80,101 +142,170 @@ approxMarginals1'
 approxMarginals1' graph potMap nodMap (v, w) k =
   obfuscateBP . M.fromList $ zip arcValues probs
   where
-    probs = NL.normalize $ do
+    -- probs = NL.normalize . map exp $ do
+    probs = NL.softMaxLog $ do
       out <- arcValues
-      return
-        $ inside' graph potMap nodMap v (depVal out) k
-        * outside' graph potMap nodMap (v, w) (hedVal out) k
-        * arcPotExp potMap (v, w) out
+      return $   insideLog graph potMap nodMap v (depVal out) k
+        `mulLog` outsideLog graph potMap nodMap (v, w) (hedVal out) k
+        `mulLog` arcPot potMap (v, w) out
 
 
--- | Inside pass
-inside'
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ The corresponding arc potential map
-  -> M.Map G.Vertex (BVar s Double)
-    -- ^ The corresponding node potential map
-  -> G.Vertex
-    -- ^ The node in question
-  -> Bool
-    -- ^ The value assigned to the node
-  -> Int
-    -- ^ Depth (optional?)
-  -> BVar s Double
-    -- ^ The resulting (sum of) potential(s)
-inside' graph potMap nodMap v x k =
-  here * down
-  where
-    here = there nodMap v x
-    down
-      | k <= 0 = 1
-      | otherwise = product $ do
-          -- for each child
-          c <- incoming v graph
-          -- return the corresponding sum
-          return . sum $ do
-            -- for each corresponding arc value
-            y <- arcValues
-            -- such that the head of the value = x
-            guard $ hedVal y == x
-            -- return the resulting (exponential) potential
-            return $ arcPotExp potMap (c, v) y
-                   * inside' graph potMap nodMap c (depVal y) (k-1)
+-- -- | Approximate the marginal probabilities of the given arc.  If @depth = 0@,
+-- -- only the potential of the arc is taken into account.
+-- approxMarginals1'
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ Arc potentials
+--   -> M.Map G.Vertex (BVar s Double)
+--     -- ^ Node potentials
+--   -> Arc
+--     -- ^ The arc in focus
+--   -> Int 
+--     -- ^ Depth
+--   -> BVar s (Vec8 Prob)
+-- approxMarginals1' graph potMap nodMap (v, w) k =
+--   obfuscateBP . M.fromList $ zip arcValues probs
+--   where
+--     probs = NL.normalize $ do
+--       out <- arcValues
+--       return
+--         $ inside' graph potMap nodMap v (depVal out) k
+--         * outside' graph potMap nodMap (v, w) (hedVal out) k
+--         * arcPotExp potMap (v, w) out
 
 
--- | Outside computation
-outside'
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ The corresponding potential map
-  -> M.Map G.Vertex (BVar s Double)
-    -- ^ The corresponding node potential map
-  -> Arc
-    -- ^ The arc in question @(v, w)@; we focus on the node @w@, the other is
-    -- given as context
-  -> Bool
-    -- ^ The value assigned to the node @w@
-  -> Int
-    -- ^ Depth (optional?)
-  -> BVar s Double
-    -- ^ The resulting (sum of) (exp-)potential(s)
-outside' graph potMap nodMap (v, w) x k =
-  here * both
-  where
-    here = there nodMap w x
-    both
-      | k <= 0 = 1
-      | otherwise = up * down
-    up = product $ do
-      -- for each parent (should be only one!)
-      p <- outgoing w graph
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the dependent of the value = x
-        guard $ depVal y == x
-        -- return the resulting (exponential) potential
-        return $ arcPotExp potMap (w, p) y
-               * outside' graph potMap nodMap (w, p) (hedVal y) (k-1)
-    down = product $ do
-      -- for each child
-      c <- incoming w graph
-      -- different than v
-      guard $ c /= v
-      -- return the corresponding sum
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the head of the value = x
-        guard $ hedVal y == x
-        -- return the resulting (exponential) potential
-        return $ arcPotExp potMap (c, w) y
-               * inside' graph potMap nodMap c (depVal y) (k-1)
+-- -- | Inside pass
+-- inside'
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ The corresponding arc potential map
+--   -> M.Map G.Vertex (BVar s Double)
+--     -- ^ The corresponding node potential map
+--   -> G.Vertex
+--     -- ^ The node in question
+--   -> Bool
+--     -- ^ The value assigned to the node
+--   -> Int
+--     -- ^ Depth (optional?)
+--   -> BVar s Double
+--     -- ^ The resulting (sum of) potential(s)
+-- inside' graph potMap nodMap v x k =
+--   exp $ insideLog graph potMap nodMap v x k
+
+
+-- -- | Inside pass
+-- inside'
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ The corresponding arc potential map
+--   -> M.Map G.Vertex (BVar s Double)
+--     -- ^ The corresponding node potential map
+--   -> G.Vertex
+--     -- ^ The node in question
+--   -> Bool
+--     -- ^ The value assigned to the node
+--   -> Int
+--     -- ^ Depth (optional?)
+--   -> BVar s Double
+--     -- ^ The resulting (sum of) potential(s)
+-- inside' graph potMap nodMap v x k =
+--   here * down
+--   where
+--     here = there nodMap v x
+--     down
+--       | k <= 0 = 1
+--       | otherwise = product $ do
+--           -- for each child
+--           c <- incoming v graph
+--           -- return the corresponding sum
+--           return . sum $ do
+--             -- for each corresponding arc value
+--             y <- arcValues
+--             -- such that the head of the value = x
+--             guard $ hedVal y == x
+--             -- return the resulting (exponential) potential
+--             return $ arcPotExp potMap (c, v) y
+--                    * inside' graph potMap nodMap c (depVal y) (k-1)
+
+
+-- -- | Outside computation
+-- outside'
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ The corresponding potential map
+--   -> M.Map G.Vertex (BVar s Double)
+--     -- ^ The corresponding node potential map
+--   -> Arc
+--     -- ^ The arc in question @(v, w)@; we focus on the node @w@, the other is
+--     -- given as context
+--   -> Bool
+--     -- ^ The value assigned to the node @w@
+--   -> Int
+--     -- ^ Depth (optional?)
+--   -> BVar s Double
+--     -- ^ The resulting (sum of) (exp-)potential(s)
+-- outside' graph potMap nodMap arc x k =
+--   exp $ outsideLog graph potMap nodMap arc x k
+
+
+-- -- | Outside computation
+-- outside'
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ The corresponding potential map
+--   -> M.Map G.Vertex (BVar s Double)
+--     -- ^ The corresponding node potential map
+--   -> Arc
+--     -- ^ The arc in question @(v, w)@; we focus on the node @w@, the other is
+--     -- given as context
+--   -> Bool
+--     -- ^ The value assigned to the node @w@
+--   -> Int
+--     -- ^ Depth (optional?)
+--   -> BVar s Double
+--     -- ^ The resulting (sum of) (exp-)potential(s)
+-- outside' graph potMap nodMap (v, w) x k =
+--   here * both
+--   where
+--     here = there nodMap w x
+--     both
+--       | k <= 0 = 1
+--       | otherwise = up * down
+--     up = product $ do
+--       -- for each parent (should be only one!)
+--       p <- outgoing w graph
+--       return . sum $ do
+--         -- for each corresponding arc value
+--         y <- arcValues
+--         -- such that the dependent of the value = x
+--         guard $ depVal y == x
+--         -- return the resulting (exponential) potential
+--         return $ arcPotExp potMap (w, p) y
+--                * outside' graph potMap nodMap (w, p) (hedVal y) (k-1)
+--     down = product $ do
+--       -- for each child
+--       c <- incoming w graph
+--       -- different than v
+--       guard $ c /= v
+--       -- return the corresponding sum
+--       return . sum $ do
+--         -- for each corresponding arc value
+--         y <- arcValues
+--         -- such that the head of the value = x
+--         guard $ hedVal y == x
+--         -- return the resulting (exponential) potential
+--         return $ arcPotExp potMap (c, w) y
+--                * inside' graph potMap nodMap c (depVal y) (k-1)
 
 
 -- | Node potential at a given node (TODO: make analogy to `arcPotExp`)
@@ -189,6 +320,18 @@ there nodMap u z
   | otherwise = 1.0
 
 
+-- | Node potential at a given node in log domain
+thereLog
+  :: (Reifies s W) 
+  => M.Map G.Vertex (BVar s Double)
+  -> G.Vertex
+  -> Bool
+  -> BVar s Double
+thereLog nodMap u z
+  | z = nodMap M.! u
+  | otherwise = 0.0
+
+
 ----------------------------------------------
 -- Approximate marginal probabilities
 --
@@ -196,156 +339,114 @@ there nodMap u z
 ----------------------------------------------
 
 
--- | Approximate marginal probabilities
-approxMarginals
-  :: (Reifies s W)
-  => Graph a b
-  -> M.Map Arc (BVar s (Vec8 Pot))
-  -> Int -- ^ Depth
-  -> M.Map Arc (BVar s (Vec8 Prob))
-approxMarginals graph potMap k = M.fromList $ do
-  arc <- M.keys potMap
-  return (arc, approxMarginals1 graph potMap arc k)
-
-
--- | Approx the marginal probabilities of the given arc.  If @depth = 0@, only
--- the potential of the arc is taken into account.
-approxMarginals1
-  :: (Reifies s W)
-  => Graph a b
-  -> M.Map Arc (BVar s (Vec8 Pot))
-  -> Arc
-  -> Int -- ^ Depth
-  -> BVar s (Vec8 Prob)
-  -- -> M.Map (Out Bool) (BVar s Double)
-approxMarginals1 graph potMap (v, w) k = 
-  obfuscateBP . M.fromList $ zip arcValues pots
-  where
-    pots = NL.normalize $ do
-      out <- arcValues
-      return
-        $ inside graph potMap v (depVal out) k
-        * outside graph potMap (v, w) (hedVal out) k
-        * arcPotExp potMap (v, w) out
-
-
--- | A semi-lifted version of `obfuscate` in the `Net.Graph2` module.
---
--- TODO: this uses `VS.fromList` which is supposedly very inefficient in case
--- of long lists.  But our list isn't long, is it?
---
--- TODO: relate to `obfuscate` in tests?  Or maybe have a unified
--- implementation?
---
-obfuscateBP
-  :: forall s p. (Reifies s W)
-  => M.Map (Out Bool) (BVar s Double)
-  -> BVar s (Vec8 p)
-obfuscateBP =
-  BP.coerceVar . LBP.vector . from . M.elems
-  where
-    from = just . VS.fromList :: [a] -> VS.Vector 8 a
-    just Nothing =
-      error "Net.Graph2.mkVec: got Nothing"
-    just (Just x) = x
-
-
--- | Outside computation
-outside
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ The corresponding potential map
-  -> Arc
-    -- ^ The arc in question
-  -> Bool
-    -- ^ The value assigned to the node
-  -> Int
-    -- ^ Depth (optional?)
-  -> BVar s Double
-    -- ^ The resulting (sum of) potential(s)
-outside graph potMap (v, w) x k
-  | k <= 0 = 1
-  | otherwise = up * down
-  where
-    up = product $ do
-      -- for each parent (should be only one!)
-      p <- outgoing w graph
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the dependent of the value = x
-        guard $ depVal y == x
-        -- return the resulting (exponential) potential
-        return $ arcPotExp potMap (w, p) y
-               * outside graph potMap (w, p) (hedVal y) (k-1)
-    down = product $ do
-      -- for each child
-      c <- incoming w graph
-      -- different than v
-      guard $ c /= v
-      -- return the corresponding sum
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the head of the value = x
-        guard $ hedVal y == x
-        -- return the resulting (exponential) potential
-        return $ arcPotExp potMap (c, w) y
-               * inside graph potMap c (depVal y) (k-1)
-
-
--- | Inside pass
-inside
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ The corresponding potential map
-  -> G.Vertex
-    -- ^ The node in question
-  -> Bool
-    -- ^ The value assigned to the node
-  -> Int
-    -- ^ Depth (optional?)
-  -> BVar s Double
-    -- ^ The resulting (sum of) potential(s)
-inside graph potMap v x k
-  | k <= 0 = 1
-  | otherwise = product $ do
-      -- for each child
-      c <- incoming v graph
-      -- return the corresponding sum
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the head of the value = x
-        guard $ hedVal y == x
-        -- return the resulting (exponential) potential
-        return $ arcPotExp potMap (c, v) y
-               * inside graph potMap c (depVal y) (k-1)
-
-
--- | The list of possible values of an arc
-arcValues :: [Out Bool]
-arcValues = B.enumerate
-
-
--- | Potential of the given arc
-arcPotExp
-  :: forall s. (Reifies s W)
-  => M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ Potential map
-  -> Arc
-    -- ^ The arc in question
-  -> Out Bool
-    -- ^ The value
-  -> BVar s Double
-arcPotExp potMap arc out =
-  exp $ potVec `dot` BP.constVar (B.mask out)
-  where
-    potVec = BP.coerceVar (potMap M.! arc)
+-- -- | Approximate marginal probabilities
+-- approxMarginals
+--   :: (Reifies s W)
+--   => Graph a b
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--   -> Int -- ^ Depth
+--   -> M.Map Arc (BVar s (Vec8 Prob))
+-- approxMarginals graph potMap k = M.fromList $ do
+--   arc <- M.keys potMap
+--   return (arc, approxMarginals1 graph potMap arc k)
+-- 
+-- 
+-- -- | Approx the marginal probabilities of the given arc.  If @depth = 0@, only
+-- -- the potential of the arc is taken into account.
+-- approxMarginals1
+--   :: (Reifies s W)
+--   => Graph a b
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--   -> Arc
+--   -> Int -- ^ Depth
+--   -> BVar s (Vec8 Prob)
+--   -- -> M.Map (Out Bool) (BVar s Double)
+-- approxMarginals1 graph potMap (v, w) k = 
+--   obfuscateBP . M.fromList $ zip arcValues pots
+--   where
+--     pots = NL.normalize $ do
+--       out <- arcValues
+--       return
+--         $ inside graph potMap v (depVal out) k
+--         * outside graph potMap (v, w) (hedVal out) k
+--         * arcPotExp potMap (v, w) out
+-- 
+-- 
+-- -- | Outside computation
+-- outside
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ The corresponding potential map
+--   -> Arc
+--     -- ^ The arc in question
+--   -> Bool
+--     -- ^ The value assigned to the node
+--   -> Int
+--     -- ^ Depth (optional?)
+--   -> BVar s Double
+--     -- ^ The resulting (sum of) potential(s)
+-- outside graph potMap (v, w) x k
+--   | k <= 0 = 1
+--   | otherwise = up * down
+--   where
+--     up = product $ do
+--       -- for each parent (should be only one!)
+--       p <- outgoing w graph
+--       return . sum $ do
+--         -- for each corresponding arc value
+--         y <- arcValues
+--         -- such that the dependent of the value = x
+--         guard $ depVal y == x
+--         -- return the resulting (exponential) potential
+--         return $ arcPotExp potMap (w, p) y
+--                * outside graph potMap (w, p) (hedVal y) (k-1)
+--     down = product $ do
+--       -- for each child
+--       c <- incoming w graph
+--       -- different than v
+--       guard $ c /= v
+--       -- return the corresponding sum
+--       return . sum $ do
+--         -- for each corresponding arc value
+--         y <- arcValues
+--         -- such that the head of the value = x
+--         guard $ hedVal y == x
+--         -- return the resulting (exponential) potential
+--         return $ arcPotExp potMap (c, w) y
+--                * inside graph potMap c (depVal y) (k-1)
+-- 
+-- 
+-- -- | Inside pass
+-- inside
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ The corresponding potential map
+--   -> G.Vertex
+--     -- ^ The node in question
+--   -> Bool
+--     -- ^ The value assigned to the node
+--   -> Int
+--     -- ^ Depth (optional?)
+--   -> BVar s Double
+--     -- ^ The resulting (sum of) potential(s)
+-- inside graph potMap v x k
+--   | k <= 0 = 1
+--   | otherwise = product $ do
+--       -- for each child
+--       c <- incoming v graph
+--       -- return the corresponding sum
+--       return . sum $ do
+--         -- for each corresponding arc value
+--         y <- arcValues
+--         -- such that the head of the value = x
+--         guard $ hedVal y == x
+--         -- return the resulting (exponential) potential
+--         return $ arcPotExp potMap (c, v) y
+--                * inside graph potMap c (depVal y) (k-1)
 
 
 ----------------------------------------------
@@ -514,41 +615,8 @@ outsideC' graph potMap nodMap (v, w) x xArc k =
 
 
 ----------------------------------------------
--- Constrained version
+-- Result
 ----------------------------------------------
-
-
--- | Approximate marginal probabilities
-approxMarginalsC
-  :: (Reifies s W)
-  => Graph a b
-  -> M.Map Arc (BVar s (Vec8 Pot))
-  -> Int -- ^ Depth
-  -> M.Map Arc (BVar s (Vec8 Prob))
-approxMarginalsC graph potMap k = M.fromList $ do
-  arc <- M.keys potMap
-  return (arc, approxMarginalsC1 graph potMap arc k)
-
-
--- | Approx the marginal probabilities of the given arc.  If @depth = 0@, only
--- the potential of the arc is taken into account.
-approxMarginalsC1
-  :: (Reifies s W)
-  => Graph a b
-  -> M.Map Arc (BVar s (Vec8 Pot))
-  -> Arc
-  -> Int -- ^ Depth
-  -> BVar s (Vec8 Prob)
-approxMarginalsC1 graph potMap (v, w) k = 
-  -- TODO: make sure that here also the eventual constraints are handled!
-  obfuscateBP . M.fromList $ zip arcValues pots
-  where
-    pots = NL.normalize $ do
-      out <- arcValues
-      return
-        $ insideC graph potMap v (depVal out) (arcVal out) k
-        * outsideC graph potMap (v, w) (hedVal out) (arcVal out) k
-        * arcPotExp potMap (v, w) out
 
 
 -- | Result depending on the number of `true` incoming arcs.
@@ -609,132 +677,278 @@ justOne x = Res
   }
 
 
--- | Inside pass, constrained version
-insideC
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ The corresponding potential map
-  -> G.Vertex
-    -- ^ The node in question
-  -> Bool
-    -- ^ The value assigned to the node
-  -> Bool
-    -- ^ The value assigned to the arc from the given node to its parent
-  -> Int
-    -- ^ Depth (optional?)
-  -> BVar s Double
-    -- ^ The resulting (sum of) potential(s)
-insideC graph potMap v x xArc k
-  | k <= 0 = 1
---   | otherwise = zeroTrue down + oneTrue down + moreTrue down
---   | null (incoming v graph) =
---       case (x, xArc) of
---         (True,   True) -> 1
---         (False,  True) -> 0
---         (True,  False) -> 1
---         (False, False) -> 1
-  | x = zeroTrue down + oneTrue down + moreTrue down
-  | not x && not xArc = zeroTrue down + moreTrue down
-  | not x && xArc = oneTrue down + moreTrue down
-  | otherwise = error "insideC: impossible happened"
-  where
-    down = product $ do
-      -- for each child
-      c <- incoming v graph
-      -- return the corresponding sum
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the head of the value = x
-        guard $ hedVal y == x
-        -- determine the lower inside value
-        let ins = insideC graph potMap c (depVal y) (arcVal y) (k-1)
---         -- and ignore it if 0
---         guard $ ins > 0
-        -- the resulting (exponential) potential
-        let val = arcPotExp potMap (c, v) y * ins
-        return $
-          if arcVal y
-             then justOne val
-             else justZero val
+----------------------------------------------
+-- Constrained version
+----------------------------------------------
 
 
--- | Outside computation (TODO: not yet constrained!)
-outsideC
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ The corresponding potential map
-  -> Arc
-    -- ^ The arc in question
-  -> Bool
-    -- ^ The value assigned to the head node of the arc
-  -> Bool
-    -- ^ The value assigned to the arc itself
-  -> Int
-    -- ^ Depth (optional?)
-  -> BVar s Double
-    -- ^ The resulting (sum of) potential(s)
-outsideC graph potMap (v, w) x xArc k
-  | k <= 0 = 1
---   | otherwise = zeroTrue both + oneTrue both + moreTrue both
-  | x = zeroTrue both + oneTrue both + moreTrue both
-  | not x && not xArc = zeroTrue both + moreTrue both
-  | not x && xArc = oneTrue both + moreTrue both
-  | otherwise = error "outsideC: impossible happened"
-  where
-    both = up * down
-    up = product $ do
-      -- for each parent (should be at most one!)
-      p <- outgoing w graph
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the dependent of the value = x
-        guard $ depVal y == x
-        -- return the resulting (exponential) potential
-        let val = arcPotExp potMap (w, p) y
-                * outsideC graph potMap (w, p) (hedVal y) (arcVal y) (k-1)
-        return $ if arcVal y then justOne val else justZero val
-    down = product $ do
-      -- for each child
-      c <- incoming w graph
-      -- different than v
-      guard $ c /= v
-      -- return the corresponding sum
-      return . sum $ do
-        -- for each corresponding arc value
-        y <- arcValues
-        -- such that the head of the value = x
-        guard $ hedVal y == x
-        -- inside value
-        let ins = insideC graph potMap c (depVal y) (arcVal y) (k-1)
---         -- ignore if 0
---         guard $ ins > 0
-        -- return the resulting (exponential) potential
-        let val = arcPotExp potMap (c, w) y * ins
-        return $ if arcVal y then justOne val else justZero val
+-- -- | Approximate marginal probabilities
+-- approxMarginalsC
+--   :: (Reifies s W)
+--   => Graph a b
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--   -> Int -- ^ Depth
+--   -> M.Map Arc (BVar s (Vec8 Prob))
+-- approxMarginalsC graph potMap k = M.fromList $ do
+--   arc <- M.keys potMap
+--   return (arc, approxMarginalsC1 graph potMap arc k)
+-- 
+-- 
+-- -- | Approx the marginal probabilities of the given arc.  If @depth = 0@, only
+-- -- the potential of the arc is taken into account.
+-- approxMarginalsC1
+--   :: (Reifies s W)
+--   => Graph a b
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--   -> Arc
+--   -> Int -- ^ Depth
+--   -> BVar s (Vec8 Prob)
+-- approxMarginalsC1 graph potMap (v, w) k = 
+--   -- TODO: make sure that here also the eventual constraints are handled!
+--   obfuscateBP . M.fromList $ zip arcValues pots
+--   where
+--     pots = NL.normalize $ do
+--       out <- arcValues
+--       return
+--         $ insideC graph potMap v (depVal out) (arcVal out) k
+--         * outsideC graph potMap (v, w) (hedVal out) (arcVal out) k
+--         * arcPotExp potMap (v, w) out
+-- 
+-- 
+-- -- | Inside pass, constrained version
+-- insideC
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ The corresponding potential map
+--   -> G.Vertex
+--     -- ^ The node in question
+--   -> Bool
+--     -- ^ The value assigned to the node
+--   -> Bool
+--     -- ^ The value assigned to the arc from the given node to its parent
+--   -> Int
+--     -- ^ Depth (optional?)
+--   -> BVar s Double
+--     -- ^ The resulting (sum of) potential(s)
+-- insideC graph potMap v x xArc k
+--   | k <= 0 = 1
+-- --   | otherwise = zeroTrue down + oneTrue down + moreTrue down
+-- --   | null (incoming v graph) =
+-- --       case (x, xArc) of
+-- --         (True,   True) -> 1
+-- --         (False,  True) -> 0
+-- --         (True,  False) -> 1
+-- --         (False, False) -> 1
+--   | x = zeroTrue down + oneTrue down + moreTrue down
+--   | not x && not xArc = zeroTrue down + moreTrue down
+--   | not x && xArc = oneTrue down + moreTrue down
+--   | otherwise = error "insideC: impossible happened"
+--   where
+--     down = product $ do
+--       -- for each child
+--       c <- incoming v graph
+--       -- return the corresponding sum
+--       return . sum $ do
+--         -- for each corresponding arc value
+--         y <- arcValues
+--         -- such that the head of the value = x
+--         guard $ hedVal y == x
+--         -- determine the lower inside value
+--         let ins = insideC graph potMap c (depVal y) (arcVal y) (k-1)
+-- --         -- and ignore it if 0
+-- --         guard $ ins > 0
+--         -- the resulting (exponential) potential
+--         let val = arcPotExp potMap (c, v) y * ins
+--         return $
+--           if arcVal y
+--              then justOne val
+--              else justZero val
+-- 
+-- 
+-- -- | Outside computation (TODO: not yet constrained!)
+-- outsideC
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ The corresponding potential map
+--   -> Arc
+--     -- ^ The arc in question
+--   -> Bool
+--     -- ^ The value assigned to the head node of the arc
+--   -> Bool
+--     -- ^ The value assigned to the arc itself
+--   -> Int
+--     -- ^ Depth (optional?)
+--   -> BVar s Double
+--     -- ^ The resulting (sum of) potential(s)
+-- outsideC graph potMap (v, w) x xArc k
+--   | k <= 0 = 1
+-- --   | otherwise = zeroTrue both + oneTrue both + moreTrue both
+--   | x = zeroTrue both + oneTrue both + moreTrue both
+--   | not x && not xArc = zeroTrue both + moreTrue both
+--   | not x && xArc = oneTrue both + moreTrue both
+--   | otherwise = error "outsideC: impossible happened"
+--   where
+--     both = up * down
+--     up = product $ do
+--       -- for each parent (should be at most one!)
+--       p <- outgoing w graph
+--       return . sum $ do
+--         -- for each corresponding arc value
+--         y <- arcValues
+--         -- such that the dependent of the value = x
+--         guard $ depVal y == x
+--         -- return the resulting (exponential) potential
+--         let val = arcPotExp potMap (w, p) y
+--                 * outsideC graph potMap (w, p) (hedVal y) (arcVal y) (k-1)
+--         return $ if arcVal y then justOne val else justZero val
+--     down = product $ do
+--       -- for each child
+--       c <- incoming w graph
+--       -- different than v
+--       guard $ c /= v
+--       -- return the corresponding sum
+--       return . sum $ do
+--         -- for each corresponding arc value
+--         y <- arcValues
+--         -- such that the head of the value = x
+--         guard $ hedVal y == x
+--         -- inside value
+--         let ins = insideC graph potMap c (depVal y) (arcVal y) (k-1)
+-- --         -- ignore if 0
+-- --         guard $ ins > 0
+--         -- return the resulting (exponential) potential
+--         let val = arcPotExp potMap (c, w) y * ins
+--         return $ if arcVal y then justOne val else justZero val
 
 
 ----------------------------------------------
 -- Log
 ----------------------------------------------
--- 
--- 
--- -- | Potential of the given arc
--- arcPotExpLog
---   :: forall s. (Reifies s W)
---   => M.Map Arc (BVar s (Vec8 Pot))
---     -- ^ Potential map
---   -> Arc
---     -- ^ The arc in question
---   -> Out Bool
---     -- ^ The value
---   -> BVar s Double
--- arcPotExpLog potMap arc out =
---   potVec `dot` BP.constVar (B.mask out)
---   where
---     potVec = BP.coerceVar (potMap M.! arc)
+
+
+-- | Inside pass (log domain)
+insideLog
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ The corresponding arc potential map (normal domain!)
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ The corresponding node potential map (normal domain!)
+  -> G.Vertex
+    -- ^ The node in question
+  -> Bool
+    -- ^ The value assigned to the node
+  -> Int
+    -- ^ Depth (optional?)
+  -> BVar s Double
+    -- ^ The resulting (sum of) potential(s) (log domain!)
+insideLog graph potMap nodMap v x k =
+  hereLog `mulLog` downLog
+  where
+    hereLog = thereLog nodMap v x
+    downLog
+      | k <= 0 = log 1
+      | otherwise = productLog $ do
+          -- for each child
+          c <- incoming v graph
+          -- return the corresponding sum
+          return . sumLog $ do
+            -- for each corresponding arc value
+            y <- arcValues
+            -- such that the head of the value = x
+            guard $ hedVal y == x
+            -- return the resulting (exponential) potential
+            return $
+              arcPot potMap (c, v) y `mulLog`
+              insideLog graph potMap nodMap c (depVal y) (k-1)
+
+
+-- | Outside computation (log domain)
+outsideLog
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ The corresponding potential map (normal domain!)
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ The corresponding node potential map (normal domain!)
+  -> Arc
+    -- ^ The arc in question @(v, w)@; we focus on the node @w@, the other is
+    -- given as context
+  -> Bool
+    -- ^ The value assigned to the node @w@
+  -> Int
+    -- ^ Depth (optional?)
+  -> BVar s Double
+    -- ^ The resulting (sum of) (exp-)potential(s) (log domain!)
+outsideLog graph potMap nodMap (v, w) x k =
+  hereLog `mulLog` bothLog
+  where
+    hereLog = thereLog nodMap w x
+    bothLog
+      | k <= 0 = log 1
+      | otherwise = upLog `mulLog` downLog
+    upLog = productLog $ do
+      -- for each parent (should be only one!)
+      p <- outgoing w graph
+      return . sumLog $ do
+        -- for each corresponding arc value
+        y <- arcValues
+        -- such that the dependent of the value = x
+        guard $ depVal y == x
+        -- return the resulting (exponential) potential
+        return $ arcPot potMap (w, p) y `mulLog`
+                 outsideLog graph potMap nodMap (w, p) (hedVal y) (k-1)
+    downLog = productLog $ do
+      -- for each child
+      c <- incoming w graph
+      -- different than v
+      guard $ c /= v
+      -- return the corresponding sum
+      return . sumLog $ do
+        -- for each corresponding arc value
+        y <- arcValues
+        -- such that the head of the value = x
+        guard $ hedVal y == x
+        -- return the resulting (exponential) potential
+        return $ arcPot potMap (c, w) y `mulLog`
+                 insideLog graph potMap nodMap c (depVal y) (k-1)
+
+
+----------------------------------------------
+-- Basic operations in log domain
+----------------------------------------------
+
+
+-- | Multiplication (log domain)
+mulLog :: Floating a => a -> a -> a
+mulLog = (+)
+{-# INLINE mulLog #-}
+
+
+-- -- | Sum (log domain)
+-- sumLog :: Floating a => [a] -> a
+-- sumLog = log . sum . map exp
+-- {-# INLINE sumLog #-}
+
+
+-- | Sum (log domain)
+sumLog :: (Floating a, Ord a) => [a] -> a
+sumLog xs =
+  -- Code copied from the log-float library
+  theMax + log theSum
+  where
+    theMax = maximum xs
+    theSum = List.foldl' (\acc x -> acc + exp (x - theMax)) 0 xs
+{-# INLINE sumLog #-}
+
+
+-- | Product (log domain)
+productLog :: Floating a => [a] -> a
+productLog = sum
+{-# INLINE productLog #-}

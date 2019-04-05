@@ -70,6 +70,7 @@ import           Lens.Micro.TH (makeLenses)
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.), (^^?))
 import           Numeric.LinearAlgebra.Static.Backprop (R, L, (#), (#>)) -- dot
+import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 
 import           Data.Binary (Binary)
 import qualified Data.Map.Strict as M
@@ -277,6 +278,7 @@ instance (KnownNat i, KnownNat o) => New a b (ScaleLeakyRelu i o) where
 instance (KnownNat i, KnownNat o, i ~ i', o ~ o')
   => Transform (ScaleLeakyRelu i o) i' o' where
   runTransform bp = map (U.leakyRelu . (bp ^^. contractLRL #>))
+  -- runTransform bp = map (LBP.vmap' U.leakyRelu . (bp ^^. contractLRL #>))
 
 
 ----------------------------------------------
@@ -288,6 +290,7 @@ data Relu = Relu
   deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
 
 instance (KnownNat i) => Transform Relu i i where
+  -- runTransform _ = map (LBP.vmap' U.relu)
   runTransform _ = map U.relu
 
 
@@ -295,6 +298,7 @@ data LeakyRelu = LeakyRelu
   deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
 
 instance (KnownNat i) => Transform LeakyRelu i i where
+  -- runTransform _ = map (LBP.vmap' U.leakyRelu)
   runTransform _ = map U.leakyRelu
 
 

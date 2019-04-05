@@ -26,23 +26,23 @@ module MWE2
 
   -- * New
   , N.new
-  , N.newO
-  , N.Typ
+  -- , N.newO
+  -- , N.Typ
 
   -- * Training
   , Config(..)
   , Method(..)
-  , trainO
+  -- , trainO
   , trainT
   , depRelsIn
   , posTagsIn
 
   -- * Tagging
   , TagConfig(..)
-  , tag
+  -- , tag
   , tagT
-  , tagMany
-  , tagManyO
+  -- , tagMany
+  -- , tagManyO
   , tagManyT
   ) where
 
@@ -500,39 +500,39 @@ type DepRel = T.Text
 type POS = T.Text
 
 
--- | Train the MWE identification network.
-train
-  :: ( KnownNat d
-     , B.BiComp d comp
-     , SGD.ParamSet comp, NFData comp
-     )
-  => Config
-    -- ^ General training confiration
-  -> Cupt.MweTyp
-    -- ^ Selected MWE type (category)
-  -> [Sent d]
-    -- ^ Training dataset
-  -> comp
---   -> N.Param 300
-    -- ^ Initial network
-  -> IO comp
---   -> IO (N.Param 300)
-train cfg mweTyp cupt net0 = do
-  -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
-  let cupt' = map (mkElem (== mweTyp)) cupt
-  net' <- SGD.withDisk cupt' $ \dataSet -> do
-    putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
-    -- net0 <- N.new 300 2
-    -- trainProgSGD sgd dataSet globalDepth net0
-    SGD.runIO (sgd cfg)
-      (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
-      (SGD.reportObjective quality dataSet)
-      dataSet net0
---   N.printParam net'
-  return net'
-  where
-    gradient x = BP.gradBP (N.netError (probTyp cfg) [fmap BP.auto x])
-    quality x = BP.evalBP (N.netError (probTyp cfg) [fmap BP.auto x])
+-- -- | Train the MWE identification network.
+-- train
+--   :: ( KnownNat d
+--      , B.BiComp d comp
+--      , SGD.ParamSet comp, NFData comp
+--      )
+--   => Config
+--     -- ^ General training confiration
+--   -> Cupt.MweTyp
+--     -- ^ Selected MWE type (category)
+--   -> [Sent d]
+--     -- ^ Training dataset
+--   -> comp
+-- --   -> N.Param 300
+--     -- ^ Initial network
+--   -> IO comp
+-- --   -> IO (N.Param 300)
+-- train cfg mweTyp cupt net0 = do
+--   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
+--   let cupt' = map (mkElem (== mweTyp)) cupt
+--   net' <- SGD.withDisk cupt' $ \dataSet -> do
+--     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
+--     -- net0 <- N.new 300 2
+--     -- trainProgSGD sgd dataSet globalDepth net0
+--     SGD.runIO (sgd cfg)
+--       (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
+--       (SGD.reportObjective quality dataSet)
+--       dataSet net0
+-- --   N.printParam net'
+--   return net'
+--   where
+--     gradient x = BP.gradBP (N.netError (probTyp cfg) [fmap BP.auto x])
+--     quality x = BP.evalBP (N.netError (probTyp cfg) [fmap BP.auto x])
 
 
 -- | Extract dependeny relations present in the given dataset.
@@ -558,81 +558,35 @@ posTagsIn =
 ----------------------------------------------
 
 
--- | Train the opaque MWE identification network.
-trainO
-  :: Config
-    -- ^ General training confiration
-  -> Cupt.MweTyp
-    -- ^ Selected MWE type (category)
-  -> [Sent 300]
-    -- ^ Training dataset
-  -> N.Opaque 300 DepRel POS
-    -- ^ Initial network
-  -> IO (N.Opaque 300 DepRel POS)
-trainO cfg mweTyp cupt net =
-  case net of
-    N.Opaque t p -> N.Opaque t <$> train cfg mweTyp cupt p
+-- -- | Train the opaque MWE identification network.
+-- trainO
+--   :: Config
+--     -- ^ General training confiration
+--   -> Cupt.MweTyp
+--     -- ^ Selected MWE type (category)
+--   -> [Sent 300]
+--     -- ^ Training dataset
+--   -> N.Opaque 300 DepRel POS
+--     -- ^ Initial network
+--   -> IO (N.Opaque 300 DepRel POS)
+-- trainO cfg mweTyp cupt net =
+--   case net of
+--     N.Opaque t p -> N.Opaque t <$> train cfg mweTyp cupt p
 
 
--- | Tag sentences with the opaque network.
-tagManyO
-  :: TagConfig
-  -> N.Opaque 300 DepRel POS
-  -> [Sent 300]
-  -> IO ()
-tagManyO cfg = \case
-  N.Opaque _ p -> tagMany cfg p
+-- -- | Tag sentences with the opaque network.
+-- tagManyO
+--   :: TagConfig
+--   -> N.Opaque 300 DepRel POS
+--   -> [Sent 300]
+--   -> IO ()
+-- tagManyO cfg = \case
+--   N.Opaque _ p -> tagMany cfg p
 
 
 ----------------------------------------------
 -- Trainin with input transformations
 ----------------------------------------------
-
-
--- -- | Train the MWE identification network.
--- trainI
---   :: forall inp comp d i.
---      ( KnownNat d, KnownNat i
---      , I.Input inp d i
---      , SGD.ParamSet inp, NFData inp
---      , B.BiComp i comp
---      , SGD.ParamSet comp, NFData comp
---      )
---   => Config
---     -- ^ General training confiration
---   -> Proxy.Proxy i
---     -- ^ A proxy to learn the internal dimension
---     -- TODO: could be a part of the config, I guess?
---   -> Cupt.MweTyp
---     -- ^ Selected MWE type (category)
---   -> [Sent d]
---     -- ^ Training dataset
---   -> inp -> comp
---     -- ^ Initial networks
---   -> IO (inp, comp)
--- --   -> IO (N.Param 300)
--- trainI cfg _proxy mweTyp cupt inp0 net0 = do
---   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
---   let cupt' = map (mkElem (== mweTyp)) cupt
---   SGD.withDisk cupt' $ \dataSet -> do
---     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
---     SGD.runIO (sgd cfg)
---       (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
---       quality dataSet (inp0, net0)
---   where
---     gradient x (inp0, net0) = BP.gradBP2 (netError x) inp0 net0
---     quality x (inp, net) = BP.evalBP2 (netError x) inp0 net0
---     netError 
---       :: forall s. (Reifies s W)
---       => N.Elem (R d)
---       -> BVar s inp
---       -> BVar s comp
---       -> BVar s Double
---     netError x inp net =
---       let toksEmbs = N.tokens x
---           embs' = I.runInput inp toksEmbs :: [BVar s (R i)]
---           x' = N.replace embs' x
---        in N.netError (probTyp cfg) [x'] net
 
 
 -- | Train the MWE identification network.
@@ -688,94 +642,47 @@ data TagConfig = TagConfig
   } deriving (Show, Eq, Ord)
 
 
--- | Tag sentences based on the given configuration and multi/quad-affine
--- network.  The output is directed to stdout.
-tagMany
-  :: ( KnownNat d
-     , B.BiComp d comp
-     -- , SGD.ParamSet comp, NFData comp
-     )
-  => TagConfig
-  -> comp
-                      -- ^ Network parameters
-  -> [Sent d]       -- ^ Cupt sentences
-  -> IO ()
-tagMany tagCfg net cupt = do
-  forM_ cupt $ \sent -> do
-    T.putStr "# "
-    T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
-    tag tagCfg net sent
-
-
--- | Tag a single sentence with the given network.
-tag
-  :: ( KnownNat d
-     , B.BiComp d comp
-     )
-  => TagConfig
-  -> comp             -- ^ Network parameters
-  -> Sent d           -- ^ Cupt sentence
-  -> IO ()
-tag tagCfg net sent = do
-  L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
-  where
-    elem = mkElem (const False) sent
-    tagF
-      | mweConstrained tagCfg =
-          N.treeTagConstrained (N.graph elem)
-      | mweGlobal tagCfg =
-          N.treeTagGlobal (N.graph elem)
-      | otherwise = N.tagGreedy mweChoice
-    mweChoice ps = geoMean ps >= mweThreshold tagCfg
-    labeling = tagF . N.evalRaw net $ N.graph elem
-    sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
+-- -- | Tag sentences based on the given configuration and multi/quad-affine
+-- -- network.  The output is directed to stdout.
+-- tagMany
+--   :: ( KnownNat d
+--      , B.BiComp d comp
+--      -- , SGD.ParamSet comp, NFData comp
+--      )
+--   => TagConfig
+--   -> comp
+--                       -- ^ Network parameters
+--   -> [Sent d]       -- ^ Cupt sentences
+--   -> IO ()
+-- tagMany tagCfg net cupt = do
+--   forM_ cupt $ \sent -> do
+--     T.putStr "# "
+--     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
+--     tag tagCfg net sent
 
 
 -- -- | Tag a single sentence with the given network.
--- tag'
+-- tag
 --   :: ( KnownNat d
 --      , B.BiComp d comp
---      , U.UniComp d comp'
 --      )
 --   => TagConfig
 --   -> comp             -- ^ Network parameters
---   -> comp'            -- ^ Network parameters (uni)
 --   -> Sent d           -- ^ Cupt sentence
 --   -> IO ()
--- tag' tagCfg net netU sent = do
+-- tag tagCfg net sent = do
 --   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
 --   where
 --     elem = mkElem (const False) sent
 --     tagF
 --       | mweConstrained tagCfg =
---           N.treeTagConstrained' (N.graph elem)
+--           N.treeTagConstrained (N.graph elem)
 --       | mweGlobal tagCfg =
---           N.treeTagGlobal' (N.graph elem)
---       | otherwise =
---           error "tag': greedy not implemented"
---           -- N.tagGreedy mweChoice
+--           N.treeTagGlobal (N.graph elem)
+--       | otherwise = N.tagGreedy mweChoice
 --     mweChoice ps = geoMean ps >= mweThreshold tagCfg
---     labeling = tagF
---       (N.evalRaw net (N.graph elem))
---       (N.evalRawUni netU (N.graph elem))
+--     labeling = tagF . N.evalRaw net $ N.graph elem
 --     sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
-
-
--- -- !!! TODO MARKED !!!
--- -- | Tag a single sentence with the given network.
--- tagT
---   :: TagConfig
---   -> N.Transparent   -- ^ Network parameters
---   -> Sent 300        -- ^ Cupt sentence
---   -> IO ()
--- tagT cfg net sent =
---   tag' cfg (net ^. N.biaMod) (net ^. N.uniMod) $ Sent
---     { cuptSent = cuptSent sent
---     , wordEmbs
---         = I.evalTransform (net ^. N.traMod)
---         . I.evalInput (net ^. N.inpMod)
---         $ zipSafe (cuptSent sent) (wordEmbs sent)
---     }
 
 
 zipSafe :: [a] -> [b] -> [(a, b)]

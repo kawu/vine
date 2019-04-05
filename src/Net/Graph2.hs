@@ -59,17 +59,17 @@ module Net.Graph2
   ( 
   -- * Network
     new
-  , run
-  , eval
+  -- , run
+  -- , eval
   , evalRaw
   , evalRawUni
   -- , evalBoth
   , ProbTyp(..)
 
-  -- * Opaque
-  , Opaque(..)
-  , Typ(..)
-  , newO
+--   -- * Opaque
+--   , Opaque(..)
+--   , Typ(..)
+--   , newO
 
   -- * Transparent
   , Transparent(..)
@@ -89,8 +89,8 @@ module Net.Graph2
   , tokens
   , replace
 
-  -- * Error
-  , netError
+  -- -- * Error
+  -- , netError
 
   -- * Encoding
   , Out(..)
@@ -107,9 +107,9 @@ module Net.Graph2
   -- * Inference
   , Labeling(..)
   , tagGreedy
-  , treeTagGlobal
+  -- , treeTagGlobal
   , treeTagGlobal'
-  , treeTagConstrained
+  -- , treeTagConstrained
   , treeTagConstrained'
 
   -- * Trees
@@ -224,7 +224,6 @@ instance (a ~ T.Text, b ~ T.Text) => New a b Transparent where
     <$> new xs ys <*> new xs ys <*> new xs ys <*> new xs ys
 
 
--- !!! TODO MARKED !!!
 -- | Net error with `Transparent`
 netErrorT
   :: (Reifies s W)
@@ -266,136 +265,68 @@ evalInp x net =
    in replace embs' x
 
 
--- -- !!! TODO MARKED !!!
--- -- | Net error with `Transparent`
--- netErrorT
---   :: (Reifies s W)
---   => ProbTyp
---   -> Elem (R 300)
---   -> BVar s Transparent
---   -> BVar s Double
--- netErrorT ptyp x net =
---   let toksEmbs = tokens x
---       embs' = I.runTransform (net ^^. traMod) 
---             . I.runInput (net ^^. inpMod) 
---             $ toksEmbs
---       x' = replace embs' x
---    in netError ptyp [x'] (net ^^. biaMod)
-
-
--- -- | Net error with `Transparent`
--- netErrorT
---   :: (Reifies s W)
---   => ProbTyp
---   -> Elem (R 300)
---   -> BVar s Transparent
---   -> BVar s Double
--- netErrorT ptyp x net =
---   netError ptyp [fmap BP.auto x] (net ^^. biaMod)
-
-
-----------------------------------------------
--- Opaque2
-----------------------------------------------
-
--- -- | Each constructor of `ITyp` corresponds to a specific feature extraction
--- -- architecture.  The parameter @i@ corresponds to the size of the output.
--- data ITyp = PosDep
---   deriving (Generic, Binary, Read)
--- 
--- 
--- data Opaque2 :: Nats.Nat -> * -> * -> * where
---   Opaque2 
---     :: ( Binary p, NFData p, ParamSet p, I.Input p d 350
---        , Binary q, NFData q, ParamSet q, B.BiComp 350 q
---        )
---     => ITyp -> p
---     -> Typ -> q
---     -> Opaque2 d a b
--- 
--- 
--- instance (KnownNat d) => Binary (Opaque2 d a b) where
---   put (Opaque2 typ p ityp q) = do
---     Bin.put ityp
---     Bin.put q
---     Bin.put typ
---     Bin.put p
---   get = do
---     typ <- Bin.get
---     p <- case typ of
---       Arc0T -> Bin.get :: Bin.Get (Arc0 d)
--- --       Arc1T -> Opaque typ <$> (action :: m (Arc1 d))
--- --       Arc2T -> Opaque typ <$> (action :: m (Arc2 d))
--- --       Arc3T -> Opaque typ <$> (action :: m (Arc3 d))
---     ityp <- Bin.get
---     q <- case ityp of
---       PosDep -> Bin.get :: Bin.Get (I.PosDepInp 25 25)
---     return $ Opaque2 ityp q typ p
--- --     ityp <- Bin.get
-
-
 ----------------------------------------------
 -- Opaque
 ----------------------------------------------
 
 
--- | Each constructor of `Typ` corresponds to a specific network architecture.
-data Typ
-  = Arc0T
-  | Arc1T
-  | Arc2T
-  | Arc3T
-  deriving (Generic, Binary, Read)
-
-
--- | Opaque neural network with the actual architecture abstracted away.
--- The type (`Typ`) is kept for the sake of (de-)serialization.
---
--- `Opaque` is motivated by the fact that each network architecture is
--- represeted by a different type.  We know, however, that each architecture is
--- an instance of `B.QuadComp`, `ParamSet`, etc., and this is precisely
--- what `Opaque` preserves.
-data Opaque :: Nats.Nat -> * -> * -> * where
-  Opaque 
-    :: (Binary p, NFData p, ParamSet p, B.BiComp d p)
-    => Typ -> p -> Opaque d a b
-
-
-instance (KnownNat d) => Binary (Opaque d a b) where
-  put (Opaque typ p) = Bin.put typ >> Bin.put p
-  get = do
-    typ <- Bin.get
-    exec typ Bin.get
-
-
--- | Execute the action within the context of the given model type.  Just a
--- helper function, really, which allows to avoid boilerplate code.
-exec
-  :: forall d a b m. (KnownNat d, Functor m)
-  => Typ
-  -> (forall p. (Binary p, New a b p) => m p)
-  -> m (Opaque d a b)
-exec typ action =
-  case typ of
-    Arc0T -> Opaque typ <$> (action :: m (Arc0 d))
-    Arc1T -> Opaque typ <$> (action :: m (Arc1 d))
-    Arc2T -> Opaque typ <$> (action :: m (Arc2 d))
-    Arc3T -> Opaque typ <$> (action :: m (Arc3 d))
-
-
--- | Create a new network of the given type.
-newO
-  :: forall d a b.
-    ( KnownNat d
---     , Binary a, NFData a, Show a, Ord a
---     , Binary b, NFData b, Show b, Ord b
-    )
-  => Typ     -- ^ Network type, which determines its architecture
-  -> S.Set a -- ^ The set of node labels
-  -> S.Set b -- ^ The set of arc labels
-  -> IO (Opaque d a b)
-newO typ xs ys =
-  exec typ (new xs ys)
+-- -- | Each constructor of `Typ` corresponds to a specific network architecture.
+-- data Typ
+--   = Arc0T
+--   | Arc1T
+--   | Arc2T
+--   | Arc3T
+--   deriving (Generic, Binary, Read)
+-- 
+-- 
+-- -- | Opaque neural network with the actual architecture abstracted away.
+-- -- The type (`Typ`) is kept for the sake of (de-)serialization.
+-- --
+-- -- `Opaque` is motivated by the fact that each network architecture is
+-- -- represeted by a different type.  We know, however, that each architecture is
+-- -- an instance of `B.QuadComp`, `ParamSet`, etc., and this is precisely
+-- -- what `Opaque` preserves.
+-- data Opaque :: Nats.Nat -> * -> * -> * where
+--   Opaque 
+--     :: (Binary p, NFData p, ParamSet p, B.BiComp d p)
+--     => Typ -> p -> Opaque d a b
+-- 
+-- 
+-- instance (KnownNat d) => Binary (Opaque d a b) where
+--   put (Opaque typ p) = Bin.put typ >> Bin.put p
+--   get = do
+--     typ <- Bin.get
+--     exec typ Bin.get
+-- 
+-- 
+-- -- | Execute the action within the context of the given model type.  Just a
+-- -- helper function, really, which allows to avoid boilerplate code.
+-- exec
+--   :: forall d a b m. (KnownNat d, Functor m)
+--   => Typ
+--   -> (forall p. (Binary p, New a b p) => m p)
+--   -> m (Opaque d a b)
+-- exec typ action =
+--   case typ of
+--     Arc0T -> Opaque typ <$> (action :: m (Arc0 d))
+--     Arc1T -> Opaque typ <$> (action :: m (Arc1 d))
+--     Arc2T -> Opaque typ <$> (action :: m (Arc2 d))
+--     Arc3T -> Opaque typ <$> (action :: m (Arc3 d))
+-- 
+-- 
+-- -- | Create a new network of the given type.
+-- newO
+--   :: forall d a b.
+--     ( KnownNat d
+-- --     , Binary a, NFData a, Show a, Ord a
+-- --     , Binary b, NFData b, Show b, Ord b
+--     )
+--   => Typ     -- ^ Network type, which determines its architecture
+--   -> S.Set a -- ^ The set of node labels
+--   -> S.Set b -- ^ The set of arc labels
+--   -> IO (Opaque d a b)
+-- newO typ xs ys =
+--   exec typ (new xs ys)
 
 
 ----------------------------------------------
@@ -479,28 +410,28 @@ runRawUni net graph = M.fromList $ do
   return (v, x)
 
 
--- | `runRaw` + softmax / approximate marginals
-run
-  :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
-     , Reifies s W
-     , B.BiComp dim comp
-     )
-  => ProbTyp
-  -> BVar s comp
-    -- ^ Graph network / params
-  -> Graph (BVar s (R dim)) ()
-    -- ^ Input graph labeled with initial hidden states
-  -> M.Map Arc (BVar s (Vec8 Prob))
-    -- ^ Output map with output potential values
-run probTyp net graph =
-  case probTyp of
-    SoftMax ->
-      error . unwords $
-        [ "Graph2.run: SoftMax has to be reimplemented"
-        , "to take the node potentials into account" ]
-      -- fmap B.softmaxVec (runRaw net graph)
-    Marginals -> Margs.approxMarginals graph (runRaw net graph) 1
-    Constrained -> Margs.approxMarginalsC graph (runRaw net graph) 1
+-- -- | `runRaw` + softmax / approximate marginals
+-- run
+--   :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
+--      , Reifies s W
+--      , B.BiComp dim comp
+--      )
+--   => ProbTyp
+--   -> BVar s comp
+--     -- ^ Graph network / params
+--   -> Graph (BVar s (R dim)) ()
+--     -- ^ Input graph labeled with initial hidden states
+--   -> M.Map Arc (BVar s (Vec8 Prob))
+--     -- ^ Output map with output potential values
+-- run probTyp net graph =
+--   case probTyp of
+--     SoftMax ->
+--       error . unwords $
+--         [ "Graph2.run: SoftMax has to be reimplemented"
+--         , "to take the node potentials into account" ]
+--       -- fmap B.softmaxVec (runRaw net graph)
+--     Marginals -> Margs.approxMarginals graph (runRaw net graph) 1
+--     Constrained -> Margs.approxMarginalsC graph (runRaw net graph) 1
 
 
 -- | `runRaw` + `runRawUni` + softmax / approximate marginals
@@ -523,7 +454,8 @@ runBoth probTyp net netU graph =
     Marginals ->
       Margs.approxMarginals' graph (runRaw net graph) (runRawUni netU graph) 1
     Constrained ->
-      Margs.approxMarginalsC' graph (runRaw net graph) (runRawUni netU graph) 1
+      error "runBoth: constrained marginals approximation seems to have bugs!"
+      -- Margs.approxMarginalsC' graph (runRaw net graph) (runRawUni netU graph) 1
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
@@ -567,51 +499,27 @@ evalRawUni net graph =
 
 
 -- -- | Evaluate the network over the given graph.  User-friendly (and without
--- -- back-propagation) version of `runBoth`.
--- evalRawBoth
---   :: ( KnownNat dim
+-- -- back-propagation) version of `run`.
+-- --
+-- -- TODO: lot's of code common with `evalRaw`.
+-- --
+-- eval
+--   :: ( KnownNat dim --, Ord a, Show a, Ord b, Show b
 --      , B.BiComp dim comp
---      , U.UniComp dim comp'
 --      )
---   => comp
---     -- ^ Graph network / params
---   -> comp'
+--   => ProbTyp
+--   -> comp
 --     -- ^ Graph network / params
 --   -> Graph (R dim) ()
 --     -- ^ Input graph labeled with initial hidden states (word embeddings)
---   -> M.Map Arc (Vec8 Pot)
--- evalRawBoth net netU graph =
+--   -> M.Map Arc (Vec8 Prob)
+-- eval probTyp net graph =
 --   BP.evalBP0
 --     ( BP.collectVar
---     $ runBoth
---         (BP.auto net)
---         (BP.auto netU)
+--     $ run probTyp
+--         (BP.constVar net)
 --         (nmap BP.auto graph)
 --     )
-
-
--- | Evaluate the network over the given graph.  User-friendly (and without
--- back-propagation) version of `run`.
---
--- TODO: lot's of code common with `evalRaw`.
---
-eval
-  :: ( KnownNat dim --, Ord a, Show a, Ord b, Show b
-     , B.BiComp dim comp
-     )
-  => ProbTyp
-  -> comp
-    -- ^ Graph network / params
-  -> Graph (R dim) ()
-    -- ^ Input graph labeled with initial hidden states (word embeddings)
-  -> M.Map Arc (Vec8 Prob)
-eval probTyp net graph =
-  BP.evalBP0
-    ( BP.collectVar
-    $ run probTyp
-        (BP.constVar net)
-        (nmap BP.auto graph)
-    )
 
 
 ----------------------------------------------
@@ -748,26 +656,6 @@ tagSubTree' root graph lmap nmap =
 ----------------------------------------------
 
 
--- | Determine the node/arc labeling which maximizes the global potential over
--- the given tree and return the resulting arc labeling.
---
--- WARNING: This function is only guaranteed to work correctly if the argument
--- graph is a tree!
---
-treeTagGlobal
-  :: Graph a b
-  -> M.Map Arc (Vec8 Pot)
-  -> Labeling Bool
-treeTagGlobal graph labMap =
-  let (trueBest, falseBest) =
-        tagSubTree
-          (treeRoot graph)
-          graph
-          (fmap explicate labMap)
-      best = better trueBest falseBest
-   in fmap getAny (bestLab best)
-
-
 -- | The best arc labeling for a given subtree.
 data Best = Best
   { bestLab :: Labeling Any
@@ -827,34 +715,115 @@ addNode node lab pot Best{..} = Best
   }
 
 
--- | The function returns two `Best`s:
---
---   * The best labeling if the label of the root is `True`
---   * The best labeling if the label of the root is `False`
---
-tagSubTree
-  :: G.Vertex
-    -- ^ Root of the subtree
-  -> Graph a b
-    -- ^ The entire graph
-  -- -> M.Map Arc (Vec8 Prob)
-  -> M.Map Arc (M.Map (Out Bool) Double)
-    -- ^ Explicated labeling potentials
-  -> (Best, Best)
-tagSubTree root graph lmap =
-  (bestWith True, bestWith False)
-  where
-    bestWith rootVal = setNode root rootVal . mconcat $ do
-      child <- Graph.incoming root graph
-      let arc = (child, root)
-          pot arcv depv = (lmap M.! arc) M.!
-            Out {arcVal=arcv, hedVal=rootVal, depVal=depv}
-          (true, false) = tagSubTree child graph lmap
-      return $ List.foldl1' better
-        [ addArc arc True  (pot True  True)  true
-        , addArc arc False (pot False True)  true
-        , addArc arc True  (pot True  False) false
-        , addArc arc False (pot False False) false ]
+----------------------------------------------
+-- Global decoding
+----------------------------------------------
+
+
+-- -- | Determine the node/arc labeling which maximizes the global potential over
+-- -- the given tree and return the resulting arc labeling.
+-- --
+-- -- WARNING: This function is only guaranteed to work correctly if the argument
+-- -- graph is a tree!
+-- --
+-- treeTagGlobal
+--   :: Graph a b
+--   -> M.Map Arc (Vec8 Pot)
+--   -> Labeling Bool
+-- treeTagGlobal graph labMap =
+--   let (trueBest, falseBest) =
+--         tagSubTree
+--           (treeRoot graph)
+--           graph
+--           (fmap explicate labMap)
+--       best = better trueBest falseBest
+--    in fmap getAny (bestLab best)
+-- 
+-- 
+-- -- | The function returns two `Best`s:
+-- --
+-- --   * The best labeling if the label of the root is `True`
+-- --   * The best labeling if the label of the root is `False`
+-- --
+-- tagSubTree
+--   :: G.Vertex
+--     -- ^ Root of the subtree
+--   -> Graph a b
+--     -- ^ The entire graph
+--   -- -> M.Map Arc (Vec8 Prob)
+--   -> M.Map Arc (M.Map (Out Bool) Double)
+--     -- ^ Explicated labeling potentials
+--   -> (Best, Best)
+-- tagSubTree root graph lmap =
+--   (bestWith True, bestWith False)
+--   where
+--     bestWith rootVal = setNode root rootVal . mconcat $ do
+--       child <- Graph.incoming root graph
+--       let arc = (child, root)
+--           pot arcv depv = (lmap M.! arc) M.!
+--             Out {arcVal=arcv, hedVal=rootVal, depVal=depv}
+--           (true, false) = tagSubTree child graph lmap
+--       return $ List.foldl1' better
+--         [ addArc arc True  (pot True  True)  true
+--         , addArc arc False (pot False True)  true
+--         , addArc arc True  (pot True  False) false
+--         , addArc arc False (pot False False) false ]
+
+
+----------------------------------------------
+-- Best4
+----------------------------------------------
+
+-- | The best labeling
+data Best4 = Best4
+  { true          :: Best
+    -- ^ The label of the root is `True`.  The root's outgoing arc can be
+    -- `True` or `False.
+  , falseZeroTrue :: Best
+    -- ^ The label of the root is `False` and all its incoming arcs are `False`
+    -- too.  The outgoing arc must be `False`.
+  , falseOneTrue  :: Best
+    -- ^ The label of the root is `False` and exactly one of its incoming arcs
+    -- is `True`.  The outgoing arc must be `True`.
+  , falseMoreTrue :: Best
+    -- ^ The label of the root is `False` and more than one of its incoming
+    -- arcs is `True`.  The outgoing arc can be `True` or `False.
+  }
+
+instance Semigroup Best4 where
+  b1 <> b2 = Best4
+    { true =
+        true b1 <> true b2
+    , falseZeroTrue =
+        falseZeroTrue b1 <> falseZeroTrue b2
+    , falseOneTrue = List.foldl1' better
+        [ falseZeroTrue b1 <> falseOneTrue  b2
+        , falseOneTrue  b1 <> falseZeroTrue b2
+        ]
+    , falseMoreTrue = List.foldl1' better
+        [ falseZeroTrue b1 <> falseMoreTrue b2
+        , falseMoreTrue b1 <> falseZeroTrue b2
+        , falseOneTrue  b1 <> falseOneTrue  b2
+        , falseOneTrue  b1 <> falseMoreTrue b2
+        , falseMoreTrue b1 <> falseOneTrue  b2
+        , falseMoreTrue b1 <> falseMoreTrue b2
+        ]
+    }
+
+-- instance Monoid Best4 where
+--   mempty = Best4 mempty mempty impossible impossible
+
+
+-- | Empty `Best4` for a given tree node.  Think of `mempty` with obligatory
+-- vertex and potential argument.
+emptyBest4 :: G.Vertex -> Double -> Best4
+emptyBest4 node pot = Best4
+  { true = addNode node True pot mempty
+  , falseZeroTrue = addNode node False 0.0 mempty
+  , falseOneTrue = impossible
+  , falseMoreTrue = impossible
+  }
+
 
 
 ----------------------------------------------
@@ -940,203 +909,71 @@ tagSubTreeC' root graph lmap nmap =
 ----------------------------------------------
 
 
--- | The best labeling
-data Best4 = Best4
-  { true          :: Best
-    -- ^ The label of the root is `True`.  The root's outgoing arc can be
-    -- `True` or `False.
-  , falseZeroTrue :: Best
-    -- ^ The label of the root is `False` and all its incoming arcs are `False`
-    -- too.  The outgoing arc must be `False`.
-  , falseOneTrue  :: Best
-    -- ^ The label of the root is `False` and exactly one of its incoming arcs
-    -- is `True`.  The outgoing arc must be `True`.
-  , falseMoreTrue :: Best
-    -- ^ The label of the root is `False` and more than one of its incoming
-    -- arcs is `True`.  The outgoing arc can be `True` or `False.
-  }
-
-instance Semigroup Best4 where
-  b1 <> b2 = Best4
-    { true =
-        true b1 <> true b2
-    , falseZeroTrue =
-        falseZeroTrue b1 <> falseZeroTrue b2
-    , falseOneTrue = List.foldl1' better
-        [ falseZeroTrue b1 <> falseOneTrue  b2
-        , falseOneTrue  b1 <> falseZeroTrue b2
-        ]
-    , falseMoreTrue = List.foldl1' better
-        [ falseZeroTrue b1 <> falseMoreTrue b2
-        , falseMoreTrue b1 <> falseZeroTrue b2
-        , falseOneTrue  b1 <> falseOneTrue  b2
-        , falseOneTrue  b1 <> falseMoreTrue b2
-        , falseMoreTrue b1 <> falseOneTrue  b2
-        , falseMoreTrue b1 <> falseMoreTrue b2
-        ]
-    }
-
--- instance Monoid Best4 where
---   mempty = Best4 mempty mempty impossible impossible
-
-
--- | Empty `Best4` for a given tree node.  Think of `mempty` with obligatory
--- vertex and potential argument.
-emptyBest4 :: G.Vertex -> Double -> Best4
-emptyBest4 node pot = Best4
-  { true = addNode node True pot mempty
-  , falseZeroTrue = addNode node False 0.0 mempty
-  , falseOneTrue = impossible
-  , falseMoreTrue = impossible
-  }
-
-
--- | Constrained version of `treeTagGlobal`
-treeTagConstrained
-  :: Graph a b
-  -> M.Map Arc (Vec8 Pot)
-  -> Labeling Bool
-treeTagConstrained graph labMap =
-  let Best4{..} =
-        tagSubTreeC
-          (treeRoot graph)
-          graph
-          (fmap explicate labMap)
-      best = List.foldl1' better
-        -- NOTE: `falseZeroOne` can be excluded in constrained decoding
-        [true, falseZeroTrue, falseMoreTrue]
-   in getAny <$> bestLab best
-
-
--- | Calculate `Best3` of the subtree.
-tagSubTreeC
-  :: G.Vertex
-    -- ^ Root of the subtree
-  -> Graph a b
-    -- ^ The entire graph (tree)
-  -> M.Map Arc (M.Map (Out Bool) Double)
-    -- ^ Explicated labeling potentials
-  -> Best4
-tagSubTreeC root graph lmap =
-  List.foldl' (<>) (emptyBest4 root 0.0) (map bestFor children)
-  where
-    children = Graph.incoming root graph
-    bestFor child =
-      let arc = (child, root)
-          pot arcv hedv depv = (lmap M.! arc) M.!
-            Out {arcVal=arcv, hedVal=hedv, depVal=depv}
-          Best4{..} = tagSubTreeC child graph lmap
-          -- NOTE: some of the configurations below are not allowed in
-          -- constrained decoding and hence are commented out.
-          true' = List.foldl1' better
-            [ addArc arc True  (pot True  True True)  true
-            , addArc arc False (pot False True True)  true
-            -- , addArc arc True  (pot True  True False) falseZeroTrue
-            , addArc arc False (pot False True False) falseZeroTrue
-            , addArc arc True  (pot True  True False) falseOneTrue
-            -- , addArc arc False (pot False True False) falseOneTrue
-            , addArc arc True  (pot True  True False) falseMoreTrue
-            , addArc arc False (pot False True False) falseMoreTrue
-            ]
-          falseZeroTrue' = List.foldl1' better
-            [ addArc arc False (pot False False True)  true
-            , addArc arc False (pot False False False) falseZeroTrue
-            -- , addArc arc False (pot False False False) falseOneTrue
-            , addArc arc False (pot False False False) falseMoreTrue
-            ]
-          falseOneTrue' = List.foldl1' better
-            [ addArc arc True (pot True False True)  true
-            -- , addArc arc True (pot True False False) falseZeroTrue
-            , addArc arc True (pot True False False) falseOneTrue
-            , addArc arc True (pot True False False) falseMoreTrue
-            ]
-       in Best4
-            { true = true'
-            , falseZeroTrue = falseZeroTrue'
-            , falseOneTrue  = falseOneTrue'
-            , falseMoreTrue = impossible
-            }
-
-
--- ----------------------------------------------
--- -- Experiments with global training
--- ----------------------------------------------
--- 
--- 
--- -- | Calculate the *marginal* probabilities of the individual node/arc
--- -- labelings.  This code is 100% experimental, no idea if it's going to work or
--- -- if the idea is even sound.
--- marginalize
+-- -- | Constrained version of `treeTagGlobal`
+-- treeTagConstrained
 --   :: Graph a b
---   -> M.Map Arc (BVar s (Vec8 Pot))
---   -> M.Map Arc (BVar s (Vec8 Prob))
--- marginalize graph potMap =
---   undefined
+--   -> M.Map Arc (Vec8 Pot)
+--   -> Labeling Bool
+-- treeTagConstrained graph labMap =
+--   let Best4{..} =
+--         tagSubTreeC
+--           (treeRoot graph)
+--           graph
+--           (fmap explicate labMap)
+--       best = List.foldl1' better
+--         -- NOTE: `falseZeroOne` can be excluded in constrained decoding
+--         [true, falseZeroTrue, falseMoreTrue]
+--    in getAny <$> bestLab best
 -- 
 -- 
--- -- -- | Perform the inside pass of the inside-outside algorithm.  On input the
--- -- -- function takes a map of potential vectors.  On output it should give sth.
--- -- -- like inside maginal probabilities...  To clarify.
--- -- inside
--- --   :: Graph a b
--- --   -> M.Map Arc (BVar s (Vec8 Pot))
--- --   -> M.Map Arc (BVar s (Vec8 Prob))
--- -- inside = undefined
--- 
--- 
--- -- | Inside *potentials*.  For the given vertex, the function (recursively)
--- -- calculates the sum of potentials of its possible inside labelings.  It also
--- -- preserves the inside potentials of the descendant vertices.
--- insideSub
---   :: (Reifies s W)
---   => Graph a b
---   -> M.Map Arc (BVar s (Vec8 Pot))
---   -> G.Vertex
---   -> M.Map (G.Vertex, Bool) (BVar s Double)
--- insideSub graph potMap =
--- 
---   -- TODO: consider using memoization to calculate a function from (G.Vertex,
---   -- Bool) to (BVar s Double) rather than storing the result in the map.
---   undefined -- go
--- 
+-- -- | Calculate `Best3` of the subtree.
+-- tagSubTreeC
+--   :: G.Vertex
+--     -- ^ Root of the subtree
+--   -> Graph a b
+--     -- ^ The entire graph (tree)
+--   -> M.Map Arc (M.Map (Out Bool) Double)
+--     -- ^ Explicated labeling potentials
+--   -> Best4
+-- tagSubTreeC root graph lmap =
+--   List.foldl' (<>) (emptyBest4 root 0.0) (map bestFor children)
 --   where
--- 
---     -- Recursively calculate the inside potential for the given node and label.
---     insidePot w wMwe = sum $ do
---       -- Loop over all @w@'s children nodes
---       v <- Graph.incoming w graph
---       -- Pick the MWE label of the child @v@
---       vMwe <- [False, True]
---       -- Pick the MWE label of the arc connecting @v@ with @w@; note that it is
---       -- possible to calculate the resulting potential faster, without
---       -- enumerating the possible arc labels
---       arcMwe <- [False, True]
---       -- The resulting potential
---       return $ insidePot v vMwe + arcPot potMap (v, vMwe) (w, wMwe) arcMwe
-
-
--- -- | Calculates the arc potential given the label of the head and the label of
--- -- the dependent.
--- arcPot 
---   :: forall s. (Reifies s W)
---   => M.Map Arc (BVar s (Vec8 Pot))
---     -- ^ Potential map (as calculated with the network)
---   -> (G.Vertex, Bool) 
---     -- ^ Dependent node and its label
---   -> (G.Vertex, Bool)
---     -- ^ Head node and its label
---   -> Bool
---     -- ^ Label of the arc
---   -> BVar s Double
--- arcPot potMap (dep, depMwe) (hed, hedMwe) arcMwe =
---   potVec `dot` BP.constVar (mask out)
---   where
---     potVec = BP.coerceVar (potMap M.! (dep, hed))
---     out = Out
---       { arcVal = arcMwe
---       , depVal = depMwe
---       , hedVal = hedMwe
---       }
+--     children = Graph.incoming root graph
+--     bestFor child =
+--       let arc = (child, root)
+--           pot arcv hedv depv = (lmap M.! arc) M.!
+--             Out {arcVal=arcv, hedVal=hedv, depVal=depv}
+--           Best4{..} = tagSubTreeC child graph lmap
+--           -- NOTE: some of the configurations below are not allowed in
+--           -- constrained decoding and hence are commented out.
+--           true' = List.foldl1' better
+--             [ addArc arc True  (pot True  True True)  true
+--             , addArc arc False (pot False True True)  true
+--             -- , addArc arc True  (pot True  True False) falseZeroTrue
+--             , addArc arc False (pot False True False) falseZeroTrue
+--             , addArc arc True  (pot True  True False) falseOneTrue
+--             -- , addArc arc False (pot False True False) falseOneTrue
+--             , addArc arc True  (pot True  True False) falseMoreTrue
+--             , addArc arc False (pot False True False) falseMoreTrue
+--             ]
+--           falseZeroTrue' = List.foldl1' better
+--             [ addArc arc False (pot False False True)  true
+--             , addArc arc False (pot False False False) falseZeroTrue
+--             -- , addArc arc False (pot False False False) falseOneTrue
+--             , addArc arc False (pot False False False) falseMoreTrue
+--             ]
+--           falseOneTrue' = List.foldl1' better
+--             [ addArc arc True (pot True False True)  true
+--             -- , addArc arc True (pot True False False) falseZeroTrue
+--             , addArc arc True (pot True False False) falseOneTrue
+--             , addArc arc True (pot True False False) falseMoreTrue
+--             ]
+--        in Best4
+--             { true = true'
+--             , falseZeroTrue = falseZeroTrue'
+--             , falseOneTrue  = falseOneTrue'
+--             , falseMoreTrue = impossible
+--             }
 
 
 ----------------------------------------------
@@ -1360,23 +1197,23 @@ errorMany targets outputs =
         _ -> error "errorMany: lists of different size"
 
 
--- | Network error on a given dataset.
-netError
-  :: ( Reifies s W, KnownNat dim
-     , B.BiComp dim comp
-     )
-  => ProbTyp
-  -> [Elem (BVar s (R dim))]
-  -> BVar s comp
-  -> BVar s Double
-netError ptyp dataSet net =
-  let
-    inputs = map graph dataSet
-    outputs = map (run ptyp net) inputs
-    -- targets = map (fmap BP.auto . mkTarget) dataSet
-    targets = map mkTarget dataSet
-  in
-    errorMany targets outputs
+-- -- | Network error on a given dataset.
+-- netError
+--   :: ( Reifies s W, KnownNat dim
+--      , B.BiComp dim comp
+--      )
+--   => ProbTyp
+--   -> [Elem (BVar s (R dim))]
+--   -> BVar s comp
+--   -> BVar s Double
+-- netError ptyp dataSet net =
+--   let
+--     inputs = map graph dataSet
+--     outputs = map (run ptyp net) inputs
+--     -- targets = map (fmap BP.auto . mkTarget) dataSet
+--     targets = map mkTarget dataSet
+--   in
+--     errorMany targets outputs
 
 
 -- | Network error on a given dataset.
