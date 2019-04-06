@@ -170,6 +170,7 @@ import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
   (R, L, BVar, Reifies, W, (#), (#>), dot)
 import qualified Numeric.LinearAlgebra.Static as LA
+import qualified Numeric.LinearAlgebra        as LD
 
 import           Net.New
 import           Net.Pair
@@ -446,7 +447,7 @@ runBoth
   -> BVar s comp'
   -> Graph (BVar s (R dim)) ()
     -- ^ Input graph labeled with initial hidden states
-  -> M.Map Arc (BVar s (Vec8 Prob))
+  -> M.Map Arc (BVar s (Vec8 Pot))
     -- ^ Output map with output potential values
 runBoth probTyp net netU graph =
   case probTyp of
@@ -1058,60 +1059,78 @@ replace xs el =
 ----------------------------------------------
 
 
--- | Cross entropy between the true and the artificial distributions
-crossEntropyHard
+softMaxCrossEntropy
   :: forall s. (Reifies s W)
-  => BVar s (Vec8 Prob)
+  => Vec8 Prob
     -- ^ Target ,,true'' distribution
-  -> BVar s (Vec8 Prob)
-    -- ^ Output ,,artificial'' distribution
+  -> BVar s (Vec8 Pot)
+    -- ^ Output ,,artificial'' distribution (represted by potentials)
   -> BVar s Double
-crossEntropyHard p0 q0 =
-  negate (p `dot` LBP.vmap' log' q)
+softMaxCrossEntropy p0 q0 =
+  softMaxCrossEntropy' (B.unVec p0) (BP.coerceVar q0)
+--   checkNaNBP "softMaxCrossEntropy" $ negate (p `dot` LBP.vmap' log' q)
+--   where
+--     -- p = BP.coerceVar p0 :: BVar s (R 8)
+--     p = BP.coerceVar (BP.auto p0) :: BVar s (R 8)
+--     q = BP.coerceVar q0
+--     -- avoid NaN when p = 0 and q = 0
+--     log' x
+--       | x > 0 = log x
+--       | otherwise = -1.0e8
+
+
+-- | Softmax + cross-entropy with manual gradient calculation.  Code adapted
+-- from the backprop tutorial to use the exp-normalize trick (see
+-- https://timvieira.github.io/blog/post/2014/02/11/exp-normalize-trick).
+softMaxCrossEntropy'
+  :: (KnownNat n, Reifies s W)
+  => R n
+    -- ^ Target *probabilities*
+  -> BVar s (R n)
+    -- ^ Output *potentials*
+  -> BVar s Double
+softMaxCrossEntropy' x = BP.liftOp1 . BP.op1 $ \y ->
+  let ymax     = LD.maxElement (LA.extract y)
+      expy     = LA.dvmap (exp . (\o -> o - ymax)) y
+      toty     = LD.sumElements (LA.extract expy)
+      softMaxY = LA.konst (1 / toty) * expy
+      smce     = negate (LA.dvmap log' softMaxY `LA.dot` x)
+--    in trace ("y: " ++ show (toList y)) $
+--       trace ("ymax: " ++ show ymax) $
+--       trace ("expy: " ++ show (toList expy)) $
+--       trace ("toty: " ++ show toty) $
+--       trace ("softMaxY: " ++ show (toList softMaxY)) $
+--       trace ("smce: " ++ show smce) $
+   in ( smce
+      , \d -> LA.konst d * (softMaxY - x)
+      )
   where
-    p = BP.coerceVar p0 :: BVar s (R 8)
-    q = BP.coerceVar q0
-    -- avoid NaN when p = 0 and q = 0
+    toList = LD.toList . LA.extract
+    -- to avoid NaN when p_i = 0 and q_i = 0
     log' x
       | x > 0 = log x
-      | otherwise = -1.0e8
+      -- TODO: is it a proper choice of epsilon?
+      | otherwise = -1.0e10
 
 
 -- -- | Cross entropy between the true and the artificial distributions
 -- crossEntropyHard
 --   :: forall s. (Reifies s W)
---   => BVar s (Vec8 Prob)
+--   => Vec8 Prob
 --     -- ^ Target ,,true'' distribution
 --   -> BVar s (Vec8 Prob)
 --     -- ^ Output ,,artificial'' distribution
 --   -> BVar s Double
--- crossEntropyHard p0 q0
---   | vp `at` 0 > 0 && vq `at` 0 <= 0 = error "1"
---   | vp `at` 1 > 0 && vq `at` 1 <= 0 = error "2"
---   | vp `at` 2 > 0 && vq `at` 2 <= 0 = error "3"
---   | vp `at` 3 > 0 && vq `at` 3 <= 0 = error "4"
---   | vp `at` 4 > 0 && vq `at` 4 <= 0 = error "5"
---   | vp `at` 5 > 0 && vq `at` 5 <= 0 = error "6"
---   | vp `at` 6 > 0 && vq `at` 6 <= 0 = error "7"
---   | vp `at` 7 > 0 && vq `at` 7 <= 0 = error "8"
---   | vq `at` 0 <= 0 = error "1.2"
---   | vq `at` 1 <= 0 = error "2.2"
---   | vq `at` 2 <= 0 = error "3.2"
---   | vq `at` 3 <= 0 = error "4.2"
---   | vq `at` 4 <= 0 = error (show $ map (\x -> vp `at` 4 > BP.auto x) [-0.1, 0.0 .. 1.0])
---   | vq `at` 5 <= 0 = error "6.2"
---   | vq `at` 6 <= 0 = error "7.2"
---   | vq `at` 7 <= 0 = error "8.2"
---   | otherwise = result
+-- crossEntropyHard p0 q0 =
+--   checkNaNBP "crossEntropyHard" $ negate (p `dot` LBP.vmap' log' q)
 --   where
---     result = negate (p `dot` LBP.vmap' log q)
---     p = BP.coerceVar p0 :: BVar s (R 8)
+--     -- p = BP.coerceVar p0 :: BVar s (R 8)
+--     p = BP.coerceVar (BP.auto p0) :: BVar s (R 8)
 --     q = BP.coerceVar q0
--- 
---     vp = LBP.extractV p
---     vq = LBP.extractV q
--- 
---     at v k = maybe 0 id $ v ^^? ix k
+--     -- avoid NaN when p = 0 and q = 0
+--     log' x
+--       | x > 0 = log x
+--       | otherwise = -1.0e8
 
 
 -- -- | Cross-entropy between the true and the artificial distributions
@@ -1149,39 +1168,25 @@ crossEntropyHard p0 q0 =
 --     flatten = F.toList . B.squash
 
 
--- | Selected version of cross-entropy.
-crossEntropy
-  :: forall s. (Reifies s W)
-  => BVar s (Vec8 Prob)
-    -- ^ Target ,,true'' distribution
-  -> BVar s (Vec8 Prob)
-    -- ^ Output ,,artificial'' distribution
-  -> BVar s Double
-crossEntropy =
-  -- crossEntropySoft
-  crossEntropyHard
-{-# crossEntropy #-}
-
-
 -- | Cross entropy between the target and the output values
 errorOne
   :: (Ord a, Reifies s W)
-  => M.Map a (BVar s (Vec8 Prob))
+  => M.Map a (Vec8 Prob)
     -- ^ Target values
-  -> M.Map a (BVar s (Vec8 Prob))
+  -> M.Map a (BVar s (Vec8 Pot))
     -- ^ Output values
   -> BVar s Double
 errorOne target output = sum $ do
   (key, tval) <- M.toList target
   let oval = output M.! key
-  return $ crossEntropy tval oval
+  return $ softMaxCrossEntropy tval oval
 
 
 -- | Error on a dataset.
 errorMany
   :: (Ord a, Reifies s W)
-  => [M.Map a (BVar s (Vec8 Prob))] -- ^ Targets
-  -> [M.Map a (BVar s (Vec8 Prob))] -- ^ Outputs
+  => [M.Map a (Vec8 Prob)] -- ^ Targets
+  -> [M.Map a (BVar s (Vec8 Pot))] -- ^ Outputs
 --   => [M.Map a (BVar s (R n))] -- ^ Targets
 --   -> [M.Map a (BVar s (R n))] -- ^ Outputs
 -- --   => [M.Map a (BVar s Double)] -- ^ Targets
@@ -1238,11 +1243,8 @@ netError' ptyp dataSet net netU =
 
 
 -- | Create the target map from the given dataset element.
-mkTarget
-  :: (Reifies s W)
-  => Elem (BVar s a)
-  -> M.Map Arc (BVar s (Vec8 Prob))
-mkTarget el = fmap BP.auto . M.fromList $ do
+mkTarget :: Elem a -> M.Map Arc (Vec8 Prob)
+mkTarget el = M.fromList $ do
   ((v, w), arcP) <- M.toList (arcMap el)
   let vP = nodMap el M.! v
       wP = nodMap el M.! w

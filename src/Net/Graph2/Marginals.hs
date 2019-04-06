@@ -33,6 +33,7 @@ import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
   (BVar, Reifies, W, dot)
 
+import qualified Net.Util as U
 import qualified Net.List as NL
 import           Net.Graph2.BiComp (Pot, Prob, Vec(..), Vec8, Out(..))
 import qualified Net.Graph2.BiComp as B
@@ -49,21 +50,17 @@ arcValues :: [Out Bool]
 arcValues = B.enumerate
 
 
-
--- | Potential of the given arc
-_arcPot
-  :: forall s. (Reifies s W)
-  => M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ Potential map
-  -> Arc
-    -- ^ The arc in question
-  -> Out Bool
-    -- ^ The value
-  -> BVar s Double
-_arcPot potMap arc out =
-  potVec `dot` BP.constVar (B.mask out)
-  where
-    potVec = BP.coerceVar (potMap M.! arc)
+-- -- | Potential of the given arc
+-- _arcPot
+--   :: forall s. (Reifies s W)
+--   => M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ Potential map
+--   -> Arc
+--     -- ^ The arc in question
+--   -> Out Bool
+--     -- ^ The value
+--   -> BVar s Double
+-- _arcPot potMap arc out =
 
 
 -- | Potential of the given arc
@@ -77,20 +74,10 @@ arcPot
     -- ^ The value
   -> BVar s Double
 arcPot potMap arc out =
-  BP.isoVar
-    (checkNaN "arcPot.forward")
-    (checkNaN "arcPot.backward")
-    (_arcPot potMap arc out)
-
-
--- | Make sure that the given number is not a NaN, otherwise raise an error
--- with the given string.
-checkNaN :: String -> Double -> Double
-checkNaN msg x
-  | x < infty = x
-  | otherwise = error msg
+  potVec `dot` BP.constVar (B.mask out)
   where
-    infty = read "Infinity"
+    potVec = BP.coerceVar (potMap M.! arc)
+{-# INLINE arcPot #-}
 
 
 -- | (Exp-)potential of the given arc  (exp . arcPot)
@@ -146,7 +133,7 @@ approxMarginals'
     -- ^ Node potentials
   -> Int 
     -- ^ Depth
-  -> M.Map Arc (BVar s (Vec8 Prob))
+  -> M.Map Arc (BVar s (Vec8 Pot))
 approxMarginals' graph potMap nodMap k = M.fromList $ do
   arc <- M.keys potMap
   return (arc, approxMarginals1' graph potMap nodMap arc k)
@@ -166,12 +153,13 @@ approxMarginals1'
     -- ^ The arc in focus
   -> Int 
     -- ^ Depth
-  -> BVar s (Vec8 Prob)
+  -> BVar s (Vec8 Pot)
 approxMarginals1' graph potMap nodMap (v, w) k =
   obfuscateBP . M.fromList $ zip arcValues probs
   where
     -- probs = NL.normalize . map exp $ do
-    probs = NL.softMaxLog $ do
+    -- probs = NL.softMaxLog $ do
+    probs = do
       out <- arcValues
       return $   insideLog graph potMap nodMap v (depVal out) k
         `mulLog` outsideLog graph potMap nodMap (v, w) (hedVal out) k

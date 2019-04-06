@@ -14,6 +14,8 @@ import qualified Numeric.Backprop as BP
 import qualified Prelude.Backprop as PB
 import           Numeric.Backprop (BVar, Reifies, W)
 
+import qualified Net.Util as U
+
 
 -- -- | Apply softmax to a list.
 -- softMax
@@ -45,10 +47,11 @@ softMaxLog
   => [BVar s Double]
   -> [BVar s Double]
 softMaxLog xs =
-  let b = maximum xs -- :: BVar s Double
-      ys = map (exp . (\x -> x - b)) xs
-      norm = sum ys
-   in map (/norm) ys
+  map (/norm) ys
+  where
+    b = maximum xs -- :: BVar s Double
+    ys = map (exp . (\x -> x - b)) xs
+    norm = sum ys
 
 
 -- | Normalize a list of non-negative values.

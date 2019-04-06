@@ -30,6 +30,10 @@ module Net.Util
   , elem1
   , elem2
   , toList
+
+--   , checkNaN
+--   , reportNaN
+--   , checkNaNBP
   ) where
 
 
@@ -50,6 +54,8 @@ import qualified Numeric.LinearAlgebra.Static.Vector as LA
 
 -- -- To make GHC automatically infer that, e.g., `KnownNat d => KnownNat (d + d)`
 -- {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
+
+import           Debug.Trace (trace)
 
 
 ------------------------------------
@@ -211,3 +217,38 @@ elem2 = fst . LBP.headTail . snd . LBP.headTail . snd . LBP.headTail
 -- | Convert the given vector to a list
 toList :: (KnownNat n) => R n -> [Double]
 toList = LAD.toList . LA.unwrap
+
+
+-- -- | Make sure that the given number is not a NaN, otherwise raise an error
+-- -- with the given string.
+-- checkNaNBP :: (Reifies s W) => String -> BVar s Double -> BVar s Double
+-- -- checkNaNBP = reportNaN
+-- checkNaNBP msg x = BP.isoVar
+--   (checkNaN $ msg ++ ".forward")
+--   (checkNaN $ msg ++ ".backward")
+--   x
+-- {-# INLINE checkNaNBP #-}
+-- 
+-- 
+-- -- | Make sure that the given number is not a NaN, otherwise raise an error
+-- -- with the given string.
+-- reportNaN :: (Reifies s W) => String -> BVar s Double -> BVar s Double
+-- reportNaN msg = BP.isoVar
+--   (check "forward")
+--   (check "backward")
+--   where
+--     check subMsg x 
+--       = trace (msg ++ "." ++ subMsg ++ ": " ++ show x)
+--       $ checkNaN ("<<<<" ++ msg ++ "." ++ subMsg ++ " => INFTY! >>>>") x
+-- {-# INLINE reportNaN #-}
+-- 
+-- 
+-- -- | Make sure that the given number is not a NaN, otherwise raise an error
+-- -- with the given string.
+-- checkNaN :: String -> Double -> Double
+-- checkNaN msg x
+--   | x < infty = x
+--   | otherwise = error msg
+--   where
+--     infty = read "Infinity"
+-- {-# INLINE checkNaN #-}
