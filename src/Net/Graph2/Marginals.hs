@@ -49,6 +49,23 @@ arcValues :: [Out Bool]
 arcValues = B.enumerate
 
 
+
+-- | Potential of the given arc
+_arcPot
+  :: forall s. (Reifies s W)
+  => M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Potential map
+  -> Arc
+    -- ^ The arc in question
+  -> Out Bool
+    -- ^ The value
+  -> BVar s Double
+_arcPot potMap arc out =
+  potVec `dot` BP.constVar (B.mask out)
+  where
+    potVec = BP.coerceVar (potMap M.! arc)
+
+
 -- | Potential of the given arc
 arcPot
   :: forall s. (Reifies s W)
@@ -60,9 +77,20 @@ arcPot
     -- ^ The value
   -> BVar s Double
 arcPot potMap arc out =
-  potVec `dot` BP.constVar (B.mask out)
+  BP.isoVar
+    (checkNaN "arcPot.forward")
+    (checkNaN "arcPot.backward")
+    (_arcPot potMap arc out)
+
+
+-- | Make sure that the given number is not a NaN, otherwise raise an error
+-- with the given string.
+checkNaN :: String -> Double -> Double
+checkNaN msg x
+  | x < infty = x
+  | otherwise = error msg
   where
-    potVec = BP.coerceVar (potMap M.! arc)
+    infty = read "Infinity"
 
 
 -- | (Exp-)potential of the given arc  (exp . arcPot)
