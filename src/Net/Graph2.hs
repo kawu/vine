@@ -453,7 +453,8 @@ runBoth probTyp net netU graph =
   case probTyp of
     SoftMax -> error "runBoth: softmax not implemented"
     Marginals ->
-      Margs.approxMarginals' graph (runRaw net graph) (runRawUni netU graph) 1
+      -- Margs.approxMarginals' graph (runRaw net graph) (runRawUni netU graph) 1
+      Margs.approxMarginalsMemo graph (runRaw net graph) (runRawUni netU graph) -- 1
     Constrained ->
       error "runBoth: constrained marginals approximation seems to have bugs!"
       -- Margs.approxMarginalsC' graph (runRaw net graph) (runRawUni netU graph) 1
