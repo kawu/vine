@@ -776,6 +776,49 @@ geoMean xs =
 ----------------------------------------------
 
 
+-- -- | Annotate the sentence with the given MWE type, given the specified arc and
+-- -- node labeling.
+-- annotate
+--   :: Cupt.MweTyp
+--     -- ^ MWE type to annotate with
+--   -> Cupt.Sent
+--     -- ^ .cupt sentence to annotate
+--   -> N.Labeling Bool
+--     -- ^ Node/arc labeling
+--   -> Cupt.Sent
+-- annotate mweTyp cupt N.Labeling{..} =
+-- 
+--   map enrich cupt
+-- 
+--   where
+-- 
+--     -- Enrich the token with new MWE information
+--     enrich tok = Prelude.maybe tok id $ do
+--       Cupt.TokID i <- return (Cupt.tokID tok)
+--       mweId <- M.lookup i mweIdMap
+--       let newMwe = (mweId, mweTyp)
+--       return tok {Cupt.mwe = newMwe : Cupt.mwe tok}
+-- 
+--     -- Determine the set of MWE nodes and arcs
+--     nodSet = trueKeys nodLab
+--     arcSet = trueKeys arcLab
+-- 
+--     -- The set of keys with `True` values
+--     trueKeys m = S.fromList $ do
+--       (x, val) <- M.toList m
+--       guard val
+--       return x
+-- 
+--     -- Determine the mapping from nodes to new MWE id's
+--     ccs = findConnectedComponents arcSet
+--     mweIdMap = M.fromList . concat $ do
+--       (cc, mweId) <- zip ccs [maxMweID cupt + 1 ..]
+--       (v, w) <- S.toList cc
+--       return $ filter ((`S.member` nodSet) . fst)
+--         [(v, mweId), (w, mweId)]
+
+
+
 -- | Annotate the sentence with the given MWE type, given the specified arc and
 -- node labeling.
 annotate
@@ -786,9 +829,11 @@ annotate
   -> N.Labeling Bool
     -- ^ Node/arc labeling
   -> Cupt.Sent
-annotate mweTyp cupt N.Labeling{..} =
-
-  map enrich cupt
+annotate mweTyp cupt N.Labeling{..}
+  
+  -- We only annotate sentence of length > 1!
+  | length cupt > 1 = map enrich cupt
+  | otherwise = cupt
 
   where
 
@@ -801,13 +846,18 @@ annotate mweTyp cupt N.Labeling{..} =
 
     -- Determine the set of MWE nodes and arcs
     nodSet = trueKeys nodLab
-    arcSet = trueKeys arcLab
+    arcSet = trueKeys arcLab `S.union` nodeLoops
 
     -- The set of keys with `True` values
     trueKeys m = S.fromList $ do
       (x, val) <- M.toList m
       guard val
       return x
+
+    -- The set of one node cycles
+    nodeLoops = S.fromList $ do
+      v <- S.toList nodSet
+      return (v, v)
 
     -- Determine the mapping from nodes to new MWE id's
     ccs = findConnectedComponents arcSet

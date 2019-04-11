@@ -193,6 +193,7 @@ import           Net.Graph2.BiComp
 import qualified Net.Graph2.BiComp as B
 import qualified Net.Graph2.UniComp as U
 import qualified Net.Graph2.Marginals as Margs
+import qualified Net.Graph2.Global as Global
 import qualified Net.Input as I
 
 import           Debug.Trace (trace)
@@ -232,11 +233,12 @@ netErrorT
   -> Elem (R 300)
   -> BVar s Transparent
   -> BVar s Double
-netErrorT ptyp x net =
+netErrorT _ptyp x net =
   -- TODO: maybe should rely on `Sent`, as defined in the `MWE2` module?  Also
   -- have a look at `tagT` in `MWE2`.
   let x' = runInp x net
-   in netError' ptyp [x'] (net ^^. biaMod) (net ^^. uniMod)
+--    in netError' ptyp [x'] (net ^^. biaMod) (net ^^. uniMod)
+   in negate $ logLL [x'] (net ^^. biaMod) (net ^^. uniMod)
 
 
 -- | Run the input transformation layers.
@@ -1256,26 +1258,32 @@ mkTarget el = M.fromList $ do
   return ((v, w), encode target)
 
 
--- -- | A version of `netError working on transformed embeddings
--- netError'
---   :: ( Reifies s W, KnownNat d
---      , Ord a, Show a, Ord b, Show b
---      , B.BiComp d a b comp
---      )
---   => ProbTyp
--- --   -> Proxy d
--- --     -- ^ TODO: remove; we don't actually need @d@!
---   -> [(Elem d a b, [BVar s (R i)])]
---     -- ^ Input elements + transformed embeddings
---   -> BVar s comp
---   -> BVar s Double
--- netError' ptyp dataSet net =
---   let
---     inputs = map graph (map fst dataSet)
---     outputs = map (run ptyp net) inputs
---     targets = map (fmap BP.auto . mkTarget) (map fst dataSet)
---   in
---     errorMany targets outputs
+----------------------------------------------
+-- Log-likelihood
+----------------------------------------------
+
+
+-- | Log-likelihood of the given dataset
+logLL
+  :: ( Reifies s W, KnownNat dim
+     , B.BiComp dim comp
+     , U.UniComp dim comp'
+     )
+  => [Elem (BVar s (R dim))]
+  -> BVar s comp
+  -> BVar s comp'
+  -> BVar s Double
+logLL dataSet bi uni = sum $ do
+  el <- dataSet
+  let labelling = Global.Labelling
+        { nodLab = fmap (>0.5) (nodMap el)
+        , arcLab = fmap (>0.5) (arcMap el)
+        }
+  return $ Global.probLog
+    (graph el)
+    labelling
+    (runRaw bi $ graph el)
+    (runRawUni uni $ graph el)
 
 
 ----------------------------------------------
