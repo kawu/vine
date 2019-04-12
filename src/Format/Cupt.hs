@@ -49,9 +49,9 @@ module Format.Cupt
   ) where
 
 
--- import           Control.Arrow (second)
-
 import           GHC.Generics (Generic)
+
+import           Control.DeepSeq (NFData)
 
 import           Data.Binary (Binary)
 -- import qualified Data.Binary as Bin
@@ -108,7 +108,7 @@ data GenToken mwe = Token
     -- ^ MWE-related annotation. It might be a list, i.e., the token can be a
     -- part of several MWEs. Note that only the first occurrence of an MWE is
     -- supplied with the `MweTyp`e.
-  } deriving (Show, Eq, Ord, Generic, Binary)
+  } deriving (Show, Eq, Ord, Generic, Binary, NFData)
 
 
 -- | Word index, integer starting at 1 for each new sentence; may be a range for
@@ -123,7 +123,7 @@ data TokID
   --   -- ^ An empty node (marked as `CopyOf` in UD data)
   -- NOTE: `TokIDCopy` was commented out because it is very rare and makes data
   -- processing much harder at the same time.
-  deriving (Show, Eq, Ord, Generic, Binary)
+  deriving (Show, Eq, Ord, Generic, Binary, NFData)
 
 
 -- | Sentence-local MWE ID.

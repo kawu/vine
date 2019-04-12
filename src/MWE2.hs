@@ -40,7 +40,7 @@ module MWE2
   -- * Tagging
   , TagConfig(..)
   -- , tag
-  , tagT
+  -- , tagT
   -- , tagMany
   -- , tagManyO
   , tagManyT
@@ -55,6 +55,7 @@ import           GHC.TypeNats (KnownNat)
 
 import           Control.Monad (guard, forM_)
 import           Control.DeepSeq (NFData)
+import           Control.Parallel.Strategies (parMap, rseq, rdeepseq, Strategy)
 
 import           Lens.Micro ((^.))
 
@@ -83,6 +84,7 @@ import qualified Data.List as List
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 import           Data.Binary (Binary)
 -- import qualified Data.Binary as Bin
@@ -692,13 +694,13 @@ zipSafe xs ys
 
 
 -- | Tag a single sentence with the given network.
-tagT
+tagToText
   :: TagConfig
   -> N.Transparent   -- ^ Network parameters
   -> Sent 300        -- ^ Cupt sentence
-  -> IO ()
-tagT tagCfg net sent =
-  L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
+  -> T.Text
+tagToText tagCfg net sent =
+  L.toStrict $ Cupt.renderPar [Cupt.abstract sent']
   where
     elem = N.evalInp (mkElem (const False) sent) net
     tagF
@@ -716,31 +718,13 @@ tagT tagCfg net sent =
     sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
 
 
--- -- !!! TODO MARKED !!!
--- -- | Tag a single sentence with the given network.
--- tagT
---   :: TagConfig
---   -> N.Transparent   -- ^ Network parameters
---   -> Sent 300        -- ^ Cupt sentence
---   -> IO ()
--- tagT cfg net sent =
---   tag cfg (net ^. N.biaMod) $ Sent
---     { cuptSent = cuptSent sent
---     , wordEmbs 
---         = I.evalTransform (net ^. N.traMod)
---         . I.evalInput (net ^. N.inpMod)
---         $ zip (cuptSent sent) (wordEmbs sent)
---     }
-
-
--- -- | Tag a single sentence with the given network.
--- tagT
---   :: TagConfig
---   -> N.Transparent   -- ^ Network parameters
---   -> Sent 300        -- ^ Cupt sentence
---   -> IO ()
--- tagT cfg net sent =
---   tag cfg (net ^. N.biaMod) sent
+-- | Tag and annotate sentences in parallel.
+tagManyTpar
+  :: TagConfig
+  -> N.Transparent
+  -> [Sent 300]
+  -> [T.Text]
+tagManyTpar cfg net = parMap rseq (tagToText cfg net)
 
 
 -- | Tag sentences with the opaque network.
@@ -749,11 +733,37 @@ tagManyT
   -> N.Transparent
   -> [Sent 300]
   -> IO ()
-tagManyT cfg net cupt = do
-  forM_ cupt $ \sent -> do
+tagManyT cfg net cupt0 = do
+  forM_ (zip cupt0 cupt) $ \(sent0, sent) -> do
     T.putStr "# "
-    T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
-    tagT cfg net sent
+    T.putStrLn . T.unwords . map Cupt.orth $ cuptSent sent0
+    T.putStrLn sent
+  where
+    cupt = tagManyTpar cfg net cupt0
+
+
+-- -- | Tag a single sentence with the given network.
+-- tagT
+--   :: TagConfig
+--   -> N.Transparent   -- ^ Network parameters
+--   -> Sent 300        -- ^ Cupt sentence
+--   -> IO ()
+-- tagT tagCfg net sent =
+--   let sent' = tagToText tagCfg net sent
+--    in T.putStrLn sent'
+-- 
+-- 
+-- -- | Tag sentences with the opaque network.
+-- tagManyT
+--   :: TagConfig
+--   -> N.Transparent
+--   -> [Sent 300]
+--   -> IO ()
+-- tagManyT cfg net cupt = do
+--   forM_ cupt $ \sent -> do
+--     T.putStr "# "
+--     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
+--     tagT cfg net sent
 
 
 -- | Average of the list of numbers
