@@ -73,6 +73,7 @@ module Net.Graph2
 
   -- * Transparent
   , Transparent(..)
+  , Config(..)
   , inpMod
   , traMod
   , biaMod
@@ -227,18 +228,24 @@ instance (a ~ T.Text, b ~ T.Text) => New a b Transparent where
 
 
 -- | Net error with `Transparent`
+--
+-- TODO: maybe should rely on `Sent`, as defined in the `MWE2` module?  Also
+-- have a look at `tagT` in `MWE2`.
+--
 netErrorT
   :: (Reifies s W)
-  => ProbTyp
+  => Config
   -> Elem (R 300)
   -> BVar s Transparent
   -> BVar s Double
-netErrorT _ptyp x net =
-  -- TODO: maybe should rely on `Sent`, as defined in the `MWE2` module?  Also
-  -- have a look at `tagT` in `MWE2`.
-  let x' = runInp x net
---    in netError' ptyp [x'] (net ^^. biaMod) (net ^^. uniMod)
-   in negate $ logLL [x'] (net ^^. biaMod) (net ^^. uniMod)
+netErrorT cfg x net =
+  case probTyp cfg of
+    Marginals ->
+      netError' (version cfg) [x'] (net ^^. biaMod) (net ^^. uniMod)
+    Global ->
+      negate $ logLL (version cfg) [x'] (net ^^. biaMod) (net ^^. uniMod)
+  where
+    x' = runInp x net
 
 
 -- | Run the input transformation layers.
@@ -364,15 +371,21 @@ type Arc3 d
 
 -- | Typ of probabilities to employ
 data ProbTyp
-  = SoftMax
-    -- ^ Just softmax
-  | Marginals -- Int
-    -- ^ Marginals (approximated)
-  | Constrained -- Int
-    -- ^ Constrained version of marginals
+  = Marginals
+    -- ^ Marginals
+  | Global
+    -- ^ Global
   deriving (Generic)
 
 instance Interpret ProbTyp
+
+
+data Config = Config
+  { probTyp :: ProbTyp
+  , version :: Global.Version
+  } deriving (Generic)
+
+instance Interpret Config
 
 
 -- | Run the given (bi-affine) network over the given graph within the context
@@ -444,22 +457,27 @@ runBoth
      , B.BiComp dim comp
      , U.UniComp dim comp'
      )
-  => ProbTyp
+  => Global.Version
   -> BVar s comp
   -> BVar s comp'
   -> Graph (BVar s (R dim)) ()
     -- ^ Input graph labeled with initial hidden states
   -> M.Map Arc (BVar s (Vec8 Pot))
     -- ^ Output map with output potential values
-runBoth probTyp net netU graph =
-  case probTyp of
-    SoftMax -> error "runBoth: softmax not implemented"
-    Marginals ->
-      -- Margs.approxMarginals' graph (runRaw net graph) (runRawUni netU graph) 1
-      Margs.approxMarginalsMemo graph (runRaw net graph) (runRawUni netU graph) -- 1
-    Constrained ->
-      error "runBoth: constrained marginals approximation seems to have bugs!"
-      -- Margs.approxMarginalsC' graph (runRaw net graph) (runRawUni netU graph) 1
+runBoth version net netU graph =
+  case version of
+    Global.Free ->
+      Margs.approxMarginalsMemo graph (runRaw net graph) (runRawUni netU graph)
+    Global.Constrained ->
+      Margs.approxMarginalsMemoC graph (runRaw net graph) (runRawUni netU graph)
+--   case probTyp of
+--     SoftMax -> error "runBoth: softmax not implemented"
+--     Marginals ->
+--       -- Margs.approxMarginals' graph (runRaw net graph) (runRawUni netU graph) 1
+--       Margs.approxMarginalsMemo graph (runRaw net graph) (runRawUni netU graph) -- 1
+--     Constrained ->
+--       error "runBoth: constrained marginals approximation seems to have bugs!"
+--       -- Margs.approxMarginalsC' graph (runRaw net graph) (runRawUni netU graph) 1
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
@@ -1230,16 +1248,16 @@ netError'
      , B.BiComp dim comp
      , U.UniComp dim comp'
      )
-  => ProbTyp
+  => Global.Version
   -> [Elem (BVar s (R dim))]
   -> BVar s comp
   -> BVar s comp'
   -> BVar s Double
-netError' ptyp dataSet net netU =
+netError' version dataSet net netU =
   let
     inputs = map graph dataSet
-    outputs = map (runBoth ptyp net netU) inputs
-    -- outputs = map (run ptyp net) inputs
+    -- outputs = map (runBoth ptyp net netU) inputs
+    outputs = map (runBoth version net netU) inputs
     targets = map mkTarget dataSet
   in
     errorMany targets outputs
@@ -1269,17 +1287,19 @@ logLL
      , B.BiComp dim comp
      , U.UniComp dim comp'
      )
-  => [Elem (BVar s (R dim))]
+  => Global.Version
+  -> [Elem (BVar s (R dim))]
   -> BVar s comp
   -> BVar s comp'
   -> BVar s Double
-logLL dataSet bi uni = sum $ do
+logLL version dataSet bi uni = sum $ do
   el <- dataSet
   let labelling = Global.Labelling
         { nodLab = fmap (>0.5) (nodMap el)
         , arcLab = fmap (>0.5) (arcMap el)
         }
   return $ Global.probLog
+    version
     (graph el)
     labelling
     (runRaw bi $ graph el)

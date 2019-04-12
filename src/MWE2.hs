@@ -469,7 +469,7 @@ instance Interpret Method where
 data Config = Config
   { sgd :: SGD.Config
   , method :: Method
-  , probTyp :: N.ProbTyp
+  , probCfg :: N.Config
   } deriving (Generic)
 
 instance Interpret Config
@@ -614,8 +614,8 @@ trainT cfg mweTyp cupt tra0 action = do
       (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
       (reportAndExec dataSet) dataSet tra0
   where 
-    gradient x = BP.gradBP (N.netErrorT (probTyp cfg) x)
-    quality x = BP.evalBP (N.netErrorT (probTyp cfg) x)
+    gradient x = BP.gradBP (N.netErrorT (probCfg cfg) x)
+    quality x = BP.evalBP (N.netErrorT (probCfg cfg) x)
     reportAndExec dataSet tra = do
       x <- SGD.reportObjective quality dataSet tra
       action tra

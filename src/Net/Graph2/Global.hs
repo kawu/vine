@@ -13,9 +13,12 @@
 
 module Net.Graph2.Global
   ( Labelling(..)
+  , Version(..)
   , probLog
   ) where
 
+
+import           GHC.Generics (Generic)
 
 import           Control.Monad (guard)
 
@@ -23,6 +26,8 @@ import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
+
+import           Dhall (Interpret)
 
 import qualified Numeric.Backprop as BP
 import           Numeric.LinearAlgebra.Static.Backprop
@@ -40,10 +45,24 @@ import qualified Net.Graph2.Marginals as Margs
 ----------------------------------------------
 
 
+-- | If you pick `Contrained`, only the labellings satisfying certain
+-- properties will be considered in the calculation of the partition factor.
+-- Otherwise, the entire set of the internally consistent labellings will be
+-- considered.
+data Version
+  = Free
+  | Constrained
+  deriving (Generic)
+
+instance Interpret Version
+
+
 -- | Probability of graph compound labelling
 probLog
   :: (Reifies s W)
-  => Graph a b
+  => Version
+    -- ^ Constrained version or not?
+  -> Graph a b
     -- ^ The underlying graph
   -> Labelling Bool
     -- ^ Target labelling of which we want to determine the probability
@@ -53,16 +72,21 @@ probLog
     -- ^ The corresponding node potential map (normal domain!)
   -> BVar s Double
     -- ^ The resulting (sum of) potential(s) (log domain!)
-probLog graph ell potMap nodMap =
-  score graph ell potMap nodMap - norm
+probLog version graph ell potMap nodMap =
+  score graph ell potMap nodMap - partition
   where
-    norm   = (sumLog . Maybe.catMaybes)
-      [inside root False False, inside root True False]
-    -- norm   = inside root False
-    -- Funny thing is, the inside calculation blows up without memoization!
-    inside = Margs.insideLogMemoC graph potMap nodMap
-    -- inside = Margs.insideLogMemo graph potMap nodMap
-    root   = treeRoot graph
+    root = treeRoot graph
+    partition =
+      case version of
+        Constrained -> (sumLog . Maybe.mapMaybe Margs.unMVar)
+          [inside root False False, inside root True False]
+          where
+            -- Funny thing is, the inside calculation blows up without
+            -- memoization!
+            inside = Margs.insideLogMemoC graph potMap nodMap
+        Free -> inside root False
+          where
+            inside = Margs.insideLogMemo graph potMap nodMap
 
 
 -- | Global score of the given labelling

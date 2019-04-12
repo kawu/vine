@@ -11,6 +11,7 @@ module Net.Graph2.Marginals
   --   approxMarginals
     approxMarginals'
   , approxMarginalsMemo
+  , approxMarginalsMemoC
   -- , approxMarginalsC
   -- , approxMarginalsC'
 
@@ -19,6 +20,7 @@ module Net.Graph2.Marginals
   -- , insideLog
   , insideLogMemo
   , insideLogMemoC
+  , MVar(..)
   ) where
 
 
@@ -147,6 +149,60 @@ approxMarginals' graph potMap nodMap k = M.fromList $ do
   return (arc, approxMarginals1' graph potMap nodMap arc k)
 
 
+-- | Approximate marginal probabilities with constraints
+--
+-- TODO: are the output really potentials, or just probabilities in log domain?
+--
+approxMarginalsMemoC
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Arc potentials
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ Node potentials
+  -> M.Map Arc (BVar s (Vec8 Pot))
+approxMarginalsMemoC graph potMap nodMap = M.fromList $ do
+  arc <- M.keys potMap
+  return (arc, marginals arc)
+  where
+    marginals = approxMarginals1MemoC graph potMap nodMap
+
+
+-- | Approximate the marginal probabilities of the given arc.  If @depth = 0@,
+-- only the potential of the arc is taken into account.
+approxMarginals1MemoC
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Arc potentials
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ Node potentials
+  -> Arc
+    -- ^ The arc in focus
+  -> BVar s (Vec8 Pot)
+approxMarginals1MemoC graph potMap nodMap =
+  marginals
+  where
+    inside = insideLogMemoC graph potMap nodMap
+    outside = outsideLogMemoC graph potMap nodMap inside
+    marginals (v, w) =
+      obfuscateBP . M.fromList $ zip arcValues probs
+      where
+        fromJust may =
+          case may of
+            Just x -> x
+            -- TODO: is it a proper choice of epsilon?
+            Nothing -> -1.0e100
+        probs = do
+          out <- arcValues
+          return . fromJust . unMVar $
+            inside v (depVal out) (arcVal out) *
+            outside (v, w) (hedVal out) (arcVal out) *
+            (MVar . Just $ arcPot potMap (v, w) out)
+
+
 -- | Approximate marginal probabilities
 --
 -- TODO: are the output really potentials, or just probabilities in log domain?
@@ -165,33 +221,6 @@ approxMarginalsMemo graph potMap nodMap = M.fromList $ do
   return (arc, marginals arc)
   where
     marginals = approxMarginals1Memo graph potMap nodMap
-
-
--- | Approximate the marginal probabilities of the given arc.  If @depth = 0@,
--- only the potential of the arc is taken into account.
-approxMarginals1'
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ Arc potentials
-  -> M.Map G.Vertex (BVar s Double)
-    -- ^ Node potentials
-  -> Arc
-    -- ^ The arc in focus
-  -> Int 
-    -- ^ Depth
-  -> BVar s (Vec8 Pot)
-approxMarginals1' graph potMap nodMap (v, w) k =
-  obfuscateBP . M.fromList $ zip arcValues probs
-  where
-    -- probs = NL.normalize . map exp $ do
-    -- probs = NL.softMaxLog $ do
-    probs = do
-      out <- arcValues
-      return $   insideLogK graph potMap nodMap v (depVal out) k
-        `mulLog` outsideLogK graph potMap nodMap (v, w) (hedVal out) k
-        `mulLog` arcPot potMap (v, w) out
 
 
 -- | Approximate the marginal probabilities of the given arc.  If @depth = 0@,
@@ -220,6 +249,33 @@ approxMarginals1Memo graph potMap nodMap =
           return $   inside v (depVal out)
             `mulLog` outside (v, w) (hedVal out)
             `mulLog` arcPot potMap (v, w) out
+
+
+-- | Approximate the marginal probabilities of the given arc.  If @depth = 0@,
+-- only the potential of the arc is taken into account.
+approxMarginals1'
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Arc potentials
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ Node potentials
+  -> Arc
+    -- ^ The arc in focus
+  -> Int 
+    -- ^ Depth
+  -> BVar s (Vec8 Pot)
+approxMarginals1' graph potMap nodMap (v, w) k =
+  obfuscateBP . M.fromList $ zip arcValues probs
+  where
+    -- probs = NL.normalize . map exp $ do
+    -- probs = NL.softMaxLog $ do
+    probs = do
+      out <- arcValues
+      return $   insideLogK graph potMap nodMap v (depVal out) k
+        `mulLog` outsideLogK graph potMap nodMap (v, w) (hedVal out) k
+        `mulLog` arcPot potMap (v, w) out
 
 
 -- | Node potential at a given node (TODO: make analogy to `arcPotExp`)
@@ -872,30 +928,30 @@ insideLogMemoC
     -- ^ The value assigned to the node
   -> Bool
     -- ^ The value assigned to the arc from the given node to its parent
-  -> Maybe (BVar s Double)
+  -> MVar s Double
     -- ^ The resulting (sum of) potential(s)
 insideLogMemoC graph potMap nodMap =
-  \v x xArc -> unMVar $ inside v x xArc
+  \v x xArc -> inside v x xArc
   where
-    -- NOTE: theoretically memoization on the first two arguments should be
-    -- more efficient
+    -- NOTE: memoization on the first two arguments is more efficient?
     inside = Memo.memo2 Memo.integral Memo.bool inside'
     -- inside = Memo.memo3 Memo.integral Memo.bool Memo.bool inside'
     inside' v x =
-      \xArc -> here * downOne xArc
+      -- \xArc -> here * downOne xArc
+      \xArc -> here * constrain down x xArc
       where
         here = MVar . Just $ thereLog nodMap v x
         -- constraints are handled below
-        downOne xArc
-          | x = sum
-              [zeroTrue down, oneTrue down, moreTrue down]
-          | not x && not xArc = sum
-              [zeroTrue down, moreTrue down]
-          | not x && xArc = sum
-              [oneTrue down, moreTrue down]
-          | otherwise = error "insideLogMemoC: impossible happened"
---           | otherwise = sum
+--         downOne xArc
+--           | x = sum
 --               [zeroTrue down, oneTrue down, moreTrue down]
+--           | not x && not xArc = sum
+--               [zeroTrue down, moreTrue down]
+--           | not x && xArc = sum
+--               [oneTrue down, moreTrue down]
+--           | otherwise = error "insideLogMemoC: impossible happened"
+-- --           | otherwise = sum
+-- --               [zeroTrue down, oneTrue down, moreTrue down]
         down = product $ do
           -- for each child
           c <- incoming v graph
@@ -909,10 +965,85 @@ insideLogMemoC graph potMap nodMap =
             let ins = inside c (depVal y) (arcVal y)
             -- the resulting (exponential) potential
             let val = ins * (MVar . Just) (arcPot potMap (c, v) y)
-            return $
-              if arcVal y
-                 then justOne val
-                 else justZero val
+            return $ if arcVal y then justOne val else justZero val
+
+
+-- | Outside computation (log domain)
+outsideLogMemoC
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ The corresponding potential map (normal domain!)
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ The corresponding node potential map (normal domain!)
+  -> (G.Vertex -> Bool -> Bool -> MVar s Double)
+    -- ^ Inside calculation function
+  -> Arc
+    -- ^ The arc in question @(v, w)@; we focus on the node @w@, the other is
+    -- given as context
+  -> Bool
+    -- ^ The value assigned to the node @w@
+  -> Bool
+    -- ^ The value assigned to the arc @(v, w)@
+  -> MVar s Double
+    -- ^ The resulting (sum of) (exp-)potential(s) (log domain!)
+outsideLogMemoC graph potMap nodMap inside =
+  outside
+  where
+    outside = Memo.memo3
+      (Memo.pair Memo.integral Memo.integral) Memo.bool Memo.bool outside'
+    outside' (v, w) x xArc =
+      here * constrain both x xArc
+      where
+        here = MVar . Just $ thereLog nodMap w x
+        both = up * down
+        up = product $ do
+          -- for each parent (should be only one!)
+          p <- outgoing w graph
+          return . sum $ do
+            -- for each corresponding arc value
+            y <- arcValues
+            -- such that the dependent of the value = x
+            guard $ depVal y == x
+            -- return the resulting (exponential) potential
+            let val = (MVar . Just $ arcPot potMap (w, p) y)
+                    * outside (w, p) (hedVal y) (arcVal y)
+            return $ if arcVal y then justOne val else justZero val
+        down = product $ do
+          -- for each child
+          c <- incoming w graph
+          -- different than v
+          guard $ c /= v
+          -- return the corresponding sum
+          return . sum $ do
+            -- for each corresponding arc value
+            y <- arcValues
+            -- such that the head of the value = x
+            guard $ hedVal y == x
+            -- return the resulting (exponential) potential
+            let val = (MVar . Just $ arcPot potMap (c, w) y)
+                    * inside c (depVal y) (arcVal y)
+            return $ if arcVal y then justOne val else justZero val
+
+
+-- | Constrain the result for the given node and its surrounding, given the
+-- node's label and the label of a specific arc in focus.
+constrain 
+  :: (Num a)
+  => Res a
+  -> Bool -- ^ Node label
+  -> Bool -- ^ Arc label
+  -> a
+constrain res x xArc
+  | x = sum
+      [zeroTrue res, oneTrue res, moreTrue res]
+  | not x && not xArc = sum
+      [zeroTrue res, moreTrue res]
+  | not x && xArc = sum
+      [oneTrue res, moreTrue res]
+  | otherwise = error "constrain: impossible happened"
+{-# INLIN constrain #-}
 
 
 -- -- | Inside pass (log domain)
