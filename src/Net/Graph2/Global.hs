@@ -84,7 +84,8 @@ probLog version graph ell potMap nodMap =
             -- Funny thing is, the inside calculation blows up without
             -- memoization!
             inside = Margs.insideLogMemoC graph potMap nodMap
-        Free -> inside root False
+        Free ->
+          inside root False `addLog` inside root True
           where
             inside = Margs.insideLogMemo graph potMap nodMap
 
