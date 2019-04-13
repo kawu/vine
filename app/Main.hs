@@ -25,7 +25,8 @@ import qualified Data.IORef as IORef
 
 import qualified Numeric.LinearAlgebra.Static as LA
 
-import qualified Dhall as Dhall
+import qualified Dhall
+-- import qualified DhallUtils as DU
 
 import           System.FilePath (isAbsolute, (</>), (<.>))
 
@@ -228,7 +229,13 @@ run cmd =
     Train TrainConfig{..} -> do
 
       -- SGD configuration
-      sgdCfg <- Dhall.input Dhall.auto (dhallPath trainSgdCfgPath)
+      -- let (inputSettings, interpSettings) = DU.doubleSettings
+      sgdCfg <-
+        Dhall.input
+        -- Dhall.inputWithSettings inputSettings
+          Dhall.auto
+          -- (Dhall.autoWith interpSettings)
+          (dhallPath trainSgdCfgPath)
 --         case trainSgdCfgPath of
 --           Nothing -> return MWE.defTrainCfg
 --           Just configPath ->

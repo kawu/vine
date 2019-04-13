@@ -68,8 +68,8 @@ import           Numeric.LinearAlgebra.Static.Backprop (R)
 import           Numeric.Backprop (Reifies, W, BVar, (^^.))
 import qualified Numeric.Backprop as BP
 
-import           Dhall -- (Interpret)
-import           Dhall.Core (Expr(..))
+import           Dhall (Interpret(..), genericAuto)
+-- import           Dhall.Core (Expr(..))
 import qualified Dhall.Map as Map
 -- import qualified Data.Aeson as JSON
 
@@ -106,6 +106,7 @@ import qualified Net.Graph2 as N
 import qualified Net.Graph2.BiComp as B
 import qualified Net.Graph2.UniComp as U
 import qualified Net.Input as I
+import qualified DhallUtils as DU
 
 -- import Debug.Trace (trace)
 
@@ -463,7 +464,7 @@ data Method
   deriving (Generic)
 
 instance Interpret Method where
-  autoWith _ = rmUnion_1 genericAuto
+  autoWith _ = DU.rmUnion_1 genericAuto
 
 
 data Config = Config
@@ -935,53 +936,53 @@ maxMweID =
       xs -> Max . maximum $ map fst xs
 
 
-----------------------------------------------
--- Dhall Utils
---
--- TODO: copy from MWE
-----------------------------------------------
-
-
--- | Remove the top-level _1 fields from the given union type.
-rmUnion_1 :: Type a -> Type a
-rmUnion_1 typ = typ
-  { extract = \expr -> extract typ (add1 expr)
-  , expected = rm1 (expected typ)
-  }
-  where
-    -- Add _1 to union expression
-    add1 expr =
-      case expr of
-        Union m -> Union (fmap addField_1 m)
-        UnionLit key val m -> UnionLit key (addField_1 val) (fmap addField_1 m)
-        _ -> expr
-    -- Remove _1 from union epxression
-    rm1 expr =
-      case expr of
-        Union m -> Union (fmap rmField_1 m)
-        UnionLit key val m -> UnionLit key (rmField_1 val) (fmap rmField_1 m)
-        _ -> expr
-
-
--- | Add _1 in the given record expression.
-addField_1 :: Expr s a -> Expr s a
-addField_1 expr =
-  case expr of
-    RecordLit m -> RecordLit (Map.singleton "_1" (RecordLit m))
-    Record m -> Record (Map.singleton "_1" (Record m))
-    _ -> expr
-
-
--- | Remove _1 from the given record expression.
-rmField_1 :: Expr s a -> Expr s a
-rmField_1 expr =
-  case expr of
-    RecordLit m -> Prelude.maybe (RecordLit m) id $ do
-      guard $ Map.keys m == ["_1"]
-      RecordLit m' <- Map.lookup "_1" m
-      return (RecordLit m')
-    Record m -> Prelude.maybe (Record m) id $ do
-      guard $ Map.keys m == ["_1"]
-      Record m' <- Map.lookup "_1" m
-      return (Record m')
-    _ -> expr
+-- ----------------------------------------------
+-- -- Dhall Utils
+-- --
+-- -- TODO: copy from MWE
+-- ----------------------------------------------
+-- 
+-- 
+-- -- | Remove the top-level _1 fields from the given union type.
+-- rmUnion_1 :: Type a -> Type a
+-- rmUnion_1 typ = typ
+--   { extract = \expr -> extract typ (add1 expr)
+--   , expected = rm1 (expected typ)
+--   }
+--   where
+--     -- Add _1 to union expression
+--     add1 expr =
+--       case expr of
+--         Union m -> Union (fmap addField_1 m)
+--         UnionLit key val m -> UnionLit key (addField_1 val) (fmap addField_1 m)
+--         _ -> expr
+--     -- Remove _1 from union epxression
+--     rm1 expr =
+--       case expr of
+--         Union m -> Union (fmap rmField_1 m)
+--         UnionLit key val m -> UnionLit key (rmField_1 val) (fmap rmField_1 m)
+--         _ -> expr
+-- 
+-- 
+-- -- | Add _1 in the given record expression.
+-- addField_1 :: Expr s a -> Expr s a
+-- addField_1 expr =
+--   case expr of
+--     RecordLit m -> RecordLit (Map.singleton "_1" (RecordLit m))
+--     Record m -> Record (Map.singleton "_1" (Record m))
+--     _ -> expr
+-- 
+-- 
+-- -- | Remove _1 from the given record expression.
+-- rmField_1 :: Expr s a -> Expr s a
+-- rmField_1 expr =
+--   case expr of
+--     RecordLit m -> Prelude.maybe (RecordLit m) id $ do
+--       guard $ Map.keys m == ["_1"]
+--       RecordLit m' <- Map.lookup "_1" m
+--       return (RecordLit m')
+--     Record m -> Prelude.maybe (Record m) id $ do
+--       guard $ Map.keys m == ["_1"]
+--       Record m' <- Map.lookup "_1" m
+--       return (Record m')
+--     _ -> expr
