@@ -15,19 +15,20 @@ import           Control.Monad (guard)
 
 import           Dhall -- (Interpret)
 import qualified Dhall.Map as Map
+import           Dhall.Core (Expr(..))
 
-import Control.Applicative
-import Data.String (IsString, fromString)
-
-import Dhall.Core (Expr(..), ReifiedNormalizer(..))
-import qualified Dhall.Core
-
-import qualified Data.Text (Text(..))
-import qualified Data.Text.IO
-import qualified Dhall as Dhall
-import qualified Dhall.Context
-import qualified Lens.Family   as Lens
-import Data.Functor.Identity (Identity(..))
+-- import Control.Applicative
+-- import Data.String (IsString, fromString)
+-- 
+-- import Dhall.Core (Expr(..), ReifiedNormalizer(..))
+-- import qualified Dhall.Core
+-- 
+-- import qualified Data.Text (Text(..))
+-- import qualified Data.Text.IO
+-- import qualified Dhall as Dhall
+-- import qualified Dhall.Context
+-- -- import qualified Lens.Family   as Lens
+-- import Data.Functor.Identity (Identity(..))
 
 -- import Debug.Trace (trace)
 
