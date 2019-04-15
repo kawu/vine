@@ -93,7 +93,7 @@ import           Debug.Trace (trace)
 
 -- | Input extraction layer
 class (KnownNat i, KnownNat o, Backprop bp) => Input bp i o where
-  runInput 
+  runInput
     :: (Reifies s W)
     => BVar s bp
       -- ^ Network parameters (over which we can backpropagate)

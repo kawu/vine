@@ -1391,25 +1391,24 @@ rightInTwo xs =
 -- TODO: perhaps some of the functions in
 -- this section could be easily tested?
 ----------------------------------------------
-    
-    
--- | Retrieve the root of the given directed graph/tree.  It is assumed that
--- each arc points in the direction of the parent in the tree.  The function
--- raises an error if the input graph is not a well-formed tree.
-treeRoot :: Graph a b -> G.Vertex
-treeRoot g =
-  case roots of
-    [v] -> v
-    [] -> error "Graph2.treeRoot: no root found!"
-    _ -> error "Graph2.treeRoot: several roots found!"
-  where
-    roots = do
-      v <- Graph.graphNodes g
-      guard . null $ Graph.outgoing v g
-      return v
 
 
--- | Determine the set of arcs that allows to connect the two vertices.
+-- -- | Is the given graph a tree?
+-- isForest :: Graph a b -> G.Vertex
+-- isForest g =
+--   case roots of
+--     [v] -> v
+--     [] -> error "Graph2.treeRoot: no root found!"
+--     _ -> error "Graph2.treeRoot: several roots found!"
+--   where
+--     roots = do
+--       v <- Graph.graphNodes g
+--       guard . null $ Graph.outgoing v g
+--       return v
+    
+    
+-- | Determine the set of arcs that allows to connect the given set of
+-- vertices.
 treeConnectAll
   :: Graph.Graph a b
   -> S.Set G.Vertex
@@ -1431,13 +1430,13 @@ treeConnect graph v w =
   arcSet v u `S.union` arcSet w u
   where
     arcSet x y = (S.fromList . pathAsArcs) (treePath graph x y)
-    u = treeCommonAncestor graph v w
+    u = commonAncestor graph v w
 
 
 -- | Find tha path from the first to the second vertex.
 treePath :: Graph.Graph a b -> G.Vertex -> G.Vertex -> [G.Vertex]
 treePath graph v w =
-  List.takeWhile (/=w) (treePathToRoot graph v) ++ [w]
+  List.takeWhile (/=w) (pathToRoot graph v) ++ [w]
 
 
 -- | Convert the list of vertices to a list of arcs on the path.
@@ -1446,37 +1445,38 @@ pathAsArcs (x:y:xs) = (x, y) : pathAsArcs (y:xs)
 pathAsArcs _ = []
 
 
--- | Commmon ancestor of the two given nodes
-treeCommonAncestor
+-- | Commmon ancestor of the two given nodes (in a forest)
+commonAncestor
   :: Graph.Graph a b
   -> G.Vertex
   -> G.Vertex
   -> G.Vertex
-treeCommonAncestor graph v w =
-  firstIntersection
-    (treePathToRoot graph v)
-    (treePathToRoot graph w)
+commonAncestor graph v w =
+  firstCommonElem
+    (pathToRoot graph v)
+    (pathToRoot graph w)
 
 
 -- | Find the first common element of the given lists.
-firstIntersection :: Eq a => [a] -> [a] -> a
-firstIntersection xs ys 
+firstCommonElem :: Eq a => [a] -> [a] -> a
+firstCommonElem xs ys
   = fst . safeHead . reverse
   . List.takeWhile (uncurry (==))
   $ zip (reverse xs) (reverse ys)
   where
     safeHead (e:es) = e
     safeHead [] =
-      error "Graph2.firstIntersection: no intersection found"
+      error "Graph2.firstCommonElem: no common element found"
 
 
--- | Find the path from the given node to the root of the tree.
-treePathToRoot :: Graph.Graph a b -> G.Vertex -> [G.Vertex]
-treePathToRoot graph =
+-- | Find the path from the given node to a tree root.  The given graph must be
+-- a forest.
+pathToRoot :: Graph.Graph a b -> G.Vertex -> [G.Vertex]
+pathToRoot graph =
   go
   where
     go v =
       case Graph.outgoing v graph of
         [] -> [v]
         [w] -> v : go w
-        _ -> error "Graph2.treePathToRoot: the given graph is not a tree"
+        _ -> error "Graph2.pathToRoot: the given graph is not a tree/forest"

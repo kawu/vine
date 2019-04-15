@@ -108,7 +108,7 @@ import qualified Net.Graph2.UniComp as U
 import qualified Net.Input as I
 import qualified DhallUtils as DU
 
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
 
 
 ----------------------------------------------
@@ -247,7 +247,7 @@ mkElem
   -> N.Elem (R d)
 mkElem mweSel sent0 =
 
-  List.foldl' markMWE
+  trace (T.unpack $ T.unwords . map Cupt.orth $ cuptSent sent0) $ List.foldl' markMWE
     (createElem nodes arcs)
     ( filter (mweSel . Cupt.mweTyp')
     . M.elems
@@ -260,16 +260,6 @@ mkElem mweSel sent0 =
 
     -- Sentence with ID range tokens removed
     sent = discardMerged sent0
-
---     WARNING: The code below was incorrect!  We cannot remove tokens but
---     leave the embeddings!
---     -- Cupt sentence with ID range tokens removed
---     cuptSentF = filter
---       (\tok -> case Cupt.tokID tok of
---                  Cupt.TokID _ -> True
---                  _ -> False
---       )
---       (cuptSent sent)
 
     -- A map from token IDs to tokens
     tokMap = M.fromList
@@ -291,12 +281,6 @@ mkElem mweSel sent0 =
     nodes = do
       (tok, vec) <- zipSafe (cuptSent sent) (wordEmbs sent)
       let node = (tok, vec)
---       let node = Graph.Node
---             { nodeEmb = vec
---             , nodeLab = Cupt.upos tok
---             -- | TODO: could be lemma?
---             , nodeLex = Cupt.orth tok
---             }
           isMwe = (not . S.null) (getMweIDs tok)
       return (tokID tok, node, isMwe)
     -- Labeled arcs of the graph
@@ -312,7 +296,6 @@ mkElem mweSel sent0 =
           -- a part of the same MWE of the appropriate MWE category.
           isMwe = (not . S.null)
             (getMweIDs tok `S.intersection` getMweIDs par)
-      -- return ((tokID tok, tokID par), Cupt.deprel tok, isMwe)
       return ((tokID tok, tokID par), isMwe)
 
 

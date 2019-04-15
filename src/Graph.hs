@@ -32,6 +32,12 @@ module Graph
   , graphArcs
   , incoming
   , outgoing
+
+  -- * Tree
+  , hasCycles
+  -- , isForest
+  , roots
+  , treeRoot
   ) where
 
 
@@ -39,7 +45,7 @@ import           GHC.Generics (Generic)
 
 import           System.Random (randomRIO)
 
-import           Control.Monad (forM)
+import           Control.Monad (forM, guard)
 
 import           Data.Proxy (Proxy(..))
 import           Data.Binary (Binary)
@@ -135,6 +141,50 @@ outgoing v Graph{..} =
 incoming :: G.Vertex -> Graph a b -> [G.Vertex]
 incoming v Graph{..} =
   graphInv A.! v
+
+
+----------------------------------------------
+-- Tree
+----------------------------------------------
+
+
+-- | Are there any cycles in the given graph?
+hasCycles :: Graph a b -> Bool
+hasCycles g =
+  any isCyclic sccs
+  where
+    sccs = G.stronglyConnComp
+      [(x, x, ys) | (x, ys) <- A.assocs (graphStr g)]
+    isCyclic (G.CyclicSCC _) = True
+    isCyclic _ = False
+
+
+-- -- | A graph is a forest if it has no cycles.
+-- isForest :: Graph a b -> Bool
+-- isForest = not . hasCycles
+
+
+-- | Retrieve the list of roots of the given directed graph/tree.  It is
+-- assumed that each arc points in the direction of the parent in the tree.
+-- The function raises an error if the input graph has cycles.
+roots :: Graph a b -> [G.Vertex]
+roots g
+  | hasCycles g = error "Graph.roots: graph has cycles"
+  | otherwise = do
+      v <- Graph.graphNodes g
+      guard . null $ Graph.outgoing v g
+      return v
+
+
+-- | Retrieve the root of the given directed graph/tree.  It is assumed that
+-- each arc points in the direction of the parent in the tree.  The function
+-- raises an error if the input graph is not a well-formed tree.
+treeRoot :: Graph a b -> G.Vertex
+treeRoot g =
+  case roots g of
+    [v] -> v
+    [] -> error "Graph.treeRoot: no root found!"
+    _ -> error "Graph.treeRoot: several roots found!"
 
 
 ----------------------------------------------
