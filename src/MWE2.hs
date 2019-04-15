@@ -44,6 +44,10 @@ module MWE2
   -- , tagMany
   -- , tagManyO
   , tagManyT
+
+  -- * Utils
+  , dummyRootPOS
+  , dummyRootDepRel
   ) where
 
 
@@ -247,7 +251,8 @@ mkElem
   -> N.Elem (R d)
 mkElem mweSel sent0 =
 
-  trace (T.unpack $ T.unwords . map Cupt.orth $ cuptSent sent0) $ List.foldl' markMWE
+  -- trace (T.unpack $ T.unwords . map Cupt.orth $ cuptSent sent0) $
+  List.foldl' markMWE
     (createElem nodes arcs)
     ( filter (mweSel . Cupt.mweTyp')
     . M.elems
@@ -258,8 +263,11 @@ mkElem mweSel sent0 =
 
   where
 
-    -- Sentence with ID range tokens removed
+    -- Sentence with ID range tokens removed + additional dummy root token
     sent = discardMerged sent0
+      { cuptSent = dummyRootTok : cuptSent sent0
+      , wordEmbs = dummyRootEmb : wordEmbs sent0
+      }
 
     -- A map from token IDs to tokens
     tokMap = M.fromList
@@ -269,7 +277,7 @@ mkElem mweSel sent0 =
     -- The parent of the given token
     tokPar tok = tokMap M.! Cupt.dephead tok
     -- Is the token the root?
-    isRoot tok = Cupt.dephead tok == Cupt.TokID 0
+    isRoot tok = Cupt.dephead tok == dummyRootParID -- Cupt.TokID 0
     -- The IDs of the MWEs present in the given token
     getMweIDs tok
       = S.fromList
@@ -279,7 +287,9 @@ mkElem mweSel sent0 =
 
     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
     nodes = do
-      (tok, vec) <- zipSafe (cuptSent sent) (wordEmbs sent)
+      (tok, vec) <- zipSafe
+        (cuptSent sent)
+        (wordEmbs sent)
       let node = (tok, vec)
           isMwe = (not . S.null) (getMweIDs tok)
       return (tokID tok, node, isMwe)
@@ -297,6 +307,41 @@ mkElem mweSel sent0 =
           isMwe = (not . S.null)
             (getMweIDs tok `S.intersection` getMweIDs par)
       return ((tokID tok, tokID par), isMwe)
+
+
+-- | An artificial root token.
+dummyRootTok :: Cupt.Token
+dummyRootTok = Cupt.Token
+  { tokID = Cupt.TokID 0
+  , orth = ""
+  , lemma = ""
+  , upos = dummyRootPOS
+  , xpos = ""
+  , feats = M.empty
+  , dephead = dummyRootParID
+  , deprel = dummyRootDepRel
+  , deps = ""
+  , misc = ""
+  , mwe = []
+  }
+
+
+-- | ID to refer to the parent of the artificial root node.
+dummyRootParID :: Cupt.TokID
+dummyRootParID = Cupt.TokID (-1)
+
+
+-- | Embedding of the dummy root.
+dummyRootEmb :: (KnownNat d) => R d
+dummyRootEmb = 0
+
+
+dummyRootPOS :: T.Text
+dummyRootPOS = "DUMMY-ROOT-POS"
+
+
+dummyRootDepRel :: T.Text
+dummyRootDepRel = "DUMMY-ROOT-DEPREL"
 
 
 discardMerged :: (KnownNat d) => Sent d -> Sent d
@@ -524,7 +569,7 @@ type POS = T.Text
 -- | Extract dependeny relations present in the given dataset.
 depRelsIn :: [Cupt.GenSent mwe] -> S.Set DepRel
 depRelsIn =
-  S.fromList . concatMap extract 
+  S.fromList . (dummyRootDepRel:) . concatMap extract 
   where
     extract = map Cupt.deprel
 
@@ -532,7 +577,7 @@ depRelsIn =
 -- | Extract dependeny relations present in the given dataset.
 posTagsIn :: [Cupt.GenSent mwe] -> S.Set POS
 posTagsIn =
-  S.fromList . concatMap extract 
+  S.fromList . (dummyRootPOS:) . concatMap extract 
   where
     extract = map Cupt.upos
 
@@ -823,11 +868,13 @@ annotate
   -> N.Labeling Bool
     -- ^ Node/arc labeling
   -> Cupt.Sent
-annotate mweTyp cupt N.Labeling{..}
+annotate mweTyp cupt N.Labeling{..} =
+
+  map enrich cupt
   
-  -- We only annotate sentence of length > 1!
-  | length cupt > 1 = map enrich cupt
-  | otherwise = cupt
+--   -- We only annotate sentence of length > 1!
+--   | length cupt > 1 = map enrich cupt
+--   | otherwise = cupt
 
   where
 

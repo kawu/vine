@@ -17,6 +17,7 @@ import           Data.Maybe (mapMaybe)
 import           Data.Ord (comparing)
 import           Data.String (fromString)
 import           Data.List (sortBy)
+import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -252,6 +253,9 @@ run cmd =
               <$> Cupt.readCupt trainCupt
             posTagSet <- MWE.posTagsIn . concat
               <$> Cupt.readCupt trainCupt
+--             -- Extract the set of dependency labels
+--             depRelSet <- error "what about dummy root?"
+--             posTagSet <- error "what about dummy root?"
             -- Graph.new posTagSet depRelSet
             -- MWE.newO trainModelTyp posTagSet depRelSet
             MWE.new posTagSet depRelSet
