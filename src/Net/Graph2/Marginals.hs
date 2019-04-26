@@ -1094,7 +1094,7 @@ constrain res x xArc
   | not x && xArc = sum
       [oneTrue res, moreTrue res]
   | otherwise = error "constrain: impossible happened"
-{-# INLIN constrain #-}
+{-# INLINE constrain #-}
 
 
 -- -- | Inside pass (log domain)

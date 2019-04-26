@@ -207,15 +207,16 @@ import           Debug.Trace (trace)
 
 -- | Should be rather named sth. like `Fixed`...
 data Transparent = Transparent
-  { _inpMod :: I.PosDepInp 50 50
+  { _inpMod :: I.PosDepInp 25 25
   -- { _inpMod :: I.RawInp
-  , _traMod :: I.NoTrans
-  -- , _traMod :: I.ScaleLeakyRelu 400 200
-  -- , _traMod :: I.Scale 400 200
-  , _uniMod :: U.NoUni
-  -- , _uniMod :: U.UniAff 400 200
-  -- , _biaMod :: B.BiAff 400 200
-  , _biaMod :: B.BiAffMix 400 200
+  -- , _traMod :: I.NoTrans
+  -- , _traMod :: I.ScaleLeakyRelu 350 100
+  , _traMod :: I.Scale 350 150
+  -- , _uniMod :: U.NoUni
+  , _uniMod :: U.UniAff 150 100 :& U.PairAffLeft 150 100 :& U.PairAffRight 150 100
+  -- , _uniMod :: U.UniAff 150 100
+  -- , _biaMod :: B.BiAff 150 100
+  , _biaMod :: B.BiAffMix 150 200
   -- , _biaMod :: B.BiAff 150 100
   -- , _biaMod :: B.NoBi
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
@@ -253,7 +254,7 @@ runInp
   :: (Reifies s W)
   => Elem (R 300) 
   -> BVar s Transparent
-  -> Elem (BVar s (R 400))
+  -> Elem (BVar s (R 150))
 runInp x net =
   let toksEmbs = tokens x
       embs' = I.runTransform (net ^^. traMod)
@@ -266,7 +267,7 @@ runInp x net =
 evalInp
   :: Elem (R 300) 
   -> Transparent
-  -> Elem (R 400)
+  -> Elem (R 150)
 evalInp x net =
   let toksEmbs = tokens x
       embs' = I.evalTransform (net ^. traMod)

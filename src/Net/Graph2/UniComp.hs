@@ -31,6 +31,8 @@ module Net.Graph2.UniComp
   ( UniComp (..)
   , Bias (..)
   , UniAff (..)
+  , PairAffLeft (..)
+  , PairAffRight (..)
   , NoUni
   ) where
 
@@ -71,6 +73,19 @@ import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 
 import           Debug.Trace (trace)
+
+
+----------------------------------------------
+-- Utils
+----------------------------------------------
+
+
+onLeft :: G.Vertex -> Graph a b -> Maybe G.Vertex
+onLeft v g = fst <$> M.lookupLT v (nodeLabelMap g)
+
+
+onRight :: G.Vertex -> Graph a b -> Maybe G.Vertex
+onRight v g = fst <$> M.lookupGT v (nodeLabelMap g)
 
 
 ----------------------------------------------
@@ -145,6 +160,60 @@ at
   -> BVar s (At.IxValue b)
 at v k = maybe 0 id $ v ^^? ix k
 {-# INLINE at #-}
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Word affinity component
+data PairAffLeft d h = PairAffLeft
+  { _pairAffLeftN :: FFN (d Nats.+ d) h 1
+  } deriving (Generic, Binary, NFData, ParamSet)
+
+instance (KnownNat d, KnownNat h) => Backprop (PairAffLeft d h)
+makeLenses ''PairAffLeft
+
+instance (KnownNat d, KnownNat h) => New a b (PairAffLeft d h) where
+  new xs ys = PairAffLeft <$> new xs ys
+
+instance (KnownNat dim, KnownNat h) => UniComp dim (PairAffLeft dim h) where
+  runUniComp graph v pair =
+    maybe 0 id $ doIt v <$> onRight v graph
+    where
+      doIt v w =
+        let wordRepr = (nodeLabelMap graph M.!)
+            hv = wordRepr v
+            hw = wordRepr w
+            vec = LBP.extractV $ FFN.run (pair ^^. pairAffLeftN) (hv # hw)
+         in vec `at` 0
+
+
+----------------------------------------------
+----------------------------------------------
+
+
+-- | Word affinity component
+data PairAffRight d h = PairAffRight
+  { _pairAffRightN :: FFN (d Nats.+ d) h 1
+  } deriving (Generic, Binary, NFData, ParamSet)
+
+instance (KnownNat d, KnownNat h) => Backprop (PairAffRight d h)
+makeLenses ''PairAffRight
+
+instance (KnownNat d, KnownNat h) => New a b (PairAffRight d h) where
+  new xs ys = PairAffRight <$> new xs ys
+
+instance (KnownNat dim, KnownNat h) => UniComp dim (PairAffRight dim h) where
+  runUniComp graph v pair =
+    maybe 0 id $ doIt v <$> onRight v graph
+    where
+      doIt v w =
+        let wordRepr = (nodeLabelMap graph M.!)
+            hv = wordRepr v
+            hw = wordRepr w
+            vec = LBP.extractV $ FFN.run (pair ^^. pairAffRightN) (hv # hw)
+         in vec `at` 0
 
 
 ----------------------------------------------
