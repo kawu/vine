@@ -9,11 +9,12 @@
 module Net.Graph2.Marginals
   ( 
   --   approxMarginals
-    approxMarginals'
-  , approxMarginalsMemo
+  --   approxMarginals'
+    approxMarginalsMemo
   , approxMarginalsMemoC
   -- , approxMarginalsC
   -- , approxMarginalsC'
+  , dummyMarginals
 
   , Res(..)
 
@@ -128,25 +129,25 @@ obfuscateBP =
 ----------------------------------------------
 -- Approximate marginal probabilities
 --
--- (version without constraints bis)
+-- (version with and without constraints bis)
 ----------------------------------------------
 
 
--- | Approximate marginal probabilities
-approxMarginals'
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ Arc potentials
-  -> M.Map G.Vertex (BVar s Double)
-    -- ^ Node potentials
-  -> Int
-    -- ^ Depth
-  -> M.Map Arc (BVar s (Vec8 Pot))
-approxMarginals' graph potMap nodMap k = M.fromList $ do
-  arc <- M.keys potMap
-  return (arc, approxMarginals1' graph potMap nodMap arc k)
+-- -- | Approximate marginal probabilities
+-- approxMarginals'
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ Arc potentials
+--   -> M.Map G.Vertex (BVar s Double)
+--     -- ^ Node potentials
+--   -> Int
+--     -- ^ Depth
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+-- approxMarginals' graph potMap nodMap k = M.fromList $ do
+--   arc <- M.keys potMap
+--   return (arc, approxMarginals1' graph potMap nodMap arc k)
 
 
 -- | Approximate marginal probabilities with constraints
@@ -206,6 +207,7 @@ approxMarginals1MemoC graph potMap nodMap =
 -- | Approximate marginal probabilities
 --
 -- TODO: are the output really potentials, or just probabilities in log domain?
+-- TODO: this is no longer an approximation!
 --
 approxMarginalsMemo
   :: (Reifies s W)
@@ -244,6 +246,8 @@ approxMarginals1Memo graph potMap nodMap =
     marginals (v, w) =
       obfuscateBP . M.fromList $ zip arcValues probs
       where
+        -- TODO: probs is not accurate, these are not probabilities but
+        -- potential sums, right?
         probs = do
           out <- arcValues
           return $   inside v (depVal out)
@@ -251,31 +255,31 @@ approxMarginals1Memo graph potMap nodMap =
             `mulLog` arcPot potMap (v, w) out
 
 
--- | Approximate the marginal probabilities of the given arc.  If @depth = 0@,
--- only the potential of the arc is taken into account.
-approxMarginals1'
-  :: (Reifies s W)
-  => Graph a b
-    -- ^ The underlying graph
-  -> M.Map Arc (BVar s (Vec8 Pot))
-    -- ^ Arc potentials
-  -> M.Map G.Vertex (BVar s Double)
-    -- ^ Node potentials
-  -> Arc
-    -- ^ The arc in focus
-  -> Int 
-    -- ^ Depth
-  -> BVar s (Vec8 Pot)
-approxMarginals1' graph potMap nodMap (v, w) k =
-  obfuscateBP . M.fromList $ zip arcValues probs
-  where
-    -- probs = NL.normalize . map exp $ do
-    -- probs = NL.softMaxLog $ do
-    probs = do
-      out <- arcValues
-      return $   insideLogK graph potMap nodMap v (depVal out) k
-        `mulLog` outsideLogK graph potMap nodMap (v, w) (hedVal out) k
-        `mulLog` arcPot potMap (v, w) out
+-- -- | Approximate the marginal probabilities of the given arc.  If @depth = 0@,
+-- -- only the potential of the arc is taken into account.
+-- approxMarginals1'
+--   :: (Reifies s W)
+--   => Graph a b
+--     -- ^ The underlying graph
+--   -> M.Map Arc (BVar s (Vec8 Pot))
+--     -- ^ Arc potentials
+--   -> M.Map G.Vertex (BVar s Double)
+--     -- ^ Node potentials
+--   -> Arc
+--     -- ^ The arc in focus
+--   -> Int
+--     -- ^ Depth
+--   -> BVar s (Vec8 Pot)
+-- approxMarginals1' graph potMap nodMap (v, w) k =
+--   obfuscateBP . M.fromList $ zip arcValues probs
+--   where
+--     -- probs = NL.normalize . map exp $ do
+--     -- probs = NL.softMaxLog $ do
+--     probs = do
+--       out <- arcValues
+--       return $   insideLogK graph potMap nodMap v (depVal out) k
+--         `mulLog` outsideLogK graph potMap nodMap (v, w) (hedVal out) k
+--         `mulLog` arcPot potMap (v, w) out
 
 
 -- | Node potential at a given node (TODO: make analogy to `arcPotExp`)
@@ -300,6 +304,53 @@ thereLog
 thereLog nodMap u z
   | z = nodMap M.! u
   | otherwise = 0.0
+
+
+----------------------------------------------
+-- Dummy marginals
+----------------------------------------------
+
+
+-- | Dummy marginals (just softmax?)
+dummyMarginals
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Arc potentials
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ Node potentials
+  -> M.Map Arc (BVar s (Vec8 Pot))
+dummyMarginals graph potMap nodMap = M.fromList $ do
+  arc <- M.keys potMap
+  return (arc, marginals arc)
+  where
+    -- marginals = approxMarginals1Memo graph potMap nodMap
+    marginals = dummyMarginals1 graph potMap nodMap
+
+
+-- | TODO: WARNING, this completely ignore node potentials!
+dummyMarginals1
+  :: (Reifies s W)
+  => Graph a b
+    -- ^ The underlying graph
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Arc potentials
+  -> M.Map G.Vertex (BVar s Double)
+    -- ^ Node potentials
+  -> Arc
+    -- ^ The arc in focus
+  -> BVar s (Vec8 Pot)
+dummyMarginals1 graph potMap nodMap =
+  marginals
+  where
+    marginals (v, w)
+      | nodMap M.! v /= 0.0 =
+          error "dummyMarginals1: v node potential /= 0"
+      | nodMap M.! w /= 0.0 =
+          error "dummyMarginals1: v node potential /= 0"
+      | otherwise =
+          potMap M.! (v, w)
 
 
 ----------------------------------------------

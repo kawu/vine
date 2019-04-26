@@ -470,6 +470,9 @@ runBoth version net netU graph =
       Margs.approxMarginalsMemo graph (runRaw net graph) (runRawUni netU graph)
     Global.Constrained ->
       Margs.approxMarginalsMemoC graph (runRaw net graph) (runRawUni netU graph)
+    Global.Local ->
+      Margs.dummyMarginals graph (runRaw net graph) (runRawUni netU graph)
+
 --   case probTyp of
 --     SoftMax -> error "runBoth: softmax not implemented"
 --     Marginals ->

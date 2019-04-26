@@ -52,6 +52,7 @@ import qualified Net.Graph2.Marginals as Margs
 data Version
   = Free
   | Constrained
+  | Local
   deriving (Generic)
 
 instance Interpret Version
@@ -88,6 +89,8 @@ probLog version graph ell potMap nodMap =
           inside root False `addLog` inside root True
           where
             inside = Margs.insideLogMemo graph potMap nodMap
+        Local ->
+          error "Global.probLog: cannot handle `Local`"
 
 
 -- | Global score of the given labelling
