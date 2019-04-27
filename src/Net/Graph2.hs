@@ -226,7 +226,8 @@ import           Debug.Trace (trace)
 data Transparent = Transparent
   { _inpMod :: I.PosDepInp 25 25
   , _traMod :: I.NoTrans
-  , _uniMod :: U.UniAff 350 200 :& U.PairAffLeft 350 200 :& U.PairAffRight 350 200
+  -- , _uniMod :: U.UniAff 350 200 :& U.PairAffLeft 350 200 :& U.PairAffRight 350 200
+  , _uniMod :: U.UniAff 350 200
   , _biaMod :: B.BiAffMix 350 200
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 

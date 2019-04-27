@@ -494,9 +494,13 @@ instance (KnownNat d, KnownNat h)
         z3 = BP.coerceVar $
           (bi ^^. biAffMixL2_3) #> y + (bi ^^. biAffMixB2_3)
 
+--      -- combine the two outputs to get the result
+--      -- (with the first element zeroed out)
+--      in  BP.coerceVar (BP.auto mask0) * inject z3 z8
+
      -- combine the two outputs to get the result
-     -- (with the first element zeroed out)
-     in  BP.coerceVar (BP.auto mask0) * inject z3 z8
+     -- (all elements with arc label=0 are zeroed out)
+     in  BP.coerceVar (BP.auto mask1) * inject z3 z8
 
 
 -- | Combine the independent with the joint potential vector (a type-safe
