@@ -221,22 +221,21 @@ import           Debug.Trace (trace)
 --   -- , _biaMod :: B.NoBi
 --   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
--- -- | Should be rather named sth. like `Fixed`...
--- data Transparent = Transparent
---   { _inpMod :: I.PosDepInp 25 25
---   , _traMod :: I.NoTrans
---   -- , _uniMod :: U.UniAff 350 200 :& U.PairAffLeft 350 200 :& U.PairAffRight 350 200
---   , _uniMod :: U.UniAff 350 200
---   , _biaMod :: B.BiAffMix 350 200
---   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
-
 -- | Should be rather named sth. like `Fixed`...
 data Transparent = Transparent
   { _inpMod :: I.PosDepInp 25 25
-  , _traMod :: I.Scale 350 150
-  , _uniMod :: U.UniAff 150 150
-  , _biaMod :: B.BiAffMix 150 200
+  , _traMod :: I.NoTrans
+  , _uniMod :: U.UniAff 350 200
+  , _biaMod :: B.BiAffMix 350 200
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+-- -- | Should be rather named sth. like `Fixed`...
+-- data Transparent = Transparent
+--   { _inpMod :: I.PosDepInp 25 25
+--   , _traMod :: I.Scale 350 150
+--   , _uniMod :: U.UniAff 150 150
+--   , _biaMod :: B.BiAffMix 150 200
+--   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''Transparent
 
@@ -271,7 +270,7 @@ runInp
   :: (Reifies s W)
   => Elem (R 300) 
   -> BVar s Transparent
-  -> Elem (BVar s (R 150))
+  -> Elem (BVar s (R 350))
 runInp x net =
   let toksEmbs = tokens x
       embs' = I.runTransform (net ^^. traMod)
@@ -284,7 +283,7 @@ runInp x net =
 evalInp
   :: Elem (R 300) 
   -> Transparent
-  -> Elem (R 150)
+  -> Elem (R 350)
 evalInp x net =
   let toksEmbs = tokens x
       embs' = I.evalTransform (net ^. traMod)
