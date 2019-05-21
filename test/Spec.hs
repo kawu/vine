@@ -6,7 +6,7 @@ import qualified Data.Map.Strict as M
 
 import qualified Net.Util as U
 import qualified Net.Graph as N
-import qualified Net.Graph.BiComp as B
+import qualified Net.Graph.Arc as B
 import qualified Net.Graph.Marginals as Margs
 
 
@@ -26,10 +26,10 @@ scProps = testGroup "(checked by SmallCheck)"
 --   [ SC.testProperty "sort == sort . reverse" $
 --       \list -> sort (list :: [Int]) == sort (reverse list)
   [ SC.testProperty "rightInTwo (xs ++ xs) == (xs, xs)" $
-      \xs -> N.rightInTwo (xs ++ xs :: [Int]) == (xs, xs)
+      \xs -> U.rightInTwo (xs ++ xs :: [Int]) == (xs, xs)
   , Tasty.localOption (SC.SmallCheckDepth 4) .
     SC.testProperty "(decode . encode) x == x" $
-      \x -> (N.decode . N.encode) x == x
+      \x -> (B.decode . B.encode) x == x
   , Tasty.localOption (SC.SmallCheckDepth 4) .
     SC.testProperty "(explicate . obfuscate) x == x" $
       \xs ->

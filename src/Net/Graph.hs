@@ -75,17 +75,17 @@ module Net.Graph
   -- -- * Error
   -- , netError
 
-  -- * Encoding
-  , Out(..)
-  , encode
-  , decode
-  , rightInTwo
+--   -- * Encoding
+--   , Out(..)
+--   , encode
+--   , decode
+--   -- , rightInTwo
 
   -- * Explicating
-  , B.enumerate
-  , B.explicate
-  , B.obfuscate
-  , B.mask
+  , Arc.enumerate
+  , Arc.explicate
+  , Arc.obfuscate
+  , Arc.mask
 
   -- * Inference
   , Labeling(..)
@@ -101,34 +101,34 @@ module Net.Graph
 
 
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat, natVal)
+import           GHC.TypeNats (KnownNat)
 -- import           GHC.Natural (naturalToInt)
-import qualified GHC.TypeNats as Nats
-import           GHC.TypeLits (Symbol, KnownSymbol)
+-- import qualified GHC.TypeNats as Nats
+-- import           GHC.TypeLits (Symbol, KnownSymbol)
 
-import           System.Random (randomRIO)
+-- import           System.Random (randomRIO)
 
-import           Control.Monad (forM_, forM, guard)
+-- import           Control.Monad (forM_, forM, guard)
 
 import           Lens.Micro.TH (makeLenses)
 import           Lens.Micro ((^.))
 
 -- import           Data.Monoid (Sum(..))
 import           Data.Monoid (Any(..))
-import           Data.Proxy (Proxy(..))
+-- import           Data.Proxy (Proxy(..))
 -- import           Data.Ord (comparing)
 import qualified Data.List as List
-import qualified Data.Foldable as F
-import           Data.Maybe (catMaybes, mapMaybe)
+-- import qualified Data.Foldable as F
+-- import           Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text as T
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
-import qualified Data.Array as A
+-- import qualified Data.Array as A
 import           Data.Binary (Binary)
 import qualified Data.Binary as Bin
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.Vector.Sized as VS
+-- import qualified Data.Vector.Sized as VS
 import           Codec.Compression.Zlib (compress, decompress)
 
 -- import qualified Data.Number.LogFloat as LF
@@ -139,17 +139,17 @@ import           Codec.Compression.Zlib (compress, decompress)
 
 -- import qualified Data.Map.Lens as ML
 -- import           Control.Lens.At (ixAt)
-import           Control.Lens.At (ix)
-import           Control.Lens (Lens)
+-- import           Control.Lens.At (ix)
+-- import           Control.Lens (Lens)
 import           Control.DeepSeq (NFData)
 
 import           Dhall (Interpret)
-import qualified Data.Aeson as JSON
+-- import qualified Data.Aeson as JSON
 
-import qualified Prelude.Backprop as PB
+-- import qualified Prelude.Backprop as PB
 import qualified Numeric.Backprop as BP
-import           Numeric.Backprop (Backprop, (^^.), (^^?))
-import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
+import           Numeric.Backprop (Backprop, (^^.)) -- , (^^?))
+-- import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
   (R, L, BVar, Reifies, W, (#), (#>), dot)
 import qualified Numeric.LinearAlgebra.Static as LA
@@ -172,8 +172,9 @@ import qualified Format.Cupt as Cupt
 import           Graph
 import           Graph.SeqTree
 import qualified Net.List as NL
-import           Net.Graph.BiComp
+import           Net.Graph.Arc
   (Pot, Prob, Vec(..), Vec8, Out(..))
+import qualified Net.Graph.Arc as Arc
 import qualified Net.Graph.BiComp as B
 import qualified Net.Graph.UniComp as U
 import qualified Net.Graph.Marginals as Margs
@@ -640,7 +641,7 @@ treeTagGlobal' graph labMap nodMap =
         tagSubTree'
           (treeRoot graph)
           graph
-          (fmap B.explicate labMap)
+          (fmap Arc.explicate labMap)
           nodMap
       best = better trueBest falseBest
    in fmap getAny (bestLab best)
@@ -764,7 +765,7 @@ addNode node lab pot Best{..} = Best
 --         tagSubTree
 --           (treeRoot graph)
 --           graph
---           (fmap B.explicate labMap)
+--           (fmap Arc.explicate labMap)
 --       best = better trueBest falseBest
 --    in fmap getAny (bestLab best)
 -- 
@@ -871,7 +872,7 @@ treeTagConstrained' graph labMap nodMap =
         tagSubTreeC'
           (treeRoot graph)
           graph
-          (fmap B.explicate labMap)
+          (fmap Arc.explicate labMap)
           nodMap
       best = List.foldl1' better
         -- NOTE: `falseZeroOne` can be excluded in constrained decoding
@@ -948,7 +949,7 @@ tagSubTreeC' root graph lmap nmap =
 --         tagSubTreeC
 --           (treeRoot graph)
 --           graph
---           (fmap B.explicate labMap)
+--           (fmap Arc.explicate labMap)
 --       best = List.foldl1' better
 --         -- NOTE: `falseZeroOne` can be excluded in constrained decoding
 --         [true, falseZeroTrue, falseMoreTrue]
@@ -1003,22 +1004,6 @@ tagSubTreeC' root graph lmap nmap =
 --             , falseOneTrue  = falseOneTrue'
 --             , falseMoreTrue = impossible
 --             }
-
-
-----------------------------------------------
--- Explicating
-----------------------------------------------
-
-
--- -- | Determine the values assigned to different labellings of the given arc and
--- -- nodes.
--- explicate :: Vec8 p -> M.Map (Out Bool) Double
--- explicate = M.fromList . zip B.enumerate . toList . unVec
--- 
--- 
--- -- | The inverse of `explicate`.
--- obfuscate :: M.Map (Out Bool) Double -> Vec8 p
--- obfuscate = Vec . LA.vector . M.elems
 
 
 ----------------------------------------------
@@ -1095,7 +1080,7 @@ softMaxCrossEntropy
     -- ^ Output ,,artificial'' distribution (represted by potentials)
   -> BVar s Double
 softMaxCrossEntropy p0 q0 =
-  softMaxCrossEntropy' (B.unVec p0) (BP.coerceVar q0)
+  softMaxCrossEntropy' (Arc.unVec p0) (BP.coerceVar q0)
 --   checkNaNBP "softMaxCrossEntropy" $ negate (p `dot` LBP.vmap' log' q)
 --   where
 --     -- p = BP.coerceVar p0 :: BVar s (R 8)
@@ -1331,7 +1316,7 @@ encode Out{..} = (Vec . encode') [arcVal, hedVal, depVal]
 -- distibution and the resulting `Out Double` encodes three distributions
 -- assumed to be independent.
 decode :: Vec8 Prob -> Out Double
-decode = BP.evalBP $ BP.collectVar . B.squash
+decode = BP.evalBP $ BP.collectVar . Arc.squash
 --   case decode' (unVec vec) of
 --     [arcP, hedP, depP] -> Out
 --       { arcVal = arcP
@@ -1380,16 +1365,6 @@ cartesian xs ys = do
   x <- xs
   y <- ys
   return (x, y)
-
-
--- | Split a list x_1, x_2, ..., x_(2n) in two equal parts:
--- 
---   * x_1, x_2, ..., x_n, and
---   * x_(n+1), x_(n+2), ..., x_(2n)
---
-rightInTwo :: [a] -> ([a], [a])
-rightInTwo xs =
-  List.splitAt (length xs `div` 2) xs
 
 
 ----------------------------------------------

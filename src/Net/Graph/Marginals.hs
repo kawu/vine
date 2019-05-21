@@ -46,8 +46,8 @@ import qualified Data.MemoCombinators as Memo
 
 import qualified Net.Util as U
 import qualified Net.List as NL
-import           Net.Graph.BiComp (Pot, Prob, Vec(..), Vec8, Out(..))
-import qualified Net.Graph.BiComp as B
+import           Net.Graph.Arc (Pot, Prob, Vec(..), Vec8, Out(..))
+import qualified Net.Graph.Arc as B
 import           Graph (Graph, Arc, incoming, outgoing)
 
 

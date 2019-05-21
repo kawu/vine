@@ -84,7 +84,7 @@ import           Debug.Trace (trace)
 ----------------------------------------------
 
 
--- | Affinity component
+-- | Affinity component, responsible for scoring the labelling of a node
 class Backprop bp => UniComp d bp where
   -- | Calculate the potential of the given node within the context of the
   -- given graph
@@ -139,18 +139,6 @@ instance (KnownNat dim, KnownNat h) => UniComp dim (UniAff dim h) where
         hv = wordRepr v
         vec = LBP.extractV $ FFN.run (uni ^^. uniAffN) hv
      in vec `at` 0
-
-
--- TODO: repeated several times in different modules!
-at
-  :: ( Num (At.IxValue b), Reifies s W, Backprop b
-     , Backprop (At.IxValue b), At.Ixed b
-     )
-  => BVar s b
-  -> At.Index b
-  -> BVar s (At.IxValue b)
-at v k = maybe 0 id $ v ^^? ix k
-{-# INLINE at #-}
 
 
 ----------------------------------------------

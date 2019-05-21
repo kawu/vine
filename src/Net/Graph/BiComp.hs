@@ -28,27 +28,13 @@
 
 
 module Net.Graph.BiComp
-  ( Pot
-  , Prob
-  , Vec(..)
-  , Vec8
-  -- , softmaxVec
-  
-  , BiComp (..)
+  ( BiComp (..)
   , Bias (..)
 
   , BiAff (..)
   , BiAffMix (..)
 
   , NoBi (..)
-
-  -- * Conversion
-  , Out(..)
-  , enumerate
-  , mask
-  , squash
-  , explicate
-  , obfuscate
   ) where
 
 
@@ -76,204 +62,17 @@ import qualified Numeric.LinearAlgebra.Static as LA
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop (R, L, dot, (#), (#>))
 
-import qualified Test.SmallCheck.Series as SC
-
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Graph
 import           Net.Util hiding (scale)
 import           Net.New
 import           Net.Pair
+import           Net.Graph.Arc
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 
-import           Debug.Trace (trace)
-
-
-----------------------------------------------
--- Various Utils
-----------------------------------------------
-
-
--- | Remove duplicates.
-nub :: (Ord a) => [a] -> [a]
-nub = S.toList . S.fromList
-
-
-----------------------------------------------
--- Out, Vec8, Vec3 + conversion
-----------------------------------------------
-
-
--- | Potential/probability annotation
-data Pot
-data Prob
-
-
--- | A static-length vector with potentials (`Pot`) or probabilities (`Prob`).
-newtype Vec n p = Vec { unVec :: R n }
-  deriving (Show, Generic)
-  deriving newtype (Binary, NFData, ParamSet, Num, Backprop)
-
-instance (KnownNat n) => New a b (Vec n p) where
-  new xs ys = Vec <$> new xs ys
-
-
--- | Type synonym for @Vec 8 p@.
-type Vec8 p = Vec 8 p
-
-
--- | Output structure in which a value of type @a@ is assigned to an arc and
--- the two nodes it connects.
-data Out a = Out
-  { arcVal :: a
-    -- ^ Value assigned to the arc
-  , hedVal :: a
-    -- ^ Value assigned to the head
-  , depVal :: a
-    -- ^ Value assigned to the dependent
-  } deriving (Generic, Show, Eq, Ord, Functor, Foldable)
-
--- Allows to use SmallCheck to test (decode . encode) == id.
-instance (SC.Serial m a) => SC.Serial m (Out a)
-
-
--- | Enumerate the possible arc/node labelings in order consistent with the
--- encoding/decoding format.  Consistent in the sense that
---
---   @zip enumerate (toList $ unVec vec)@
---
--- provides a list in which to each `Out` value the corresponding vector @vec@
--- value is assigned.
---
-enumerate :: [Out Bool]
-enumerate = do
-  b1 <- [False, True]
-  b2 <- [False, True]
-  b3 <- [False, True]
-  return $ Out b1 b2 b3
-
-
--- | Determine the values assigned to different labellings of the given arc and
--- nodes.
-explicate :: Vec8 p -> M.Map (Out Bool) Double
-explicate = M.fromList . zip enumerate . toList . unVec
-
-
--- | The inverse of `explicate`.
-obfuscate :: M.Map (Out Bool) Double -> Vec8 p
-obfuscate = Vec . LA.vector . M.elems
-
-
--- | A mask vector which allows to easily obtain (with dot product) the
--- potential of a given `Out` labeling.  The following property should be
--- satisfied:
---
---   mask (enumerate !! i) ! j == (i == j)
---
-mask :: Out Bool -> R 8
-mask (Out False False False) = vec18
-mask (Out False False True)  = vec28
-mask (Out False True  False) = vec38
-mask (Out False True  True)  = vec48
-mask (Out True  False False) = vec58
-mask (Out True  False True)  = vec68
-mask (Out True  True  False) = vec78
-mask (Out True  True  True)  = vec88
-
-
--- | Hard-coded masks
-vec18, vec28, vec38, vec48, vec58, vec68, vec78, vec88 :: R 8
-vec18 = LA.vector [1, 0, 0, 0, 0, 0, 0, 0]
-vec28 = LA.vector [0, 1, 0, 0, 0, 0, 0, 0]
-vec38 = LA.vector [0, 0, 1, 0, 0, 0, 0, 0]
-vec48 = LA.vector [0, 0, 0, 1, 0, 0, 0, 0]
-vec58 = LA.vector [0, 0, 0, 0, 1, 0, 0, 0]
-vec68 = LA.vector [0, 0, 0, 0, 0, 1, 0, 0]
-vec78 = LA.vector [0, 0, 0, 0, 0, 0, 1, 0]
-vec88 = LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
-
-
--- | The `squash` function is a backpropagation-enabled version of @decode@
--- from `Net.Graph`.  The result is a structure with three probability values:
---
---   * Probability of the arc being a MWE
---   * Probability of the head being a MWE
---   * Probability of the dependent being a MWE
---
--- TODO: move the `decode` function here?  Or at least, to the same module as
--- `squash`?
---
-squash :: forall s. (Reifies s W) => BVar s (Vec 8 Prob) -> Out (BVar s Double)
-squash v8_vec = Out
-  { arcVal = BP.auto mask1 `dot` v8
-  , hedVal = BP.auto mask2 `dot` v8
-  , depVal = BP.auto mask3 `dot` v8
-  } 
-  where
-    v8 = BP.coerceVar v8_vec :: BVar s (R 8)
-
-
--- | V3 -> V8 expansion
---
--- TODO: Make some kind of a link between `expand` and @encode@ from
--- `Net.Graph`.  Ideally define them in the same module.
---
-expand
-  :: (Reifies s W)
-  => BVar s (Vec 3 Pot)
-  -> BVar s (Vec 8 Pot)
-expand v3 = BP.coerceVar $ expand' (BP.coerceVar v3)
-
-
--- | Combine the independent with the joint potential vector (lower-level
--- function).
-expand' :: (Reifies s W) => BVar s (R 3) -> BVar s (R 8)
-expand' v3 
-  = LBP.vmap (*x1) (BP.auto mask1)
-  + LBP.vmap (*x2) (BP.auto mask2)
-  + LBP.vmap (*x3) (BP.auto mask3)
-  where
-    v3' = LBP.extractV v3
-    x1 = v3' `at` 0
-    x2 = v3' `at` 1
-    x3 = v3' `at` 2
-{-# INLINE expand' #-}
-
-
--- | Expansion masks
-mask0, mask1, mask2, mask3 :: R 8
-mask0 = LA.vector [0, 1, 1, 1, 1, 1, 1, 1]
-mask1 = LA.vector [0, 0, 0, 0, 1, 1, 1, 1]
-mask2 = LA.vector [0, 0, 1, 1, 0, 0, 1, 1]
-mask3 = LA.vector [0, 1, 0, 1, 0, 1, 0, 1]
-{-# NOINLINE mask0 #-}
-{-# NOINLINE mask1 #-}
-{-# NOINLINE mask2 #-}
-{-# NOINLINE mask3 #-}
-
-
--- | Combine the independent with the joint potential vector (a type-safe
--- wrapper over inject').
-inject
-  :: (Reifies s W)
-  => BVar s (Vec 3 Pot)
-  -> BVar s (Vec 8 Pot)
-  -> BVar s (Vec 8 Pot)
-inject v3 v8 = expand v3 + v8
-{-# INLINE inject #-}
-
-
--- TODO: yet another occurrence of `at`!
-at
-  :: ( Num (At.IxValue b), Reifies s W, Backprop b
-     , Backprop (At.IxValue b), At.Ixed b
-     )
-  => BVar s b
-  -> At.Index b
-  -> BVar s (At.IxValue b)
-at v k = maybe 0 id $ v ^^? ix k
-{-# INLINE at #-}
+-- import           Debug.Trace (trace)
 
 
 ----------------------------------------------
@@ -281,7 +80,8 @@ at v k = maybe 0 id $ v ^^? ix k
 ----------------------------------------------
 
 
--- | Biaffinity component
+-- | Biaffinity component, responsible for scoring different labelling
+-- configurations which can be assigned to a given dependency arc
 class Backprop comp => BiComp dim comp where
   runBiComp 
     :: (Reifies s W)
@@ -300,7 +100,7 @@ instance (BiComp dim comp1, BiComp dim comp2)
 ----------------------------------------------
 
 
--- | Global bias
+-- | No biaffinity (score fixed to 0.0)
 data NoBi = NoBi
   deriving (Show, Generic, Binary, NFData, ParamSet)
 
@@ -334,7 +134,9 @@ instance BiComp dim Bias where
 ----------------------------------------------
 
 
--- | Word affinity component
+-- | Generic word affinity component; allows to make the potentials of the
+-- different arc labelling configurations depend on a particular node (head,
+-- dependent, grandparent, etc.).
 data WordAff d h = WordAff
   { _wordAffN :: FFN d h 8
   } deriving (Generic, Binary, NFData, ParamSet)
@@ -358,6 +160,7 @@ nodeAff graph v aff =
    in BP.coerceVar $ FFN.run (aff ^^. wordAffN) hv
 
 
+-- | Affinity of the head
 newtype HeadAff d h = HeadAff { _unHeadAff :: WordAff d h }
   deriving (Generic)
   deriving newtype (Binary, NFData, ParamSet, Backprop)
@@ -368,6 +171,7 @@ instance (KnownNat dim, KnownNat h) => BiComp dim (HeadAff dim h) where
   runBiComp graph (_, w) aff = nodeAff graph w (aff ^^. unHeadAff)
 
 
+-- | Affinity of the dependent
 newtype DepAff d h = DepAff { _unDepAff :: WordAff d h }
   deriving (Generic)
   deriving newtype (Binary, NFData, ParamSet, Backprop)
@@ -378,6 +182,7 @@ instance (KnownNat dim, KnownNat h) => BiComp dim (DepAff dim h) where
   runBiComp graph (v, _) aff = nodeAff graph v (aff ^^. unDepAff)
 
 
+-- | Symmetric affinity (head and dependent both used in the same way)
 newtype SymAff d h = SymAff { _unSymAff :: WordAff d h }
   deriving (Generic)
   deriving newtype (Binary, NFData, ParamSet, Backprop)

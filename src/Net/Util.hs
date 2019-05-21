@@ -31,10 +31,11 @@ module Net.Util
 
   -- * Conversion
   , vec1
-  , elem0
-  , elem1
-  , elem2
   , toList
+  , at
+
+  -- * Utilities
+  , rightInTwo
 
 --   , checkNaN
 --   , reportNaN
@@ -47,10 +48,14 @@ import qualified GHC.TypeNats as Nats
 
 import           System.Random (randomRIO)
 
+import           Control.Lens.At (ixAt, ix)
+import qualified Control.Lens.At as At
+
 import           Data.Maybe (fromJust)
 import qualified Data.Vector.Storable.Sized as SVS
+import qualified Data.List as List
 import qualified Numeric.Backprop as BP
-import           Numeric.Backprop (BVar, Reifies, W)
+import           Numeric.Backprop (Backprop, BVar, Reifies, W, (^^?))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop (R, L)
 import qualified Numeric.LinearAlgebra as LAD
@@ -158,7 +163,7 @@ vector k = do
 
 
 ------------------------------------
--- Conversion, utilities
+-- Conversion
 ------------------------------------
 
 
@@ -180,43 +185,73 @@ vec1 =
 {-# INLINE vec1 #-}
 
 
--- | Extract the @0@ (first!) element of the given vector.
-elem0
-  :: (Reifies s W, KnownNat n, 1 Nats.<= n)
-  => BVar s (R n) -> BVar s Double
-elem0 = fst . LBP.headTail
-{-# INLINE elem0 #-}
-
-
--- | Extract the @1@-th (second!) element of the given vector.
-elem1
-  :: ( Reifies s W
-     , KnownNat (n Nats.- 1), KnownNat n
-     , (1 Nats.<=? (n Nats.- 1)) ~ 'True
-     , (1 Nats.<=? n) ~ 'True 
-     )
-  => BVar s (R n) -> BVar s Double
-elem1 = fst . LBP.headTail . snd . LBP.headTail
-{-# INLINE elem1 #-}
-
-
--- | Extract the @2@ (third!) element of the given vector.
-elem2
-  :: ( Reifies s W
-     , KnownNat (n Nats.- 1), KnownNat n
-     , KnownNat ((n Nats.- 1) Nats.- 1)
-     , (1 Nats.<=? ((n Nats.- 1) Nats.- 1)) ~ 'True
-     , (1 Nats.<=? (n Nats.- 1)) ~ 'True
-     , (1 Nats.<=? n) ~ 'True
-     )
-  => BVar s (R n) -> BVar s Double
-elem2 = fst . LBP.headTail . snd . LBP.headTail . snd . LBP.headTail
-{-# INLINE elem2 #-}
+-- -- -- | Extract the @0@ (first!) element of the given vector.
+-- -- elem0
+-- --   :: (Reifies s W, KnownNat n, 1 Nats.<= n)
+-- --   => BVar s (R n) -> BVar s Double
+-- -- elem0 = fst . LBP.headTail
+-- -- {-# INLINE elem0 #-}
+-- elem0 = flip at 0
+-- {-# INLINE elem0 #-}
+-- 
+-- 
+-- -- -- | Extract the @1@-th (second!) element of the given vector.
+-- -- elem1
+-- --   :: ( Reifies s W
+-- --      , KnownNat (n Nats.- 1), KnownNat n
+-- --      , (1 Nats.<=? (n Nats.- 1)) ~ 'True
+-- --      , (1 Nats.<=? n) ~ 'True 
+-- --      )
+-- --   => BVar s (R n) -> BVar s Double
+-- -- elem1 = fst . LBP.headTail . snd . LBP.headTail
+-- elem1 = flip at 1
+-- {-# INLINE elem1 #-}
+-- 
+-- 
+-- -- -- | Extract the @2@ (third!) element of the given vector.
+-- -- elem2
+-- --   :: ( Reifies s W
+-- --      , KnownNat (n Nats.- 1), KnownNat n
+-- --      , KnownNat ((n Nats.- 1) Nats.- 1)
+-- --      , (1 Nats.<=? ((n Nats.- 1) Nats.- 1)) ~ 'True
+-- --      , (1 Nats.<=? (n Nats.- 1)) ~ 'True
+-- --      , (1 Nats.<=? n) ~ 'True
+-- --      )
+-- --   => BVar s (R n) -> BVar s Double
+-- -- elem2 = fst . LBP.headTail . snd . LBP.headTail . snd . LBP.headTail
+-- elem2 = flip at 2
+-- {-# INLINE elem2 #-}
 
 
 -- | Convert the given vector to a list
 toList :: (KnownNat n) => R n -> [Double]
 toList = LAD.toList . LA.unwrap
+
+
+at
+  :: ( Num (At.IxValue b), Reifies s W, Backprop b
+     , Backprop (At.IxValue b), At.Ixed b
+     )
+  => BVar s b
+  -> At.Index b
+  -> BVar s (At.IxValue b)
+at v k = maybe 0 id $ v ^^? ix k
+{-# INLINE at #-}
+
+
+------------------------------------
+-- Utilities
+------------------------------------
+
+
+-- | Split a list x_1, x_2, ..., x_(2n) in two equal parts:
+-- 
+--   * x_1, x_2, ..., x_n, and
+--   * x_(n+1), x_(n+2), ..., x_(2n)
+--
+rightInTwo :: [a] -> ([a], [a])
+rightInTwo xs =
+  List.splitAt (length xs `div` 2) xs
 
 
 -- -- | Make sure that the given number is not a NaN, otherwise raise an error

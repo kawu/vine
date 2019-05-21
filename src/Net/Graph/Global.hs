@@ -33,8 +33,8 @@ import qualified Numeric.Backprop as BP
 import           Numeric.LinearAlgebra.Static.Backprop
   (BVar, Reifies, W, dot)
 
-import qualified Net.Graph.BiComp as B
-import           Net.Graph.BiComp (Pot, Prob, Vec(..), Vec8, Out(..))
+import qualified Net.Graph.Arc as B
+import           Net.Graph.Arc (Pot, Prob, Vec(..), Vec8, Out(..))
 import           Graph (Graph, Arc, incoming, outgoing)
 import qualified Graph
 import qualified Net.Graph.Marginals as Margs
