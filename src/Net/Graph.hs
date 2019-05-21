@@ -55,7 +55,7 @@
 -- of tagging, not sure how/if this could work during training.
 
 
-module Net.Graph2
+module Net.Graph
   ( 
   -- * Network
     new
@@ -189,12 +189,12 @@ import qualified Format.Cupt as Cupt
 
 import           Graph
 import qualified Net.List as NL
-import           Net.Graph2.BiComp
+import           Net.Graph.BiComp
   (Pot, Prob, Vec(..), Vec8, Out(..))
-import qualified Net.Graph2.BiComp as B
-import qualified Net.Graph2.UniComp as U
-import qualified Net.Graph2.Marginals as Margs
-import qualified Net.Graph2.Global as Global
+import qualified Net.Graph.BiComp as B
+import qualified Net.Graph.UniComp as U
+import qualified Net.Graph.Marginals as Margs
+import qualified Net.Graph.Global as Global
 import qualified Net.Input as I
 
 import           Debug.Trace (trace)
@@ -460,7 +460,7 @@ runRawUni net graph = M.fromList $ do
 --   case probTyp of
 --     SoftMax ->
 --       error . unwords $
---         [ "Graph2.run: SoftMax has to be reimplemented"
+--         [ "Graph.run: SoftMax has to be reimplemented"
 --         , "to take the node potentials into account" ]
 --       -- fmap B.softmaxVec (runRaw net graph)
 --     Marginals -> Margs.approxMarginals graph (runRaw net graph) 1
@@ -1080,7 +1080,7 @@ tokens el = do
   let y = just $ nodeLabAt (graph el) v
   return (tok, y)
   where
-    just Nothing = error "Neg.Graph2.tokens: got Nothing"
+    just Nothing = error "Neg.Graph.tokens: got Nothing"
     just (Just x) = x
 
 
@@ -1352,7 +1352,7 @@ decode = BP.evalBP $ BP.collectVar . B.squash
 --       , depVal = depP
 --       }
 --     xs -> error $
---       "Graph2.decode: unsupported list length (" ++
+--       "Graph.decode: unsupported list length (" ++
 --        show xs ++ ")"
 
 
@@ -1418,8 +1418,8 @@ rightInTwo xs =
 -- isForest g =
 --   case roots of
 --     [v] -> v
---     [] -> error "Graph2.treeRoot: no root found!"
---     _ -> error "Graph2.treeRoot: several roots found!"
+--     [] -> error "Graph.treeRoot: no root found!"
+--     _ -> error "Graph.treeRoot: several roots found!"
 --   where
 --     roots = do
 --       v <- Graph.graphNodes g
@@ -1486,7 +1486,7 @@ firstCommonElem xs ys
   where
     safeHead (e:es) = e
     safeHead [] =
-      error "Graph2.firstCommonElem: no common element found"
+      error "Graph.firstCommonElem: no common element found"
 
 
 -- | Find the path from the given node to a tree root.  The given graph must be
@@ -1499,4 +1499,4 @@ pathToRoot graph =
       case Graph.outgoing v graph of
         [] -> [v]
         [w] -> v : go w
-        _ -> error "Graph2.pathToRoot: the given graph is not a tree/forest"
+        _ -> error "Graph.pathToRoot: the given graph is not a tree/forest"

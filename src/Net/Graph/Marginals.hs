@@ -6,7 +6,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 
-module Net.Graph2.Marginals
+module Net.Graph.Marginals
   ( 
   --   approxMarginals
   --   approxMarginals'
@@ -46,8 +46,8 @@ import qualified Data.MemoCombinators as Memo
 
 import qualified Net.Util as U
 import qualified Net.List as NL
-import           Net.Graph2.BiComp (Pot, Prob, Vec(..), Vec8, Out(..))
-import qualified Net.Graph2.BiComp as B
+import           Net.Graph.BiComp (Pot, Prob, Vec(..), Vec8, Out(..))
+import qualified Net.Graph.BiComp as B
 import           Graph (Graph, Arc, incoming, outgoing)
 
 
@@ -105,7 +105,7 @@ arcPotExp potMap arc =
   exp . arcPot potMap arc
 
 
--- | A semi-lifted version of `obfuscate` in the `Net.Graph2` module.
+-- | A semi-lifted version of `obfuscate` in the `Net.Graph` module.
 --
 -- TODO: this uses `VS.fromList` which is supposedly very inefficient in case
 -- of long lists.  But our list isn't long, is it?
@@ -122,7 +122,7 @@ obfuscateBP =
   where
     from = just . VS.fromList :: [a] -> VS.Vector 8 a
     just Nothing =
-      error "Net.Graph2.mkVec: got Nothing"
+      error "Net.Graph.mkVec: got Nothing"
     just (Just x) = x
 
 

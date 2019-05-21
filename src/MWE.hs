@@ -21,7 +21,7 @@
 --   * ...
 
 
-module MWE2
+module MWE
   ( Sent(..)
 
   -- * New
@@ -106,9 +106,9 @@ import qualified Numeric.SGD.Adam as Adam
 
 import qualified Format.Cupt as Cupt
 import qualified Graph
-import qualified Net.Graph2 as N
-import qualified Net.Graph2.BiComp as B
-import qualified Net.Graph2.UniComp as U
+import qualified Net.Graph as N
+import qualified Net.Graph.BiComp as B
+import qualified Net.Graph.UniComp as U
 import qualified Net.Input as I
 import qualified DhallUtils as DU
 

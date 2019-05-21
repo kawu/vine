@@ -211,7 +211,7 @@ instance
         pd ^^. posMap ^^? ixAt pos
         where
           err = trace
-            ( "Graph2.Input: unknown POS ("
+            ( "Net.Input: unknown POS ("
             ++ show pos
             ++ ")" ) 0
   
@@ -219,7 +219,7 @@ instance
         pd ^^. depMap ^^? ixAt dep
         where
           err = trace
-            ( "Graph2.Input: unknown arc label ("
+            ( "Net.Input: unknown arc label ("
             ++ show dep
             ++ ")" ) 0
 

@@ -27,7 +27,7 @@
 -------------------------
 
 
-module Net.Graph2.BiComp
+module Net.Graph.BiComp
   ( Pot
   , Prob
   , Vec(..)
@@ -107,7 +107,7 @@ nub = S.toList . S.fromList
 -- -- | V8 -> V3 squashing
 -- --
 -- -- The `squash` function is a backpropagation-enabled version of @decode@ from
--- -- `Net.Graph2`.  The result is a vector of three probability values:
+-- -- `Net.Graph`.  The result is a vector of three probability values:
 -- --
 -- --   * Probability of the arc being a MWE
 -- --   * Probability of the head being a MWE
@@ -186,7 +186,7 @@ vec88 = LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
 
 
 -- | The `squash` function is a backpropagation-enabled version of @decode@
--- from `Net.Graph2`.  The result is a vector of three probability values:
+-- from `Net.Graph`.  The result is a vector of three probability values:
 --
 --   * Probability of the arc being a MWE
 --   * Probability of the head being a MWE
@@ -203,7 +203,7 @@ squash v8_vec = Out
 
 
 -- -- | The `stretch` function is a backpropagation-enabled version of @encode@
--- -- from `Net.Graph2`.
+-- -- from `Net.Graph`.
 -- stretch :: forall s. (Reifies s W) => Out (BVar s Double) -> BVar s (Vec 8 Prob)
 -- stretch = undefined 
 
@@ -211,7 +211,7 @@ squash v8_vec = Out
 -- | V3 -> V8 expansion
 --
 -- TODO: Make some kind of link between `epxand` and @encode@ from
--- `Net.Graph2`.
+-- `Net.Graph`.
 --
 expand
   :: (Reifies s W)

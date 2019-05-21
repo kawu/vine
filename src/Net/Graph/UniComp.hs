@@ -27,7 +27,7 @@
 -------------------------
 
 
-module Net.Graph2.UniComp
+module Net.Graph.UniComp
   ( UniComp (..)
   , Bias (..)
   , UniAff (..)

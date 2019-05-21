@@ -11,7 +11,7 @@
 -- | Global labelling probability
 
 
-module Net.Graph2.Global
+module Net.Graph.Global
   ( Labelling(..)
   , Version(..)
   , probLog
@@ -33,11 +33,11 @@ import qualified Numeric.Backprop as BP
 import           Numeric.LinearAlgebra.Static.Backprop
   (BVar, Reifies, W, dot)
 
-import qualified Net.Graph2.BiComp as B
-import           Net.Graph2.BiComp (Pot, Prob, Vec(..), Vec8, Out(..))
+import qualified Net.Graph.BiComp as B
+import           Net.Graph.BiComp (Pot, Prob, Vec(..), Vec8, Out(..))
 import           Graph (Graph, Arc, incoming, outgoing)
 import qualified Graph
-import qualified Net.Graph2.Marginals as Margs
+import qualified Net.Graph.Marginals as Margs
 
 
 ----------------------------------------------
@@ -126,7 +126,7 @@ score graph Labelling{..} potMap nodMap =
 ----------------------------------------------
 -- Labelling
 --
--- (copy from Net.Graph2)
+-- (copy from Net.Graph)
 ----------------------------------------------
 
 
@@ -192,8 +192,8 @@ treeRoot :: Graph a b -> G.Vertex
 treeRoot g =
   case roots of
     [v] -> v
-    [] -> error "Graph2.treeRoot: no root found!"
-    _ -> error "Graph2.treeRoot: several roots found!"
+    [] -> error "Graph.treeRoot: no root found!"
+    _ -> error "Graph.treeRoot: several roots found!"
   where
     roots = do
       v <- Graph.graphNodes g
