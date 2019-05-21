@@ -2,11 +2,14 @@ import           Test.Tasty (TestTree, testGroup)
 import qualified Test.Tasty as Tasty
 import qualified Test.Tasty.SmallCheck as SC
 
+import           GHC.TypeNats (KnownNat)
+import qualified Numeric.LinearAlgebra.Static as LA
+import qualified Numeric.LinearAlgebra as LAD
 import qualified Data.Map.Strict as M
 
-import qualified Net.Graph2 as N
-import qualified Net.Graph2.BiComp as B
-import qualified Net.Graph2.Marginals as Margs
+import qualified Net.Graph as N
+import qualified Net.Graph.BiComp as B
+import qualified Net.Graph.Marginals as Margs
 
 
 main :: IO ()
@@ -34,6 +37,15 @@ scProps = testGroup "(checked by SmallCheck)"
       \xs ->
         let m = M.fromList (zip N.enumerate $ pad 8 xs)
          in null xs || (N.explicate . N.obfuscate) m == m
+  , Tasty.localOption (SC.SmallCheckDepth 4) .
+    SC.testProperty "mask (enumerate !! x) ! y == [x == y]" $
+      \x0 y0 ->
+        let
+          x = x0 `mod` 8
+          y = y0 `mod` 8
+        in
+          extract y (N.mask (N.enumerate !! x)) ==
+            if x == y then 1.0 else 0.0
   , SC.testProperty "explicate (mask x) M.! y == [x == y]" $
       \x y -> N.explicate (B.Vec $ N.mask x) M.! y ==
         if x == y then 1.0 else 0.0
@@ -55,3 +67,8 @@ scProps = testGroup "(checked by SmallCheck)"
 -- | Pad the given (non-empty) list to the given number of elements.
 pad :: Int -> [a] -> [a]
 pad k = take k . cycle
+
+
+-- | Extract the `k`-th element of `R d` vector.
+extract :: (KnownNat n) => Int -> LA.R n -> Double
+extract k v = (LAD.toList . LA.unwrap $ v) !! k

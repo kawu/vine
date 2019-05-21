@@ -104,22 +104,6 @@ nub = S.toList . S.fromList
 ----------------------------------------------
 
 
--- -- | V8 -> V3 squashing
--- --
--- -- The `squash` function is a backpropagation-enabled version of @decode@ from
--- -- `Net.Graph`.  The result is a vector of three probability values:
--- --
--- --   * Probability of the arc being a MWE
--- --   * Probability of the head being a MWE
--- --   * Probability of the dependent being a MWE
--- --
--- squash
---   :: (Reifies s W)
---   => BVar s (Vec 8 Prob)
---   -> BVar s (R 3)
--- squash v8 = undefined
-
-
 -- | Output structure in which a value of type @a@ is assigned to an arc and
 -- the two nodes it connects.
 data Out a = Out
@@ -139,7 +123,7 @@ instance (SC.Serial m a) => SC.Serial m (Out a)
 -- encoding/decoding format.
 --
 -- TODO: what does it mean that the order is consistent with the
--- encoding/decoding format?  It is checked one way or another?
+-- encoding/decoding format?  It is (Quick-)checked one way or another?
 --
 enumerate :: [Out Bool]
 enumerate = do
@@ -150,9 +134,9 @@ enumerate = do
 
 
 -- | A mask vector which allows to easily obtain (with dot product) the
--- potential of a given `Out` labeling.
+-- potential of a given `Out` labeling.  The following should be satisfied:
 --
--- TODO: the mask could be perhaps calculated using bit-level operattions?
+--   mask (enumerate !! i) LA.! j == (i == j)
 --
 mask :: Out Bool -> R 8
 mask (Out False False False) = vec18
@@ -175,18 +159,6 @@ vec58 = LA.vector [0, 0, 0, 0, 1, 0, 0, 0]
 vec68 = LA.vector [0, 0, 0, 0, 0, 1, 0, 0]
 vec78 = LA.vector [0, 0, 0, 0, 0, 0, 1, 0]
 vec88 = LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
-
-
--- -- | Cross entropy between the true and the artificial distributions
--- crossEntropy
---   :: forall s. (Reifies s W)
---   => BVar s (Vec 8 Prob)
---     -- ^ Target ,,true'' probability distribution
---   -> BVar s (Vec 8 Prob)
---     -- ^ Output ,,artificial'' distribution
---   -> BVar s Double
--- crossEntropy p0 q0 =
---   undefined
 
 
 -- | The `squash` function is a backpropagation-enabled version of @decode@
@@ -251,6 +223,7 @@ mask3 = LA.vector [0, 1, 0, 1, 0, 1, 0, 1]
 {-# NOINLINE mask3 #-}
 
 
+-- TODO: yet another occurrence of `at`!
 at
   :: ( Num (At.IxValue b), Reifies s W, Backprop b
      , Backprop (At.IxValue b), At.Ixed b
