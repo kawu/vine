@@ -42,12 +42,13 @@ module Net.Graph.BiComp
 
   , NoBi (..)
 
-  -- * Vec3 <-> Vec8 conversion
+  -- * Conversion
   , Out(..)
   , enumerate
   , mask
   , squash
-  -- , stretch
+  , explicate
+  , obfuscate
   ) where
 
 
@@ -109,7 +110,7 @@ data Pot
 data Prob
 
 
--- | A static-length vector with potentials (`Pot`) or probabilities (`Prob`)
+-- | A static-length vector with potentials (`Pot`) or probabilities (`Prob`).
 newtype Vec n p = Vec { unVec :: R n }
   deriving (Show, Generic)
   deriving newtype (Binary, NFData, ParamSet, Num, Backprop)
@@ -118,7 +119,7 @@ instance (KnownNat n) => New a b (Vec n p) where
   new xs ys = Vec <$> new xs ys
 
 
--- | Type synonym to @Vec 8 p@.
+-- | Type synonym for @Vec 8 p@.
 type Vec8 p = Vec 8 p
 
 
@@ -131,20 +132,37 @@ data Out a = Out
     -- ^ Value assigned to the head
   , depVal :: a
     -- ^ Value assigned to the dependent
-  } deriving (Generic, Show, Eq, Ord, Functor, Foldable) --, Traversable)
+  } deriving (Generic, Show, Eq, Ord, Functor, Foldable)
 
 -- Allows to use SmallCheck to test (decode . encode) == id.
 instance (SC.Serial m a) => SC.Serial m (Out a)
 
 
 -- | Enumerate the possible arc/node labelings in order consistent with the
--- encoding/decoding format.
+-- encoding/decoding format.  Consistent in the sense that
+--
+--   @zip enumerate (toList $ unVec vec)@
+--
+-- provides a list in which to each `Out` value the corresponding vector @vec@
+-- value is assigned.
+--
 enumerate :: [Out Bool]
 enumerate = do
   b1 <- [False, True]
   b2 <- [False, True]
   b3 <- [False, True]
   return $ Out b1 b2 b3
+
+
+-- | Determine the values assigned to different labellings of the given arc and
+-- nodes.
+explicate :: Vec8 p -> M.Map (Out Bool) Double
+explicate = M.fromList . zip enumerate . toList . unVec
+
+
+-- | The inverse of `explicate`.
+obfuscate :: M.Map (Out Bool) Double -> Vec8 p
+obfuscate = Vec . LA.vector . M.elems
 
 
 -- | A mask vector which allows to easily obtain (with dot product) the

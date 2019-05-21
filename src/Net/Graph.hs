@@ -83,8 +83,8 @@ module Net.Graph
 
   -- * Explicating
   , B.enumerate
-  , explicate
-  , obfuscate
+  , B.explicate
+  , B.obfuscate
   , B.mask
 
   -- * Inference
@@ -640,7 +640,7 @@ treeTagGlobal' graph labMap nodMap =
         tagSubTree'
           (treeRoot graph)
           graph
-          (fmap explicate labMap)
+          (fmap B.explicate labMap)
           nodMap
       best = better trueBest falseBest
    in fmap getAny (bestLab best)
@@ -764,7 +764,7 @@ addNode node lab pot Best{..} = Best
 --         tagSubTree
 --           (treeRoot graph)
 --           graph
---           (fmap explicate labMap)
+--           (fmap B.explicate labMap)
 --       best = better trueBest falseBest
 --    in fmap getAny (bestLab best)
 -- 
@@ -871,7 +871,7 @@ treeTagConstrained' graph labMap nodMap =
         tagSubTreeC'
           (treeRoot graph)
           graph
-          (fmap explicate labMap)
+          (fmap B.explicate labMap)
           nodMap
       best = List.foldl1' better
         -- NOTE: `falseZeroOne` can be excluded in constrained decoding
@@ -948,7 +948,7 @@ tagSubTreeC' root graph lmap nmap =
 --         tagSubTreeC
 --           (treeRoot graph)
 --           graph
---           (fmap explicate labMap)
+--           (fmap B.explicate labMap)
 --       best = List.foldl1' better
 --         -- NOTE: `falseZeroOne` can be excluded in constrained decoding
 --         [true, falseZeroTrue, falseMoreTrue]
@@ -1010,15 +1010,15 @@ tagSubTreeC' root graph lmap nmap =
 ----------------------------------------------
 
 
--- | Determine the values assigned to different labellings of the given arc and
--- nodes.
-explicate :: Vec8 p -> M.Map (Out Bool) Double
-explicate = M.fromList . zip B.enumerate . toList . unVec
-
-
--- | The inverse of `explicate`.
-obfuscate :: M.Map (Out Bool) Double -> Vec8 p
-obfuscate = Vec . LA.vector . M.elems
+-- -- | Determine the values assigned to different labellings of the given arc and
+-- -- nodes.
+-- explicate :: Vec8 p -> M.Map (Out Bool) Double
+-- explicate = M.fromList . zip B.enumerate . toList . unVec
+-- 
+-- 
+-- -- | The inverse of `explicate`.
+-- obfuscate :: M.Map (Out Bool) Double -> Vec8 p
+-- obfuscate = Vec . LA.vector . M.elems
 
 
 ----------------------------------------------
