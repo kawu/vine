@@ -3,6 +3,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
+-- | The module provides a couple of list-related, backprop-enabled operations.
+
+
 module Net.List
   ( softMax
   , softMaxLog
@@ -32,7 +35,7 @@ import qualified Net.Util as U
 --     norm = PB.sum x
 
 
--- | Apply softmax to a list (alternative version).
+-- | Apply softmax to a list.
 softMax
   :: (Reifies s W)
   => [BVar s Double]

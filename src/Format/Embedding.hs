@@ -3,6 +3,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 
+-- | The module responsible for parsing embedding vector representations.
+--
+-- The embedding file consists of a blank-line-separated list of sentences.
+-- Each sentence consists of a sequence of lines, and each line is a
+-- tab-separated specifiction of a word.  In a line, the first value is the
+-- orthographic form, and the remaining @d@ values represent the embedding
+-- vector.
+
+
 module Format.Embedding
   ( readEmbeddings
   ) where

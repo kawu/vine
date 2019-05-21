@@ -37,7 +37,7 @@
 -------------------------
 
 
--- | Input transformation layer
+-- | Input extraction/transformation layer
 
 
 module Net.Input
@@ -98,15 +98,17 @@ class (KnownNat i, KnownNat o, Backprop bp) => Input bp i o where
     => BVar s bp
       -- ^ Network parameters (over which we can backpropagate)
     -> [(Cupt.Token, R i)]
-      -- ^ Input sentence with the corresponding embeddings.  WARNING: the
-      -- function must not rely on `Cupt.mwe` annotations.
+      -- ^ Input sentence with the corresponding embeddings.  Backpropagation
+      -- on the input embedings is not allowed.  WARNING: the function must
+      -- not rely on `Cupt.mwe` annotations.
     -> [BVar s (R o)]
 
 
+-- | Backpropagation-free variant of `runInput`.
 evalInput
   :: forall bp i o. (Input bp i o)
   => bp
-    -- ^ Network parameters (over which we can backpropagate)
+    -- ^ Network parameters
   -> [(Cupt.Token, R i)]
     -- ^ Input sentence with the corresponding embeddings.  WARNING: the
     -- function must not rely on `Cupt.mwe` annotations.
@@ -230,7 +232,7 @@ instance
     
 -- | No transformation
 data NoTrans = NoTrans
-  deriving (Show, Generic, Binary, NFData, ParamSet, Num, Backprop)
+  deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''NoTrans
 
@@ -250,8 +252,7 @@ instance (KnownNat i, i ~ o) => Transform NoTrans i o where
 newtype Scale i o = Scale
   { _contractL :: L o i
   } deriving (Show, Generic)
-    deriving newtype (Binary, NFData, ParamSet, Num, Backprop)
-    -- TODO: why do we need the `Num` instance?
+    deriving newtype (Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''Scale
 
@@ -264,11 +265,18 @@ instance (KnownNat i, KnownNat o, i ~ i', o ~ o')
 
 
 -- | Simple scaling layer which allows to scale down the size of vector
--- representations.
+-- representations, enriched with the leaky rectifier activation on the output
+-- vector.
+--
+-- NOTE: the reason to have this is that composing input extractors or
+-- transformations is not as easy as it should be.  Namely, deriving the
+-- `Transform` instance for the composed transformer turns out tricky.  Have to
+-- look into this problem more closely.
+--
 newtype ScaleLeakyRelu i o = ScaleLeakyRelu
   { _contractLRL :: L o i
   } deriving (Show, Generic)
-    deriving newtype (Binary, NFData, ParamSet, Num, Backprop)
+    deriving newtype (Binary, NFData, ParamSet, Backprop)
 
 makeLenses ''ScaleLeakyRelu
 
@@ -286,24 +294,24 @@ instance (KnownNat i, KnownNat o, i ~ i', o ~ o')
 ----------------------------------------------
      
     
-data Relu = Relu
-  deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
-
-instance (KnownNat i) => Transform Relu i i where
-  -- runTransform _ = map (LBP.vmap' U.relu)
-  runTransform _ = map U.relu
-
-
-data LeakyRelu = LeakyRelu
-  deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
-
-instance (KnownNat i) => Transform LeakyRelu i i where
-  -- runTransform _ = map (LBP.vmap' U.leakyRelu)
-  runTransform _ = map U.leakyRelu
-
-
-data Logistic = Logistic
-  deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
-
-instance (KnownNat i) => Transform Logistic i i where
-  runTransform _ = map U.logistic
+-- data Relu = Relu
+--   deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
+-- 
+-- instance (KnownNat i) => Transform Relu i i where
+--   -- runTransform _ = map (LBP.vmap' U.relu)
+--   runTransform _ = map U.relu
+-- 
+-- 
+-- data LeakyRelu = LeakyRelu
+--   deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
+-- 
+-- instance (KnownNat i) => Transform LeakyRelu i i where
+--   -- runTransform _ = map (LBP.vmap' U.leakyRelu)
+--   runTransform _ = map U.leakyRelu
+-- 
+-- 
+-- data Logistic = Logistic
+--   deriving (Show, Generic, Binary, NFData, ParamSet, Backprop)
+-- 
+-- instance (KnownNat i) => Transform Logistic i i where
+--   runTransform _ = map U.logistic

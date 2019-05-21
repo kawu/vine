@@ -28,31 +28,13 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
 
--- | Processing graphs with artificial neural networks.  This module allows to
--- assign labels to both arcs (as in `Net.Graph`) and nodes (in contrast to
--- `Net.Graph`).
+-- | Processing graphs (see `Graph`) with artificial neural networks.  This
+-- module allows to model labels assigned to both arcs and nodes.
 --
--- The plan is to play with the arc-factored model first.  Two inference
--- methods can be considered: let's call them local and global.  In either
--- case, we assign potentials two combinations of values:
+-- The module also implements some plumbing between the different network
+-- layers: input extraction and transformation, node scoring, and arc scoring.
 --
---   * (label of the head, label of the arc, label of the dependent)
---
--- In local inference, we split this assignment to make the potentials of:
---
---   * label of the head
---   * label of the arc
---   * label of the dependent
---
--- completely separate.  Then we can simply sum the potentials before making
--- the final decision as to whether a given node should be considered an MWE
--- component or not.  Again, this makes the decisions for the individual nodes
--- and arcs independent (at least intuitively, I'm not sure if formally these
--- decisions are completely independent).
---
--- In case of global inference, we want to maximize the total potential of a
--- labeling of the whole dependency tree.  We can certainly do that at the time
--- of tagging, not sure how/if this could work during training.
+-- TODO: rename as `Net.Sth` (e.g., `Net.Complex`) or simply `Net`?
 
 
 module Net.Graph
@@ -107,7 +89,7 @@ module Net.Graph
 
   -- * Inference
   , Labeling(..)
-  , tagGreedy
+  -- , tagGreedy
   -- , treeTagGlobal
   , treeTagGlobal'
   -- , treeTagConstrained
@@ -188,6 +170,7 @@ import           Numeric.SGD.ParamSet (ParamSet)
 import qualified Format.Cupt as Cupt
 
 import           Graph
+import           Graph.SeqTree
 import qualified Net.List as NL
 import           Net.Graph.BiComp
   (Pot, Prob, Vec(..), Vec8, Out(..))
@@ -205,7 +188,19 @@ import           Debug.Trace (trace)
 ----------------------------------------------
 
 
--- -- | Should be rather named sth. like `Fixed`...
+-- | The network composed from different layers responsible for input
+-- extraction, node scoring, and arc scoring.
+--
+-- NOTE: Should be rather named sth. like `Fixed`...
+data Transparent = Transparent
+  { _inpMod :: I.PosDepInp 25 25
+  , _traMod :: I.NoTrans
+  , _uniMod :: U.UniAff 350 200
+  , _biaMod :: B.BiAffMix 350 200
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+-- NOTE: alternative complex networks
+--
 -- data Transparent = Transparent
 --   { _inpMod :: I.PosDepInp 25 25
 --   -- { _inpMod :: I.RawInp
@@ -220,15 +215,7 @@ import           Debug.Trace (trace)
 --   -- , _biaMod :: B.BiAff 150 100
 --   -- , _biaMod :: B.NoBi
 --   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
-
--- | Should be rather named sth. like `Fixed`...
-data Transparent = Transparent
-  { _inpMod :: I.PosDepInp 25 25
-  , _traMod :: I.NoTrans
-  , _uniMod :: U.UniAff 350 200
-  , _biaMod :: B.BiAffMix 350 200
-  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
-
+--
 -- -- | Should be rather named sth. like `Fixed`...
 -- data Transparent = Transparent
 --   { _inpMod :: I.PosDepInp 25 25
@@ -619,17 +606,17 @@ collect =
             }
 
 
--- | Greedily pick the labeling with high potential based on the given
--- potential map and the given MWE choice function.
-tagGreedy
-  :: ([Double] -> Bool)
-    -- ^ MWE choice for a given list of probabilities, independently assigned
-    -- to a given object (arc or node)
-  -> M.Map Arc (Vec8 Pot)
-  -> Labeling Bool
-tagGreedy mweChoice =
-  let softMax vec = BP.evalBP0 $ B.softmaxVec (BP.auto vec)
-   in fmap mweChoice . collect . fmap softMax
+-- -- | Greedily pick the labeling with high potential based on the given
+-- -- potential map and the given MWE choice function.
+-- tagGreedy
+--   :: ([Double] -> Bool)
+--     -- ^ MWE choice for a given list of probabilities, independently assigned
+--     -- to a given object (arc or node)
+--   -> M.Map Arc (Vec8 Pot)
+--   -> Labeling Bool
+-- tagGreedy mweChoice =
+--   let softMax vec = BP.evalBP0 $ B.softmaxVec (BP.auto vec)
+--    in fmap mweChoice . collect . fmap softMax
 
 
 ----------------------------------------------

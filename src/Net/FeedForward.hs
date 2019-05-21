@@ -17,10 +17,9 @@
 
 module Net.FeedForward
   ( FFN (..)
-  -- , new
   , run
-  -- , substract
   ) where
+
 
 import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)

@@ -3,11 +3,9 @@
 
 module DhallUtils
   ( rmUnion_1
+
   -- * Double operations
   -- , doubleSettings
-
---   -- * Provisional
---   , main
   ) where
 
 
@@ -83,6 +81,12 @@ rmField_1 expr =
     _ -> expr
 
 
+-- ----------------------------------------------------------------------
+-- NOTE: The code below, commented out, is the trace of the effort put in
+-- making it possible to specify the "gradually decreasing stepsize" as a
+-- function directly in the .dhall configuration file.
+--
+--
 -- ----------------------------------------------
 -- -- Double settings
 -- ----------------------------------------------

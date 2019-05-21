@@ -27,6 +27,9 @@
 -------------------------
 
 
+-- | The module responsible for node scoring.
+
+
 module Net.Graph.UniComp
   ( UniComp (..)
   , Bias (..)
@@ -66,6 +69,7 @@ import qualified Test.SmallCheck.Series as SC
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import           Graph
+import           Graph.SeqTree
 import           Net.Util hiding (scale)
 import           Net.New
 import           Net.Pair
@@ -73,19 +77,6 @@ import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 
 import           Debug.Trace (trace)
-
-
-----------------------------------------------
--- Utils
-----------------------------------------------
-
-
-onLeft :: G.Vertex -> Graph a b -> Maybe G.Vertex
-onLeft v g = fst <$> M.lookupLT v (nodeLabelMap g)
-
-
-onRight :: G.Vertex -> Graph a b -> Maybe G.Vertex
-onRight v g = fst <$> M.lookupGT v (nodeLabelMap g)
 
 
 ----------------------------------------------
@@ -166,7 +157,8 @@ at v k = maybe 0 id $ v ^^? ix k
 ----------------------------------------------
 
 
--- | Word affinity component
+-- | Pair affinity component: the current word and the word on the *left* are
+-- used to determine the word's affinity of being a MWE.
 data PairAffLeft d h = PairAffLeft
   { _pairAffLeftN :: FFN (d Nats.+ d) h 1
   } deriving (Generic, Binary, NFData, ParamSet)
@@ -179,7 +171,7 @@ instance (KnownNat d, KnownNat h) => New a b (PairAffLeft d h) where
 
 instance (KnownNat dim, KnownNat h) => UniComp dim (PairAffLeft dim h) where
   runUniComp graph v pair =
-    maybe 0 id $ doIt v <$> onRight v graph
+    maybe 0 id $ doIt v <$> onLeft v graph
     where
       doIt v w =
         let wordRepr = (nodeLabelMap graph M.!)
@@ -193,7 +185,8 @@ instance (KnownNat dim, KnownNat h) => UniComp dim (PairAffLeft dim h) where
 ----------------------------------------------
 
 
--- | Word affinity component
+-- | Pair affinity component: the current word and the word on the *right* are
+-- used to determine the word's affinity of being a MWE.
 data PairAffRight d h = PairAffRight
   { _pairAffRightN :: FFN (d Nats.+ d) h 1
   } deriving (Generic, Binary, NFData, ParamSet)
@@ -220,7 +213,7 @@ instance (KnownNat dim, KnownNat h) => UniComp dim (PairAffRight dim h) where
 ----------------------------------------------
 
 
--- | Word affinity component
+-- | Dummy word affinity component which fixes the node score to 0.0
 data NoUni = NoUni
   deriving (Generic, Binary, NFData, ParamSet)
 

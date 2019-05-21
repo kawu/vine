@@ -10,21 +10,26 @@
 
 
 -- | This utility module provides basic artificial network-related functions
--- (`logistic`, `softmax`, `relu`, etc.).
+-- (activation functions `logistic`, `relu`; initialization functions, etc.).
 
 
 module Net.Util
-  ( logistic
+  (
+  -- * Activation functions
+    logistic
+  , relu
   , reluSmooth
   , leakyRelu
-  , relu
-  , softmax
-  -- * Utils
-  -- , elemWiseMult
+
+  -- * Network initialization
   , randomList
   , matrix
   , vector
+
+  -- * Generic transformations
   , scale
+
+  -- * Conversion
   , vec1
   , elem0
   , elem1
@@ -76,19 +81,23 @@ reluSmooth :: Floating a => a -> a
 reluSmooth x = log(1 + exp(x))
 
 
+-- | ReLU: Rectifier activation function
 relu :: (Floating a) => a -> a
+-- NOTE: the selected implementation may seem strange, but it has some
+-- advantages: it is "vectorized" and it does not require the `Ord` instance.
 relu x = (x + abs x) / 2
 -- relu :: (Floating a, Ord a) => a -> a
 -- relu x = max 0 x
 {-# INLINE relu #-}
 
 
---  | Not a true leaky relu, why this works so well!?
+-- | Leaky ReLU
 leakyRelu :: (Floating a) => a -> a
+-- NOTE: the selected implementation works without the `Ord` instance and it is
+-- vectorized.
 leakyRelu x
   = relu x
   - 0.01 * relu (-x)
-  -- + 0.01 * relu (-x)
 {-# INLINE leakyRelu #-}
 
 --  | Correct leaky Relu implementation, somehow yields poor results!
@@ -98,44 +107,30 @@ leakyRelu x
 --   | otherwise = x
 -- {-# INLINE leakyRelu #-}
 
--- -- | Dummy implementation, due to problems with `leakyRelu`
--- leakyRelu :: (Ord a, Floating a) => a -> a
--- leakyRelu = relu
--- {-# INLINE leakyRelu #-}
 
-
--- | Apply the softmax layer to a vector.
-softmax
-  :: (KnownNat n, Reifies s W)
-  => BVar s (R n)
-  -> BVar s (R n)
-softmax x0 =
-  error "Util.softmax: this function might not be numerically stable!"
---   LBP.vmap (/norm) x
---   where
---     x = LBP.vmap' exp x0
---     norm = LBP.norm_1V x
-
-
-------------------------------------
--- Utils
-------------------------------------
-
-
-
--- -- | Element-wise multiplication
--- --
--- -- TODO: Make sure this is correct!
--- --
--- elemWiseMult
+-- -- | Apply the softmax layer to a vector.
+--
+-- NOTE: this function is commented out because it cause numerical errors.
+--
+-- softmax
 --   :: (KnownNat n, Reifies s W)
 --   => BVar s (R n)
 --   -> BVar s (R n)
---   -> BVar s (R n)
--- elemWiseMult x y = x * y
+-- softmax x0 =
+--   error "Util.softmax: this function might not be numerically stable!"
+-- --   LBP.vmap (/norm) x
+-- --   where
+-- --     x = LBP.vmap' exp x0
+-- --     norm = LBP.norm_1V x
 
 
--- | A random list of values between 0 and 1
+------------------------------------
+-- Network initialization
+------------------------------------
+
+
+-- | A random list of very small values (i.e., close to 0).
+-- Useful for initialization of a neural networks.
 randomList :: Int -> IO [Double]
 randomList 0 = return []
 randomList n = do
@@ -160,6 +155,11 @@ vector :: (KnownNat n) => Int -> IO (R n)
 vector k = do
   list <- randomList k
   return $ LA.vector list
+
+
+------------------------------------
+-- Conversion, utilities
+------------------------------------
 
 
 -- | Scale the given vector/matrix

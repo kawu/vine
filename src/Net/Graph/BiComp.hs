@@ -32,7 +32,7 @@ module Net.Graph.BiComp
   , Prob
   , Vec(..)
   , Vec8
-  , softmaxVec
+  -- , softmaxVec
   
   , BiComp (..)
   , Bias (..)
@@ -137,6 +137,10 @@ instance (SC.Serial m a) => SC.Serial m (Out a)
 
 -- | Enumerate the possible arc/node labelings in order consistent with the
 -- encoding/decoding format.
+--
+-- TODO: what does it mean that the order is consistent with the
+-- encoding/decoding format?  It is checked one way or another?
+--
 enumerate :: [Out Bool]
 enumerate = do
   b1 <- [False, True]
@@ -287,14 +291,14 @@ instance (KnownNat n) => New a b (Vec n p) where
   new xs ys = Vec <$> new xs ys
 
 
--- | Softmax over a vector of potentials
-softmaxVec 
-  :: forall n s. (KnownNat n, Reifies s W)
-  => BVar s (Vec n Pot) -> BVar s (Vec n Prob)
-softmaxVec
-  = BP.coerceVar
-  . (softmax :: Reifies s W => BVar s (R n) -> BVar s (R n))
-  . BP.coerceVar
+-- -- | Softmax over a vector of potentials
+-- softmaxVec 
+--   :: forall n s. (KnownNat n, Reifies s W)
+--   => BVar s (Vec n Pot) -> BVar s (Vec n Prob)
+-- softmaxVec
+--   = BP.coerceVar
+--   . (softmax :: Reifies s W => BVar s (R n) -> BVar s (R n))
+--   . BP.coerceVar
 
 
 -- | Type synonym to @Vec 8 p@.
