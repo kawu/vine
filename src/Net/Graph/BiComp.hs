@@ -100,8 +100,26 @@ nub = S.toList . S.fromList
 
 
 ----------------------------------------------
--- Vec8 <-> Vec3 conversion
+-- Out, Vec8, Vec3 + conversion
 ----------------------------------------------
+
+
+-- | Potential/probability annotation
+data Pot
+data Prob
+
+
+-- | A static-length vector with potentials (`Pot`) or probabilities (`Prob`)
+newtype Vec n p = Vec { unVec :: R n }
+  deriving (Show, Generic)
+  deriving newtype (Binary, NFData, ParamSet, Num, Backprop)
+
+instance (KnownNat n) => New a b (Vec n p) where
+  new xs ys = Vec <$> new xs ys
+
+
+-- | Type synonym to @Vec 8 p@.
+type Vec8 p = Vec 8 p
 
 
 -- | Output structure in which a value of type @a@ is assigned to an arc and
@@ -121,10 +139,6 @@ instance (SC.Serial m a) => SC.Serial m (Out a)
 
 -- | Enumerate the possible arc/node labelings in order consistent with the
 -- encoding/decoding format.
---
--- TODO: what does it mean that the order is consistent with the
--- encoding/decoding format?  It is (Quick-)checked one way or another?
---
 enumerate :: [Out Bool]
 enumerate = do
   b1 <- [False, True]
@@ -134,9 +148,10 @@ enumerate = do
 
 
 -- | A mask vector which allows to easily obtain (with dot product) the
--- potential of a given `Out` labeling.  The following should be satisfied:
+-- potential of a given `Out` labeling.  The following property should be
+-- satisfied:
 --
---   mask (enumerate !! i) LA.! j == (i == j)
+--   mask (enumerate !! i) ! j == (i == j)
 --
 mask :: Out Bool -> R 8
 mask (Out False False False) = vec18
@@ -162,11 +177,14 @@ vec88 = LA.vector [0, 0, 0, 0, 0, 0, 0, 1]
 
 
 -- | The `squash` function is a backpropagation-enabled version of @decode@
--- from `Net.Graph`.  The result is a vector of three probability values:
+-- from `Net.Graph`.  The result is a structure with three probability values:
 --
 --   * Probability of the arc being a MWE
 --   * Probability of the head being a MWE
 --   * Probability of the dependent being a MWE
+--
+-- TODO: move the `decode` function here?  Or at least, to the same module as
+-- `squash`?
 --
 squash :: forall s. (Reifies s W) => BVar s (Vec 8 Prob) -> Out (BVar s Double)
 squash v8_vec = Out
@@ -178,16 +196,10 @@ squash v8_vec = Out
     v8 = BP.coerceVar v8_vec :: BVar s (R 8)
 
 
--- -- | The `stretch` function is a backpropagation-enabled version of @encode@
--- -- from `Net.Graph`.
--- stretch :: forall s. (Reifies s W) => Out (BVar s Double) -> BVar s (Vec 8 Prob)
--- stretch = undefined 
-
-
 -- | V3 -> V8 expansion
 --
--- TODO: Make some kind of link between `epxand` and @encode@ from
--- `Net.Graph`.
+-- TODO: Make some kind of a link between `expand` and @encode@ from
+-- `Net.Graph`.  Ideally define them in the same module.
 --
 expand
   :: (Reifies s W)
@@ -223,6 +235,17 @@ mask3 = LA.vector [0, 1, 0, 1, 0, 1, 0, 1]
 {-# NOINLINE mask3 #-}
 
 
+-- | Combine the independent with the joint potential vector (a type-safe
+-- wrapper over inject').
+inject
+  :: (Reifies s W)
+  => BVar s (Vec 3 Pot)
+  -> BVar s (Vec 8 Pot)
+  -> BVar s (Vec 8 Pot)
+inject v3 v8 = expand v3 + v8
+{-# INLINE inject #-}
+
+
 -- TODO: yet another occurrence of `at`!
 at
   :: ( Num (At.IxValue b), Reifies s W, Backprop b
@@ -238,44 +261,6 @@ at v k = maybe 0 id $ v ^^? ix k
 ----------------------------------------------
 -- Components
 ----------------------------------------------
-
-
--- | Potential/probability annotation
-data Pot
-data Prob
-
-
--- | Output potential is a vector of length 2^3 (the number of possible
--- combinations of values of the:
---
---   * label of the head
---   * label of the dependent
---   * label of the arc
---
--- We additionally trace the size of the vector @n@.  It's actually just for
--- convenience, to not to have to tell in other places in the code that the
--- size of `unVec` is actually @8@.
---
-newtype Vec n p = Vec { unVec :: R n }
-  deriving (Show, Generic)
-  deriving newtype (Binary, NFData, ParamSet, Num, Backprop)
-
-instance (KnownNat n) => New a b (Vec n p) where
-  new xs ys = Vec <$> new xs ys
-
-
--- -- | Softmax over a vector of potentials
--- softmaxVec 
---   :: forall n s. (KnownNat n, Reifies s W)
---   => BVar s (Vec n Pot) -> BVar s (Vec n Prob)
--- softmaxVec
---   = BP.coerceVar
---   . (softmax :: Reifies s W => BVar s (R n) -> BVar s (R n))
---   . BP.coerceVar
-
-
--- | Type synonym to @Vec 8 p@.
-type Vec8 p = Vec 8 p
 
 
 -- | Biaffinity component
@@ -478,14 +463,3 @@ instance (KnownNat d, KnownNat h)
      -- combine the two outputs to get the result
      -- (all elements with arc label=0 are zeroed out)
      in  BP.coerceVar (BP.auto mask1) * inject z3 z8
-
-
--- | Combine the independent with the joint potential vector (a type-safe
--- wrapper over inject').
-inject
-  :: (Reifies s W)
-  => BVar s (Vec 3 Pot)
-  -> BVar s (Vec 8 Pot)
-  -> BVar s (Vec 8 Pot)
-inject v3 v8 = expand v3 + v8
-{-# INLINE inject #-}

@@ -40,12 +40,10 @@ scProps = testGroup "(checked by SmallCheck)"
   , Tasty.localOption (SC.SmallCheckDepth 4) .
     SC.testProperty "mask (enumerate !! x) ! y == [x == y]" $
       \x0 y0 ->
-        let
-          x = x0 `mod` 8
-          y = y0 `mod` 8
-        in
-          extract y (N.mask (N.enumerate !! x)) ==
-            if x == y then 1.0 else 0.0
+        let x = x0 `mod` 8
+            y = y0 `mod` 8
+         in extract y (N.mask (N.enumerate !! x)) ==
+              if x == y then 1.0 else 0.0
   , SC.testProperty "explicate (mask x) M.! y == [x == y]" $
       \x y -> N.explicate (B.Vec $ N.mask x) M.! y ==
         if x == y then 1.0 else 0.0
@@ -70,5 +68,8 @@ pad k = take k . cycle
 
 
 -- | Extract the `k`-th element of `R d` vector.
+--
+-- TODO: maybe could be moved to some utility module?
+--
 extract :: (KnownNat n) => Int -> LA.R n -> Double
-extract k v = (LAD.toList . LA.unwrap $ v) !! k
+extract k v = (LAD.toList . LA.unwrap) v !! k
