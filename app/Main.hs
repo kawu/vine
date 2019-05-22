@@ -32,6 +32,7 @@ import qualified Dhall
 import           System.FilePath (isAbsolute, (</>), (<.>))
 
 import qualified Net.Graph as Graph
+import qualified Net.Util as U
 import qualified MWE
 import qualified Format.Embedding as Emb
 import qualified Format.Cupt as Cupt
@@ -259,7 +260,7 @@ run cmd =
             -- Graph.new posTagSet depRelSet
             -- MWE.newO trainModelTyp posTagSet depRelSet
             MWE.new posTagSet depRelSet
-          Just path -> Graph.load path
+          Just path -> U.load path
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt trainCupt
@@ -275,20 +276,20 @@ run cmd =
                 k <- IORef.readIORef epochRef
                 IORef.writeIORef epochRef (k+1)
                 return $ pathBase <.> show k
-              Graph.save path net
+              U.save path net
               putStr "Saved the current model to: "
               putStrLn path
       case trainOutModel of
         Nothing -> return ()
         Just path -> do
-          Graph.save path net
+          U.save path net
           putStr "Saved the final model to: "
           putStrLn path
       putStrLn "Done!"
 
     Tag TagConfig{..} -> do
       -- Load the model
-      net <- Graph.load tagModel
+      net <- U.load tagModel
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt tagCupt

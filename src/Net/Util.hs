@@ -34,6 +34,10 @@ module Net.Util
   , toList
   , at
 
+  -- * Serialization
+  , save
+  , load
+
   -- * Utilities
   , rightInTwo
 
@@ -54,6 +58,12 @@ import qualified Control.Lens.At as At
 import           Data.Maybe (fromJust)
 import qualified Data.Vector.Storable.Sized as SVS
 import qualified Data.List as List
+import           Data.Binary (Binary)
+import qualified Data.Binary as Bin
+import qualified Data.ByteString.Lazy as BL
+
+import           Codec.Compression.Zlib (compress, decompress)
+
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop (Backprop, BVar, Reifies, W, (^^?))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
@@ -237,6 +247,23 @@ at
   -> BVar s (At.IxValue b)
 at v k = maybe 0 id $ v ^^? ix k
 {-# INLINE at #-}
+
+
+----------------------------------------------
+-- Serialization
+----------------------------------------------
+
+
+-- | Save the parameters in the given file.
+save :: (Binary a) => FilePath -> a -> IO ()
+save path =
+  BL.writeFile path . compress . Bin.encode
+
+
+-- | Load the parameters from the given file.
+load :: (Binary a) => FilePath -> IO a
+load path =
+  Bin.decode . decompress <$> BL.readFile path
 
 
 ------------------------------------

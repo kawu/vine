@@ -107,6 +107,7 @@ import qualified Numeric.SGD.Adam as Adam
 import qualified Format.Cupt as Cupt
 import qualified Graph
 import qualified Net.Graph as N
+import qualified Net.Graph.Core as C
 import qualified Net.Graph.BiComp as B
 import qualified Net.Graph.UniComp as U
 import qualified Net.Input as I
@@ -734,16 +735,16 @@ tagToText tagCfg net sent =
     elem = N.evalInp (mkElem (const False) sent) net
     tagF
       | mweConstrained tagCfg =
-          N.treeTagConstrained' (N.graph elem)
+          N.treeTagConstrained (N.graph elem)
       | mweGlobal tagCfg =
-          N.treeTagGlobal' (N.graph elem)
+          N.treeTagGlobal (N.graph elem)
       | otherwise =
           error "tag': greedy not implemented"
           -- N.tagGreedy mweChoice
     mweChoice ps = geoMean ps >= mweThreshold tagCfg
     labeling = tagF
-      (N.evalRaw (net ^. N.biaMod) (N.graph elem))
-      (N.evalRawUni (net ^. N.uniMod) (N.graph elem))
+      (N.evalBia (net ^. N.biaMod) (N.graph elem))
+      (N.evalUni (net ^. N.uniMod) (N.graph elem))
     sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
 
 
@@ -822,10 +823,10 @@ geoMean xs =
 --     -- ^ MWE type to annotate with
 --   -> Cupt.Sent
 --     -- ^ .cupt sentence to annotate
---   -> N.Labeling Bool
+--   -> N.Labelling Bool
 --     -- ^ Node/arc labeling
 --   -> Cupt.Sent
--- annotate mweTyp cupt N.Labeling{..} =
+-- annotate mweTyp cupt N.Labelling{..} =
 -- 
 --   map enrich cupt
 -- 
@@ -865,10 +866,10 @@ annotate
     -- ^ MWE type to annotate with
   -> Cupt.Sent
     -- ^ .cupt sentence to annotate
-  -> N.Labeling Bool
+  -> C.Labelling Bool
     -- ^ Node/arc labeling
   -> Cupt.Sent
-annotate mweTyp cupt N.Labeling{..} =
+annotate mweTyp cupt C.Labelling{..} =
 
   map enrich cupt
   
