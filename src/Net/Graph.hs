@@ -172,6 +172,7 @@ import qualified Format.Cupt as Cupt
 import           Graph
 import           Graph.SeqTree
 import qualified Net.List as NL
+import qualified Net.Graph.Core as Core
 import           Net.Graph.Arc
   (Pot, Prob, Vec(..), Vec8, Out(..))
 import qualified Net.Graph.Arc as Arc
@@ -387,7 +388,7 @@ instance Interpret ProbTyp
 
 data Config = Config
   { probTyp :: ProbTyp
-  , version :: Global.Version
+  , version :: Core.Version
   } deriving (Generic)
 
 instance Interpret Config
@@ -451,8 +452,8 @@ runRawUni net graph = M.fromList $ do
 --         [ "Graph.run: SoftMax has to be reimplemented"
 --         , "to take the node potentials into account" ]
 --       -- fmap B.softmaxVec (runRaw net graph)
---     Marginals -> Margs.approxMarginals graph (runRaw net graph) 1
---     Constrained -> Margs.approxMarginalsC graph (runRaw net graph) 1
+--     Marginals -> Margs.marginals graph (runRaw net graph) 1
+--     Constrained -> Margs.marginalsC graph (runRaw net graph) 1
 
 
 -- | `runRaw` + `runRawUni` + softmax / approximate marginals
@@ -462,7 +463,7 @@ runBoth
      , B.BiComp dim comp
      , U.UniComp dim comp'
      )
-  => Global.Version
+  => Core.Version
   -> BVar s comp
   -> BVar s comp'
   -> Graph (BVar s (R dim)) ()
@@ -471,21 +472,21 @@ runBoth
     -- ^ Output map with output potential values
 runBoth version net netU graph =
   case version of
-    Global.Free ->
-      Margs.approxMarginalsMemo graph (runRaw net graph) (runRawUni netU graph)
-    Global.Constrained ->
-      Margs.approxMarginalsMemoC graph (runRaw net graph) (runRawUni netU graph)
-    Global.Local ->
+    Core.Free ->
+      Margs.marginalsMemo graph (runRaw net graph) (runRawUni netU graph)
+    Core.Constrained ->
+      Margs.marginalsMemoC graph (runRaw net graph) (runRawUni netU graph)
+    Core.Local ->
       Margs.dummyMarginals graph (runRaw net graph) (runRawUni netU graph)
 
 --   case probTyp of
 --     SoftMax -> error "runBoth: softmax not implemented"
 --     Marginals ->
---       -- Margs.approxMarginals' graph (runRaw net graph) (runRawUni netU graph) 1
---       Margs.approxMarginalsMemo graph (runRaw net graph) (runRawUni netU graph) -- 1
+--       -- Margs.marginals' graph (runRaw net graph) (runRawUni netU graph) 1
+--       Margs.marginalsMemo graph (runRaw net graph) (runRawUni netU graph) -- 1
 --     Constrained ->
 --       error "runBoth: constrained marginals approximation seems to have bugs!"
---       -- Margs.approxMarginalsC' graph (runRaw net graph) (runRawUni netU graph) 1
+--       -- Margs.marginalsC' graph (runRaw net graph) (runRawUni netU graph) 1
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
@@ -1240,7 +1241,7 @@ netError'
      , B.BiComp dim comp
      , U.UniComp dim comp'
      )
-  => Global.Version
+  => Core.Version
   -> [Elem (BVar s (R dim))]
   -> BVar s comp
   -> BVar s comp'
@@ -1279,14 +1280,14 @@ logLL
      , B.BiComp dim comp
      , U.UniComp dim comp'
      )
-  => Global.Version
+  => Core.Version
   -> [Elem (BVar s (R dim))]
   -> BVar s comp
   -> BVar s comp'
   -> BVar s Double
 logLL version dataSet bi uni = sum $ do
   el <- dataSet
-  let labelling = Global.Labelling
+  let labelling = Core.Labelling
         { nodLab = fmap (>0.5) (nodMap el)
         , arcLab = fmap (>0.5) (arcMap el)
         }

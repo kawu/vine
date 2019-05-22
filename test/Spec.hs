@@ -1,8 +1,13 @@
+{-# LANGUAGE FlexibleContexts #-}
+
+
 import           Test.Tasty (TestTree, testGroup)
 import qualified Test.Tasty as Tasty
 import qualified Test.Tasty.SmallCheck as SC
 
 import qualified Data.Map.Strict as M
+
+import qualified Numeric.Backprop as BP
 
 import qualified Net.Util as U
 import qualified Net.Graph as N
@@ -33,8 +38,16 @@ scProps = testGroup "(checked by SmallCheck)"
   , Tasty.localOption (SC.SmallCheckDepth 4) .
     SC.testProperty "(explicate . obfuscate) x == x" $
       \xs ->
+        let m = M.fromList (zip B.enumerate $ pad 8 xs)
+         in null xs || (B.explicate . B.obfuscate) m == m
+  , Tasty.localOption (SC.SmallCheckDepth 4) .
+    SC.testProperty "obfuscate == evalBP0 . obfuscateBP" $
+      \xs ->
         let m = M.fromList (zip N.enumerate $ pad 8 xs)
-         in null xs || (N.explicate . N.obfuscate) m == m
+            lst = U.toList . B.unVec
+            eq v1 v2 = lst v1 == lst v2
+         in null xs || B.obfuscate m `eq`
+              BP.evalBP0 (B.obfuscateBP (fmap BP.auto m))
   , Tasty.localOption (SC.SmallCheckDepth 4) .
     SC.testProperty "mask (enumerate !! x) ! y == [x == y]" $
       \x0 y0 ->

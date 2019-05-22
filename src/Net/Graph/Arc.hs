@@ -30,6 +30,7 @@ module Net.Graph.Arc
   , squash
   , explicate
   , obfuscate
+  , obfuscateBP
   , encode
   , decode
 
@@ -47,6 +48,7 @@ import           Control.DeepSeq (NFData)
 
 import           Data.Binary (Binary)
 import qualified Data.Map.Strict as M
+import qualified Data.Vector.Sized as VS
 
 import qualified Test.SmallCheck.Series as SC
 
@@ -183,6 +185,27 @@ obfuscate :: M.Map (Out Bool) Double -> Vec8 p
 obfuscate = Vec . LA.vector . M.elems
 
 
+-- | A backprop-lifted version of `obfuscate`.
+--
+-- TODO: This uses `VS.fromList` which is supposedly very inefficient in case
+-- of long lists.  But our list isn't long, is it?
+--
+-- TODO: Relate to `obfuscate` in tests?  You could also use a unified
+-- implementation.
+--
+obfuscateBP
+  :: forall s p. (Reifies s W)
+  => M.Map (Out Bool) (BVar s Double)
+  -> BVar s (Vec8 p)
+obfuscateBP =
+  BP.coerceVar . LBP.vector . from . M.elems
+  where
+    from = just . VS.fromList :: [a] -> VS.Vector 8 a
+    just Nothing =
+      error "Net.Graph.Arc.obfuscateBP: got Nothing"
+    just (Just x) = x
+
+
 -- | Decode the output structure from the given probability vector.  This
 -- function is potentially lossy in the sense that @Vec8 Prob@ encodes a joint
 -- distibution and the resulting @Out Double@ encodes three distributions
@@ -223,6 +246,8 @@ decode = BP.evalBP $ BP.collectVar . squash
 --   * Probability of the arc being a MWE
 --   * Probability of the head being a MWE
 --   * Probability of the dependent being a MWE
+--
+-- TODO: rename as @decodeBP@?
 --
 squash :: forall s. (Reifies s W) => BVar s (Vec 8 Prob) -> Out (BVar s Double)
 squash v8_vec = Out
