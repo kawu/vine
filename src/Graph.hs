@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeOperators #-}
@@ -32,6 +33,9 @@ module Graph
   , graphArcs
   , incoming
   , outgoing
+
+    -- * Labeling
+  , Labeling (..)
   ) where
 
 
@@ -157,3 +161,22 @@ _isAsc g = and $ do
 isAscList :: (Ord a) => [a] -> Bool
 isAscList (x:y:zs) = x < y && isAscList (y:zs)
 isAscList _ = True
+
+
+----------------------------------------------
+-- Graph monotonicity
+----------------------------------------------
+
+
+-- | Graph node/arc labeling
+data Labeling a = Labeling
+  { nodLab :: M.Map G.Vertex a
+  , arcLab :: M.Map Arc a
+  } deriving (Functor)
+
+instance Semigroup a => Semigroup (Labeling a) where
+  Labeling n1 a1 <> Labeling n2 a2 =
+    Labeling (n1 <> n2) (a1 <> a2)
+
+instance Monoid a => Monoid (Labeling a) where
+  mempty = Labeling M.empty M.empty

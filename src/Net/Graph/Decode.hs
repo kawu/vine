@@ -1,6 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 
 
+-- TODO: Rename as Net.Graph.Predict
+
+
 module Net.Graph.Decode
   ( treeTagGlobal
   , treeTagConstrained
@@ -15,7 +18,6 @@ import           Data.Monoid (Any(..))
 import           Graph hiding (nmap)
 import           Graph.SeqTree
 
-import           Net.Graph.Core (Labelling(..))
 import           Net.Graph.Arc (Pot, Vec8, Out(..))
 import qualified Net.Graph.Arc as Arc
 
@@ -35,7 +37,7 @@ treeTagGlobal
   :: Graph a b
   -> M.Map Arc (Vec8 Pot)
   -> M.Map G.Vertex Double
-  -> Labelling Bool
+  -> Labeling Bool
 treeTagGlobal graph labMap nodMap =
   let (trueBest, falseBest) =
         tagSubTree
@@ -88,8 +90,8 @@ tagSubTree root graph lmap nmap =
 
 -- | The best arc labeling for a given subtree.
 data Best = Best
-  { bestLab :: Labelling Any
-    -- ^ Labelling (using `Any` guarantees that disjunction is used in case some
+  { bestLab :: Labeling Any
+    -- ^ Labeling (using `Any` guarantees that disjunction is used in case some
     -- label is accidentally assigned to a given object twice)
   , bestPot :: Double
     -- ^ Total potential
@@ -155,7 +157,7 @@ treeTagConstrained
   :: Graph a b
   -> M.Map Arc (Vec8 Pot)
   -> M.Map G.Vertex Double
-  -> Labelling Bool
+  -> Labeling Bool
 treeTagConstrained graph labMap nodMap =
   let Best4{..} =
         tagSubTreeC

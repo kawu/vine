@@ -1,10 +1,11 @@
 {-# LANGUAGE RecordWildCards #-}
 
 
--- | MWE annotation module
+-- | MWE decoding module.  The functionality implemented here corresponds to
+-- decoding in the global encoding scheme described in the accompanying paper.
 
 
-module MWE.Anno
+module MWE.Decode
   ( annotate
   ) where
 
@@ -19,7 +20,6 @@ import           Data.Semigroup (Max(..))
 
 import qualified Format.Cupt as Cupt
 import qualified Graph
-import qualified Net.Graph.Core as C
 
 
 -- | Annotate the sentence with the given MWE type, given the specified arc and
@@ -29,10 +29,10 @@ annotate
     -- ^ MWE type to annotate with
   -> Cupt.Sent
     -- ^ .cupt sentence to annotate
-  -> C.Labelling Bool
+  -> Graph.Labeling Bool
     -- ^ Node/arc labeling
   -> Cupt.Sent
-annotate mweTyp cupt C.Labelling{..} =
+annotate mweTyp cupt Graph.Labeling{..} =
 
   map enrich cupt
   

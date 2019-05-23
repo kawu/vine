@@ -283,7 +283,7 @@ run cmd =
         <$> Cupt.readCupt tagCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings tagEmbs
-      MWE.tagManyT cfg net
+      MWE.tagManyIO cfg net
         (mkInput cupt embs)
       where
         cfg = MWE.TagConfig

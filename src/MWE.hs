@@ -39,7 +39,7 @@ module MWE
 
   -- * Tagging
   , TagConfig(..)
-  , tagManyT
+  , tagManyIO
   ) where
 
 
@@ -49,8 +49,6 @@ import           GHC.Generics (Generic)
 
 import           Control.Monad (forM_)
 import           Control.Parallel.Strategies (parMap, rseq)
-
-import           Lens.Micro ((^.))
 
 import qualified Numeric.Backprop as BP
 
@@ -72,9 +70,9 @@ import qualified Numeric.SGD.Adam as Adam
 import qualified Format.Cupt as Cupt
 import qualified Net.Graph as N
 import qualified DhallUtils as DU
-import qualified MWE.Sent as Sent
 import           MWE.Sent (Sent(..))
-import           MWE.Anno (annotate)
+import qualified MWE.Encode as Enc
+import qualified MWE.Decode as Dec
 
 -- import Debug.Trace (trace)
 
@@ -140,7 +138,7 @@ type POS = T.Text
 -- | Extract dependeny relations present in the given dataset.
 depRelsIn :: [Cupt.GenSent mwe] -> S.Set DepRel
 depRelsIn =
-  S.fromList . (Sent.dummyRootDepRel:) . concatMap extract 
+  S.fromList . (Enc.dummyRootDepRel:) . concatMap extract
   where
     extract = map Cupt.deprel
 
@@ -148,7 +146,7 @@ depRelsIn =
 -- | Extract dependeny relations present in the given dataset.
 posTagsIn :: [Cupt.GenSent mwe] -> S.Set POS
 posTagsIn =
-  S.fromList . (Sent.dummyRootPOS:) . concatMap extract 
+  S.fromList . (Enc.dummyRootPOS:) . concatMap extract
   where
     extract = map Cupt.upos
 
@@ -167,7 +165,7 @@ train
     -- ^ Action to execute at the end of each epoch
   -> IO N.Transparent
 train cfg mweTyp cupt tra0 action = do
-  let cupt' = map (Sent.mkElem (== mweTyp)) cupt
+  let cupt' = map (Enc.mkElem (== mweTyp)) cupt
   SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     SGD.runIO (sgd cfg)
@@ -197,6 +195,10 @@ data TagConfig = TagConfig
 
 
 -- | Tag a single sentence with the given network.
+--
+-- Note that the output sentence has a different type than the input sentence.
+-- This is because we don't need word embeddings on output anymore.
+--
 tag
   :: TagConfig
   -> N.Transparent   -- ^ Network parameters
@@ -205,16 +207,14 @@ tag
 tag tagCfg net sent =
   sent'
   where
-    elem = N.evalInp (Sent.mkElem (const False) sent) net
+    elem = Enc.mkElem (const False) sent
     tagF
       | mweConstrained tagCfg =
           N.treeTagConstrained (N.graph elem)
       | otherwise =
           N.treeTagGlobal (N.graph elem)
-    labeling = tagF
-      (N.evalBia (net ^. N.biaMod) (N.graph elem))
-      (N.evalUni (net ^. N.uniMod) (N.graph elem))
-    sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
+    labeling = uncurry (flip tagF) (N.evalLoc net elem)
+    sent' = Dec.annotate (mweTyp tagCfg) (cuptSent sent) labeling
 
 
 -- | Tag a single sentence with the given network.
@@ -230,24 +230,25 @@ tagToText tagCfg net sent =
 
 
 -- | Tag and annotate sentences in parallel.
-tagManyTpar
+tagManyPar
   :: TagConfig
   -> N.Transparent
   -> [Sent 300]
   -> [T.Text]
-tagManyTpar cfg net = parMap rseq (tagToText cfg net)
+tagManyPar cfg net = parMap rseq (tagToText cfg net)
 
 
--- | Tag sentences with the opaque network.
-tagManyT
+-- | Tag sentences with the given network and print the results in the .cupt
+-- format on output.
+tagManyIO
   :: TagConfig
   -> N.Transparent
   -> [Sent 300]
   -> IO ()
-tagManyT cfg net cupt0 = do
+tagManyIO cfg net cupt0 = do
   forM_ (zip cupt0 cupt) $ \(sent0, sent) -> do
     T.putStr "# "
     T.putStrLn . T.unwords . map Cupt.orth $ cuptSent sent0
     T.putStrLn sent
   where
-    cupt = tagManyTpar cfg net cupt0
+    cupt = tagManyPar cfg net cupt0

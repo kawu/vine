@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts #-}
 
@@ -11,7 +10,6 @@ module Net.Graph.Core
   (
   -- * Types
     Version (..)
-  , Labelling (..)
 
   -- * Local scores
   , arcValues
@@ -61,20 +59,6 @@ data Version
   deriving (Generic)
 
 instance Interpret Version
-
-
--- | Graph node/arc labeling
-data Labelling a = Labelling
-  { nodLab :: M.Map G.Vertex a
-  , arcLab :: M.Map Arc a
-  } deriving (Functor)
-
-instance Semigroup a => Semigroup (Labelling a) where
-  Labelling n1 a1 <> Labelling n2 a2 =
-    Labelling (n1 <> n2) (a1 <> a2)
-
-instance Monoid a => Monoid (Labelling a) where
-  mempty = Labelling M.empty M.empty
 
 
 ----------------------------------------------

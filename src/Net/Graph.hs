@@ -42,21 +42,17 @@ module Net.Graph
   , ProbTyp(..)
 
   -- * Network
-  -- ** Generic
+  -- ** New
   , new
-  , evalBia
-  , evalUni
   -- ** "Transparent"
-  , Transparent(..)
-  , biaMod
-  , uniMod
+  , Transparent
+  , evalLoc
   , netError
-  , evalInp
 
   -- * Data set
   , Elem(..)
 
-  -- * Inference
+  -- * Decoding
   , Dec.treeTagGlobal
   , Dec.treeTagConstrained
 
@@ -92,7 +88,6 @@ import qualified Format.Cupt as Cupt
 import           Graph
 import           Graph.SeqTree
 import qualified Net.Graph.Core as Core
-import           Net.Graph.Core (Labelling(..))
 import           Net.Graph.Arc
   (Pot, Prob, Vec8, Out(..))
 import qualified Net.Graph.Arc as Arc
@@ -320,6 +315,28 @@ evalBia net graph =
     )
 
 
+-- | Evaluate the entire network over the given element.  The result is a pair
+-- of two maps with the node and arc local scores.
+--
+-- NOTE: The resulting scores are local, not "marginal"!  This is intentional,
+-- as it allows to perform global decoding.  An alternative would be to somehow
+-- decode based on marginal scores, but we didn't explore this possibility.
+--
+evalLoc
+  :: Transparent
+  -> Elem (R 300) 
+  -> ( M.Map G.Vertex Double
+     , M.Map Arc (Vec8 Pot)
+     )
+evalLoc net el0 =
+  ( evalUni (net ^. uniMod) gr
+  , evalBia (net ^. biaMod) gr
+  )
+  where
+    el = evalInp el0 net
+    gr = graph el
+
+
 ----------------------------------------------
 -- DataSet
 ----------------------------------------------
@@ -383,7 +400,7 @@ mkTarget el = M.fromList $ do
 
 
 -- | Net error with `Transparent` over the given dataset `Elem`.  Depending on
--- the configuration, use negated `logLL` or `crossEntropyErr`.
+-- the configuration, uses negated `logLL` or `crossEntropyErr`.
 netError
   :: (Reifies s W)
   => Config
@@ -400,7 +417,7 @@ netError cfg x net =
     x' = runInp x net
 
 
--- | Cross-entropy-based network error for a given dataset.
+-- | Cross-entropy-based network error over a given dataset.
 crossEntropyErr
   :: ( Reifies s W, KnownNat dim
      , B.BiComp dim comp
@@ -432,7 +449,7 @@ logLL
   -> BVar s Double
 logLL version dataSet bi uni = sum $ do
   el <- dataSet
-  let labelling = Core.Labelling
+  let labelling = Labeling
         { nodLab = fmap (>0.5) (nodMap el)
         , arcLab = fmap (>0.5) (arcMap el)
         }

@@ -24,7 +24,7 @@ import           Numeric.LinearAlgebra.Static.Backprop (BVar, Reifies, W)
 import           Net.Graph.Core
 import qualified Net.Graph.Arc as B
 import           Net.Graph.Arc (Pot, Vec8, Out(..))
-import           Graph (Graph, Arc)
+import           Graph (Graph, Arc, Labeling(..))
 import qualified Graph
 import           Graph.SeqTree (treeRoot)
 import qualified Net.Graph.Marginals as Margs
@@ -42,7 +42,7 @@ probLog
     -- ^ Constrained version or not?
   -> Graph a b
     -- ^ The underlying graph
-  -> Labelling Bool
+  -> Labeling Bool
     -- ^ Target labelling of which we want to determine the probability
   -> M.Map Arc (BVar s (Vec8 Pot))
     -- ^ The corresponding arc potential map (normal domain!)
@@ -77,14 +77,14 @@ score
   :: (Reifies s W)
   => Graph a b
     -- ^ The underlying graph
-  -> Labelling Bool
+  -> Labeling Bool
     -- ^ Target labelling of which we want to determine the probability
   -> M.Map Arc (BVar s (Vec8 Pot))
     -- ^ The corresponding arc potential map (normal domain!)
   -> M.Map G.Vertex (BVar s Double)
     -- ^ The corresponding node potential map (normal domain!)
   -> BVar s Double
-score graph Labelling{..} potMap nodMap =
+score graph Labeling{..} potMap nodMap =
   arcScore + nodeScore
   where
     arcScore = sum $ do
