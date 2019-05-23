@@ -35,17 +35,15 @@ module Format.Cupt
   , renderPar
 
     -- * Conversion
-  , rootParID
   , decorate
   , preserveOnly
   , abstract
 
---     -- * Serialization
---   , saveSent
---   , loadSent
-
     -- * Merging
   , mergeCupt
+
+    -- * Cleanup
+  , removeMweAnnotations
   ) where
 
 
@@ -346,26 +344,26 @@ renderMWE xs
 -----------------------------------
 
 
--- | An artificial root token.
-root :: Token
-root = Token
-  { tokID = TokID 0
-  , orth = ""
-  , lemma = ""
-  , upos = ""
-  , xpos = ""
-  , feats = M.empty
-  , dephead = rootParID
-  , deprel = ""
-  , deps = ""
-  , misc = ""
-  , mwe = []
-  }
+-- -- | An artificial root token.
+-- root :: Token
+-- root = Token
+--   { tokID = TokID 0
+--   , orth = ""
+--   , lemma = ""
+--   , upos = ""
+--   , xpos = ""
+--   , feats = M.empty
+--   , dephead = rootParID
+--   , deprel = ""
+--   , deps = ""
+--   , misc = ""
+--   , mwe = []
+--   }
 
 
--- | ID to refer to the parent of the artificial root node.
-rootParID :: TokID
-rootParID = TokID (-1)
+-- -- | ID to refer to the parent of the artificial root node.
+-- rootParID :: TokID
+-- rootParID = TokID (-1)
 
 
 -- | Decorate all MWE instances with their types.
@@ -441,25 +439,23 @@ mergeSent =
     go [] (_:_) = error "Cupt.mergeSent: impossible2 happened"
 
 
-----------------------------------------------
--- Serialization
-----------------------------------------------
+--------------------------------------------------
+-- Cleaning up
+--------------------------------------------------
 
 
--- -- | Encode the sentence in a file.
--- saveSent :: (Binary mwe) => FilePath -> GenSent mwe -> IO ()
--- saveSent path
---   = B.writeFile path
---   -- . compress
---   . Bin.encode
--- 
--- 
--- -- | Load the parameters from the given file.
--- loadSent :: (Binary mwe) => FilePath -> IO (GenSent mwe)
--- loadSent path
---   = Bin.decode
---   -- . decompress
---   <$> B.readFile path
+-- | Clear MWE annotations related to the given MWE category.
+removeMweAnnotations :: MweTyp -> MaySent -> MaySent
+removeMweAnnotations mweTyp 
+  = abstract
+  . map clear
+  . decorate
+  where
+    clear tok = tok
+      { mwe = filter
+          (\(_id, typ) -> typ /= mweTyp)
+          (mwe tok)
+      }
 
 
 -----------------------------------
@@ -475,5 +471,5 @@ groupBy eq (x : y : rest)
   | eq x y = addHD x $ groupBy eq (y : rest)
   | otherwise = [x] : groupBy eq (y : rest)
   where
-    addHD x (xs : xss) = (x : xs) : xss
-    addHD x [] = [[x]]
+    addHD v (xs : xss) = (v : xs) : xss
+    addHD v [] = [[v]]

@@ -14,6 +14,8 @@ module Net.Graph.Error
   ) where
 
 
+import           Prelude hiding (or)
+
 import           GHC.TypeNats (KnownNat)
 
 import qualified Data.Map.Strict as M
@@ -26,8 +28,7 @@ import           Numeric.LinearAlgebra.Static.Backprop
   (R, BVar, Reifies, W)
 
 import qualified Net.Graph.Arc as Arc
-import           Net.Graph.Arc
-  (Pot, Prob, Vec(..), Vec8, Out(..))
+import           Net.Graph.Arc (Pot, Prob, Vec(..), Vec8)
 
 
 -- | Softmax + cross-entropy with manual gradient calculation.  Type-safe,
@@ -68,20 +69,19 @@ softMaxCrossEntropy' x = BP.liftOp1 . BP.op1 $ \y ->
       toty     = LD.sumElements (LA.extract expy)
       softMaxY = LA.konst (1 / toty) * expy
       smce     = negate (LA.dvmap log' softMaxY `LA.dot` x)
---    in trace ("y: " ++ show (toList y)) $
+--    in trace ("y: " ++ show (Util.toList y)) $
 --       trace ("ymax: " ++ show ymax) $
---       trace ("expy: " ++ show (toList expy)) $
+--       trace ("expy: " ++ show (Util.toList expy)) $
 --       trace ("toty: " ++ show toty) $
---       trace ("softMaxY: " ++ show (toList softMaxY)) $
+--       trace ("softMaxY: " ++ show (Util.toList softMaxY)) $
 --       trace ("smce: " ++ show smce) $
    in ( smce
       , \d -> LA.konst d * (softMaxY - x)
       )
   where
-    toList = LD.toList . LA.extract
     -- to avoid NaN when p_i = 0 and q_i = 0
-    log' x
-      | x > 0 = log x
+    log' v
+      | v > 0 = log v
       -- TODO: is it a proper choice of epsilon?
       | otherwise = -1.0e10
 
@@ -124,5 +124,3 @@ errorMany targets outputs =
         (t:tr, o:or) -> errorOne t o + go tr or
         ([], []) -> 0
         _ -> error "errorMany: lists of different size"
-
-

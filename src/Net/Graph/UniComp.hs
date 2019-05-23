@@ -45,26 +45,17 @@ import           GHC.TypeNats (KnownNat)
 import qualified GHC.TypeNats as Nats
 
 import           Control.DeepSeq (NFData)
-import           Control.Lens.At (ixAt, ix)
-import qualified Control.Lens.At as At
-import           Control.Monad (forM)
 
 import           Lens.Micro.TH (makeLenses)
 
 -- import           Data.Proxy (Proxy(..))
 import qualified Data.Graph as G
 import           Data.Binary (Binary)
-import           Data.Maybe (mapMaybe)
-import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 
-import qualified Numeric.Backprop as BP
-import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.), (^^?))
-import qualified Numeric.LinearAlgebra.Static as LA
+import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.))
 import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
-import           Numeric.LinearAlgebra.Static.Backprop (R, L, dot, (#), (#>))
-
-import qualified Test.SmallCheck.Series as SC
+import           Numeric.LinearAlgebra.Static.Backprop (R, (#))
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
@@ -76,7 +67,7 @@ import           Net.Pair
 import qualified Net.FeedForward as FFN
 import           Net.FeedForward (FFN(..))
 
-import           Debug.Trace (trace)
+-- import           Debug.Trace (trace)
 
 
 ----------------------------------------------
@@ -158,8 +149,8 @@ instance (KnownNat d, KnownNat h) => New a b (PairAffLeft d h) where
   new xs ys = PairAffLeft <$> new xs ys
 
 instance (KnownNat dim, KnownNat h) => UniComp dim (PairAffLeft dim h) where
-  runUniComp graph v pair =
-    maybe 0 id $ doIt v <$> onLeft v graph
+  runUniComp graph v0 pair =
+    maybe 0 id $ doIt v0 <$> onLeft v0 graph
     where
       doIt v w =
         let wordRepr = (nodeLabelMap graph M.!)
@@ -186,8 +177,8 @@ instance (KnownNat d, KnownNat h) => New a b (PairAffRight d h) where
   new xs ys = PairAffRight <$> new xs ys
 
 instance (KnownNat dim, KnownNat h) => UniComp dim (PairAffRight dim h) where
-  runUniComp graph v pair =
-    maybe 0 id $ doIt v <$> onRight v graph
+  runUniComp graph v0 pair =
+    maybe 0 id $ doIt v0 <$> onRight v0 graph
     where
       doIt v w =
         let wordRepr = (nodeLabelMap graph M.!)

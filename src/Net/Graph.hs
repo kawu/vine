@@ -37,46 +37,24 @@
 
 module Net.Graph
   ( 
-  -- * Network
-    new
-  , evalBia
-  , evalUni
+  -- * Config
+    Config(..)
   , ProbTyp(..)
 
---   -- * Opaque
---   , Opaque(..)
---   , Typ(..)
---   , newO
-
-  -- * Transparent
+  -- * Network
+  -- ** Generic
+  , new
+  , evalBia
+  , evalUni
+  -- ** "Transparent"
   , Transparent(..)
-  , Config(..)
-  , inpMod
-  , traMod
   , biaMod
   , uniMod
-  , netErrorT
+  , netError
   , evalInp
 
   -- * Data set
   , Elem(..)
-  , tokens
-  , replace
-
-  -- -- * Error
-  -- , netError
-
---   -- * Encoding
---   , Out(..)
---   , encode
---   , decode
---   -- , rightInTwo
-
-  -- * Explicating
-  , Arc.enumerate
-  , Arc.explicate
-  , Arc.obfuscate
-  , Arc.mask
 
   -- * Inference
   , Dec.treeTagGlobal
@@ -406,13 +384,13 @@ mkTarget el = M.fromList $ do
 
 -- | Net error with `Transparent` over the given dataset `Elem`.  Depending on
 -- the configuration, use negated `logLL` or `crossEntropyErr`.
-netErrorT
+netError
   :: (Reifies s W)
   => Config
   -> Elem (R 300)
   -> BVar s Transparent
   -> BVar s Double
-netErrorT cfg x net =
+netError cfg x net =
   case probTyp cfg of
     Marginals ->
       crossEntropyErr (version cfg) [x'] (net ^^. biaMod) (net ^^. uniMod)

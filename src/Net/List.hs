@@ -13,11 +13,7 @@ module Net.List
   ) where
 
 
-import qualified Numeric.Backprop as BP
-import qualified Prelude.Backprop as PB
 import           Numeric.Backprop (BVar, Reifies, W)
-
-import qualified Net.Util as U
 
 
 -- -- | Apply softmax to a list.

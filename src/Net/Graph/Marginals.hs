@@ -32,22 +32,16 @@ import           Control.Monad (guard)
 
 import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
-import qualified Data.List as List
-import qualified Data.Maybe as Maybe
 
 import qualified Test.SmallCheck.Series as SC
 
-import qualified Numeric.Backprop as BP
-import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop
-  (BVar, Reifies, W, dot)
+  (BVar, Reifies, W)
 
 import qualified Data.MemoCombinators as Memo
 
-import qualified Net.Util as U
-import qualified Net.List as NL
 import           Net.Graph.Core
-import           Net.Graph.Arc (Pot, Prob, Vec(..), Vec8, Out(..))
+import           Net.Graph.Arc (Pot, Vec8, Out(..))
 import qualified Net.Graph.Arc as B
 import           Graph (Graph, Arc, incoming, outgoing)
 
@@ -204,7 +198,7 @@ dummyMarginals1
   -> Arc
     -- ^ The arc in focus
   -> BVar s (Vec8 Pot)
-dummyMarginals1 graph potMap nodMap =
+dummyMarginals1 _graph potMap nodMap =
   marginals
   where
     marginals (v, w)
@@ -590,10 +584,10 @@ justOne x = Res
 ----------------------------------------------
 
 
--- | Negative infinity
-negativeInfinity :: Floating a => a
-negativeInfinity = negate (1/0)
-{-# INLINE negativeInfinity #-}
+-- -- | Negative infinity
+-- negativeInfinity :: Floating a => a
+-- negativeInfinity = negate (1/0)
+-- {-# INLINE negativeInfinity #-}
 
 
 -- | log (1 + x)
@@ -613,7 +607,7 @@ instance (Reifies s W, Ord a, Floating a) => Num (LVar s a) where
         | otherwise = LVar (y + log1p (exp (x - y)))
     (-) (LVar x) (LVar y) =
         LVar (x + log1p (negate (exp (y - x))))
-    signum (LVar x) = 1
+    signum (LVar _) = 1
     negate _    = error "negate LVar"
     abs         = id
     fromInteger = LVar . log . fromInteger

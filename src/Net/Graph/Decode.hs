@@ -12,11 +12,11 @@ import qualified Data.Map.Strict as M
 import qualified Data.List as List
 import           Data.Monoid (Any(..))
 
-import           Graph
+import           Graph hiding (nmap)
 import           Graph.SeqTree
 
 import           Net.Graph.Core (Labelling(..))
-import           Net.Graph.Arc (Pot, Prob, Vec(..), Vec8, Out(..))
+import           Net.Graph.Arc (Pot, Vec8, Out(..))
 import qualified Net.Graph.Arc as Arc
 
 
@@ -125,14 +125,14 @@ addArc arc lab pot Best{..} = Best
   }
 
 
--- | Set label of the given node in the given `Best` structure.  Similar to
--- `addArc`, but used when the potential of the node has been already accounted
--- for.
-setNode :: G.Vertex -> Bool -> Best -> Best
-setNode node lab best@Best{..} = best
-  { bestLab = bestLab
-      {nodLab = M.insert node (Any lab) (nodLab bestLab)}
-  }
+-- -- | Set label of the given node in the given `Best` structure.  Similar to
+-- -- `addArc`, but used when the potential of the node has been already accounted
+-- -- for.
+-- setNode :: G.Vertex -> Bool -> Best -> Best
+-- setNode node lab best@Best{..} = best
+--   { bestLab = bestLab
+--       {nodLab = M.insert node (Any lab) (nodLab bestLab)}
+--   }
 
 
 -- | Add the given node, its labeling, and the resulting potential to the given

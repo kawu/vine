@@ -19,14 +19,12 @@ import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
 import qualified Data.Maybe as Maybe
 
-import qualified Numeric.Backprop as BP
-import           Numeric.LinearAlgebra.Static.Backprop
-  (BVar, Reifies, W, dot)
+import           Numeric.LinearAlgebra.Static.Backprop (BVar, Reifies, W)
 
 import           Net.Graph.Core
 import qualified Net.Graph.Arc as B
-import           Net.Graph.Arc (Pot, Prob, Vec(..), Vec8, Out(..))
-import           Graph (Graph, Arc, incoming, outgoing)
+import           Net.Graph.Arc (Pot, Vec8, Out(..))
+import           Graph (Graph, Arc)
 import qualified Graph
 import           Graph.SeqTree (treeRoot)
 import qualified Net.Graph.Marginals as Margs

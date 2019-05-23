@@ -143,7 +143,7 @@ firstCommonElem xs ys
   . List.takeWhile (uncurry (==))
   $ zip (reverse xs) (reverse ys)
   where
-    safeHead (e:es) = e
+    safeHead (e:_) = e
     safeHead [] =
       error "Graph.firstCommonElem: no common element found"
 

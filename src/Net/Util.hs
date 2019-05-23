@@ -48,11 +48,10 @@ module Net.Util
 
 
 import           GHC.TypeNats (KnownNat)
-import qualified GHC.TypeNats as Nats
 
 import           System.Random (randomRIO)
 
-import           Control.Lens.At (ixAt, ix)
+import           Control.Lens.At (ix)
 import qualified Control.Lens.At as At
 
 import           Data.Maybe (fromJust)
@@ -66,16 +65,12 @@ import           Codec.Compression.Zlib (compress, decompress)
 
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop (Backprop, BVar, Reifies, W, (^^?))
-import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 import           Numeric.LinearAlgebra.Static.Backprop (R, L)
 import qualified Numeric.LinearAlgebra as LAD
 import qualified Numeric.LinearAlgebra.Static as LA
 import qualified Numeric.LinearAlgebra.Static.Vector as LA
 
--- -- To make GHC automatically infer that, e.g., `KnownNat d => KnownNat (d + d)`
--- {-# OPTIONS_GHC -fplugin GHC.TypeLits.KnownNat.Solver #-}
-
-import           Debug.Trace (trace)
+-- import           Debug.Trace (trace)
 
 
 ------------------------------------

@@ -43,24 +43,17 @@ import           GHC.TypeNats (KnownNat)
 import qualified GHC.TypeNats as Nats
 
 import           Control.DeepSeq (NFData)
-import           Control.Lens.At (ixAt, ix)
-import qualified Control.Lens.At as At
-import           Control.Monad (forM)
 
 import           Lens.Micro.TH (makeLenses)
 
 -- import           Data.Proxy (Proxy(..))
 import qualified Data.Graph as G
 import           Data.Binary (Binary)
-import           Data.Maybe (mapMaybe)
-import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 
 import qualified Numeric.Backprop as BP
-import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.), (^^?))
-import qualified Numeric.LinearAlgebra.Static as LA
-import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
-import           Numeric.LinearAlgebra.Static.Backprop (R, L, dot, (#), (#>))
+import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.))
+import           Numeric.LinearAlgebra.Static.Backprop (R, L, (#), (#>))
 
 import           Numeric.SGD.ParamSet (ParamSet)
 

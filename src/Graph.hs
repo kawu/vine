@@ -37,27 +37,11 @@ module Graph
 
 import           GHC.Generics (Generic)
 
-import           System.Random (randomRIO)
-
-import           Control.Monad (forM, guard)
-
-import           Data.Proxy (Proxy(..))
 import           Data.Binary (Binary)
 import qualified Data.List as L
 import qualified Data.Array as A
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
-import qualified Data.Text as T
 import qualified Data.Graph as G
-
-
-import qualified Numeric.LinearAlgebra.Static as LA
-import           Numeric.LinearAlgebra.Static.Backprop (R, L)
-
--- import           Net.Util
--- import qualified Net.FeedForward as FFN
--- import           Net.FeedForward (FFN(..))
-
 
 
 ----------------------------------------------

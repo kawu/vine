@@ -81,12 +81,10 @@ data TagConfig = TagConfig
     -- ^ MWE category (e.g., LVC) to focus on
   , tagProb :: Double
     -- ^ MWE probability threshold
-  , tagGlobal :: Bool
-    -- ^ Use global (tree) inference; if used, the `tagProb` option is ignored
   , tagConstrained :: Bool
     -- ^ Use constrained global inference
   , tagModel   :: FilePath
-    -- ^ Input model (otherwise, random)
+    -- ^ Input model (otherwise, randomly initialized)
   }
 
 
@@ -170,11 +168,6 @@ tagOptions = fmap Tag $ TagConfig
        <> help "MWE probability threshold"
         )
   <*> flag False True
-        ( long "global"
-       <> short 'g'
-       <> help "Use global inference"
-        )
-  <*> flag False True
         ( long "constrained"
        <> short 'c'
        <> help "Use constrained global inference"
@@ -254,11 +247,6 @@ run cmd =
               <$> Cupt.readCupt trainCupt
             posTagSet <- MWE.posTagsIn . concat
               <$> Cupt.readCupt trainCupt
---             -- Extract the set of dependency labels
---             depRelSet <- error "what about dummy root?"
---             posTagSet <- error "what about dummy root?"
-            -- Graph.new posTagSet depRelSet
-            -- MWE.newO trainModelTyp posTagSet depRelSet
             MWE.new posTagSet depRelSet
           Just path -> U.load path
       -- Read .cupt (ignore paragraph boundaries)
@@ -267,7 +255,7 @@ run cmd =
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
       epochRef <- IORef.newIORef (0 :: Int)
-      net <- MWE.trainT sgdCfg trainMweCat
+      net <- MWE.train sgdCfg trainMweCat
         (mkInput cupt embs) net0 $ \net ->
           case trainOutModel of
             Nothing -> return ()
@@ -300,14 +288,12 @@ run cmd =
       where
         cfg = MWE.TagConfig
           { MWE.mweTyp = tagMweCat
-          , MWE.mweThreshold = tagProb
-          , MWE.mweGlobal = tagGlobal || tagConstrained
           , MWE.mweConstrained = tagConstrained
           }
 
     Clear mweTyp -> do
       cupt <- concat . Cupt.parseCupt <$> TL.getContents
-      let cupt' = map (removeMweAnnotations mweTyp) cupt
+      let cupt' = map (Cupt.removeMweAnnotations mweTyp) cupt
       forM_ cupt' $ \sent -> do
         T.putStr "# "
         T.putStrLn . T.unwords $ map Cupt.orth sent
@@ -350,11 +336,6 @@ mkInput cupt embs =
         Nothing -> 
           let sentTxt = T.intercalate " " (map Cupt.orth sent)
            in trace ("Ignoring sentence: " ++ T.unpack sentTxt) Nothing
---     simpleSent sent = and $ do
---       tok <- sent
---       return $ case Cupt.tokID tok of
---                  Cupt.TokID _ -> True
---                  _ -> False
 
 
 dhallPath :: FilePath -> Dhall.Text
@@ -362,22 +343,3 @@ dhallPath path = fromString $
   if isAbsolute path
   then path
   else "./" </> path
-
-
---------------------------------------------------
--- Cleaning up
---------------------------------------------------
-
-
--- | Clear MWE annotations related to the given MWE category.
-removeMweAnnotations :: Cupt.MweTyp -> Cupt.MaySent -> Cupt.MaySent
-removeMweAnnotations mweTyp 
-  = Cupt.abstract
-  . map clear
-  . Cupt.decorate
-  where
-    clear tok = tok
-      { Cupt.mwe = filter
-          (\(_id, typ) -> typ /= mweTyp)
-          (Cupt.mwe tok)
-      }

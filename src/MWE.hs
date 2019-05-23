@@ -15,86 +15,51 @@
 -- | The top-level module of the VMWE identification tool.  Provides plumbing
 -- between various more specialized modules:
 --
---   * `N.Graph` -- ANN over graphs
+--   * `N.Graph`     -- Labelled graphs
+--   * `Net.Graph`   -- Graph neural network
 --   * `Format.Cupt` -- .cupt format support
 --   * `Numeric.SGD` -- stochastic gradient descent (external library)
 --   * ...
 
 
 module MWE
-  ( Sent(..)
+  ( 
+  -- * Types
+    Sent(..)
 
   -- * New
   , N.new
-  -- , N.newO
-  -- , N.Typ
 
   -- * Training
   , Config(..)
   , Method(..)
-  -- , trainO
-  , trainT
+  , train
   , depRelsIn
   , posTagsIn
 
   -- * Tagging
   , TagConfig(..)
-  -- , tag
-  -- , tagT
-  -- , tagMany
-  -- , tagManyO
   , tagManyT
-
-  -- * Utils
-  , dummyRootPOS
-  , dummyRootDepRel
   ) where
 
 
 import           Prelude hiding (elem)
 
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat)
--- import qualified GHC.TypeNats as Nats
 
-import           Control.Monad (guard, forM_)
-import           Control.DeepSeq (NFData)
-import           Control.Parallel.Strategies (parMap, rseq, rdeepseq, Strategy)
+import           Control.Monad (forM_)
+import           Control.Parallel.Strategies (parMap, rseq)
 
 import           Lens.Micro ((^.))
 
--- import qualified System.Directory as D
--- import           System.FilePath ((</>))
-
-import           Numeric.LinearAlgebra.Static.Backprop (R)
--- import qualified Numeric.LinearAlgebra.Static as LA
--- import qualified Numeric.LinearAlgebra as LAD
-import           Numeric.Backprop (Reifies, W, BVar, (^^.))
 import qualified Numeric.Backprop as BP
 
 import           Dhall (Interpret(..), genericAuto)
--- import           Dhall.Core (Expr(..))
-import qualified Dhall.Map as Map
--- import qualified Data.Aeson as JSON
 
-import qualified Data.Proxy as Proxy
-import qualified Data.Foldable as Fold
-import           Data.Semigroup (Max(..))
-import qualified Data.Graph as G
-import qualified Data.Map.Strict as M
-import qualified Data.Ord as Ord
--- import           Data.Function (on)
-import qualified Data.List as List
 import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as L
-import qualified Data.Text.Lazy.IO as L
-import           Data.Binary (Binary)
--- import qualified Data.Binary as Bin
--- import qualified Data.ByteString.Lazy as B
--- import           Codec.Compression.Zlib (compress, decompress)
--- import qualified Data.IORef as R
 
 import qualified Numeric.SGD as SGD
 import qualified Numeric.SGD.Type as SGD
@@ -105,376 +70,17 @@ import qualified Numeric.SGD.AdaDelta as Ada
 import qualified Numeric.SGD.Adam as Adam
 
 import qualified Format.Cupt as Cupt
-import qualified Graph
 import qualified Net.Graph as N
-import qualified Net.Graph.Core as C
-import qualified Net.Graph.BiComp as B
-import qualified Net.Graph.UniComp as U
-import qualified Net.Input as I
 import qualified DhallUtils as DU
+import qualified MWE.Sent as Sent
+import           MWE.Sent (Sent(..))
+import           MWE.Anno (annotate)
 
-import Debug.Trace (trace)
-
-
-----------------------------------------------
--- Data
-----------------------------------------------
-
-
--- | Input sentence
-data Sent d = Sent
-  { cuptSent :: Cupt.Sent
-    -- ^ The .cupt sentence
-  , wordEmbs :: [R d]
-    -- ^ The corresponding word embeddings
-  } deriving (Show, Generic, Binary)
-
-
--- -- | Convert the given .cupt file to a training dataset element.  The token IDs
--- -- are used as vertex identifiers in the resulting graph.
--- --
--- --   * @d@ -- embedding size (dimension)
--- --
--- mkElem
---   :: (KnownNat d)
---   => (Cupt.MweTyp -> Bool)
---     -- ^ MWE type (category) selection method
---   -> Sent d
---     -- ^ Input sentence
---   -> N.Elem d DepRel POS
--- mkElem mweSel sent =
--- 
---   createElem nodes arcs
--- 
---   where
--- 
---     -- Cupt sentence with ID range tokens removed
---     cuptSentF = filter
---       (\tok -> case Cupt.tokID tok of
---                  Cupt.TokID _ -> True
---                  _ -> False
---       )
---       (cuptSent sent)
--- 
---     -- A map from token IDs to tokens
---     tokMap = M.fromList
---       [ (Cupt.tokID tok, tok)
---       | tok <- cuptSentF 
---       ]
---     -- The parent of the given token
---     tokPar tok = tokMap M.! Cupt.dephead tok
---     -- Is the token the root?
---     isRoot tok = Cupt.dephead tok == Cupt.TokID 0
---     -- The IDs of the MWEs present in the given token
---     getMweIDs tok
---       = S.fromList
---       . map fst
---       . filter (mweSel . snd)
---       $ Cupt.mwe tok
--- 
---     -- Graph nodes: a list of token IDs and the corresponding vector embeddings
---     nodes = do
---       (tok, vec) <- zip cuptSentF (wordEmbs sent)
---       let node = Graph.Node
---             { nodeEmb = vec
---             , nodeLab = Cupt.upos tok
---             -- | TODO: could be lemma?
---             , nodeLex = Cupt.orth tok
---             }
---       return (tokID tok, node)
---     -- Labeled arcs of the graph
---     arcs = do
---       tok <- cuptSentF
---       -- Check the token is not a root
---       guard . not $ isRoot tok
---       let par = tokPar tok
---           -- The arc value is `True` if the token and its parent are annoted as
---           -- a part of the same MWE of the appropriate MWE category
---           isMwe = (not . S.null)
---             (getMweIDs tok `S.intersection` getMweIDs par)
---       return ((tokID tok, tokID par), Cupt.deprel tok, isMwe)
--- 
--- 
--- -- | Create a dataset element based on nodes and labeled arcs.
--- --
--- -- Works under the assumption that incoming/outgoing arcs are ,,naturally''
--- -- ordered in accordance with their corresponding vertex IDs (e.g., for two
--- -- children nodes x, v, the node with lower ID precedes the other node).
--- --
--- createElem
---   :: (KnownNat d)
---   => [(G.Vertex, Graph.Node d POS)]
---   -> [(Graph.Arc, DepRel, Bool)]
---   -> N.Elem d DepRel POS
--- createElem nodes arcs0 = N.Elem
---   { graph = graph
---   , nodMap = _nodMap
---   , arcMap = _arcMap
---   }
---   where
---     arcs = List.sortBy (Ord.comparing _1) arcs0
---     vertices = [v | (v, _) <- nodes]
---     gStr = G.buildG
---       (minimum vertices, maximum vertices)
---       (map _1 arcs)
---     graph = verify . Graph.mkAsc $ Graph.Graph
---       { Graph.graphStr = gStr
---       , Graph.graphInv = G.transposeG gStr
---       , Graph.nodeLabelMap = M.fromList $ nodes
---           -- map (\(x, e, pos) -> (x, Graph.Node e pos)) nodes
---       , Graph.arcLabelMap = M.fromList $
---           map (\(x, y, _) -> (x, y)) arcs
---       }
---     _arcMap = M.fromList $ do
---       (arc, _arcLab, isMwe) <- arcs
---       return (arc, if isMwe then 1.0 else 0.0)
---     _nodMap = M.fromListWith max . concat $ do
---       ((v, w), _arcLab, isMwe) <- arcs
---       let mwe = if isMwe then 1.0 else 0.0
---       return [(v, mwe), (w, mwe)]
---     _1 (x, _, _) = x
---     verify g
---       | Graph.isAsc g = g
---       | otherwise = error "MWE.createElem: constructed graph not ascending!"
-
-
--- | Convert the given .cupt file to a training dataset element.  The token IDs
--- are used as vertex identifiers in the resulting graph.
---
---   * @d@ -- embedding size (dimension)
---
-mkElem
-  :: (KnownNat d)
-  => (Cupt.MweTyp -> Bool)
-    -- ^ MWE type (category) selection method
-  -> Sent d
-    -- ^ Input sentence
-  -> N.Elem (R d)
-mkElem mweSel sent0 =
-
-  -- trace (T.unpack $ T.unwords . map Cupt.orth $ cuptSent sent0) $
-  List.foldl' markMWE
-    (createElem nodes arcs)
-    ( filter (mweSel . Cupt.mweTyp')
-    . M.elems
-    . Cupt.retrieveMWEs
-    -- TODO: what would happen if a MWE were marked on a token with ID range!?
-    $ cuptSent sent
-    )
-
-  where
-
-    -- Sentence with ID range tokens removed + additional dummy root token
-    sent = discardMerged sent0
-      { cuptSent = dummyRootTok : cuptSent sent0
-      , wordEmbs = dummyRootEmb : wordEmbs sent0
-      }
-
-    -- A map from token IDs to tokens
-    tokMap = M.fromList
-      [ (Cupt.tokID tok, tok)
-      | tok <- cuptSent sent
-      ]
-    -- The parent of the given token
-    tokPar tok = tokMap M.! Cupt.dephead tok
-    -- Is the token the root?
-    isRoot tok = Cupt.dephead tok == dummyRootParID -- Cupt.TokID 0
-    -- The IDs of the MWEs present in the given token
-    getMweIDs tok
-      = S.fromList
-      . map fst
-      . filter (mweSel . snd)
-      $ Cupt.mwe tok
-
-    -- Graph nodes: a list of token IDs and the corresponding vector embeddings
-    nodes = do
-      (tok, vec) <- zipSafe
-        (cuptSent sent)
-        (wordEmbs sent)
-      let node = (tok, vec)
-          isMwe = (not . S.null) (getMweIDs tok)
-      return (tokID tok, node, isMwe)
-    -- Labeled arcs of the graph
-    arcs = do
-      tok <- cuptSent sent
-      -- Check the token is not a root
-      guard . not $ isRoot tok
-      let par = tokPar tok
-          -- TODO: there should be no need to mark arcs as MWE in this version
-          -- of `mkElem`, since `markMWEs` is executed afterwards anyway.
-          --
-          -- The arc value is `True` if the token and its parent are annoted as
-          -- a part of the same MWE of the appropriate MWE category.
-          isMwe = (not . S.null)
-            (getMweIDs tok `S.intersection` getMweIDs par)
-      return ((tokID tok, tokID par), isMwe)
-
-
--- | An artificial root token.
-dummyRootTok :: Cupt.Token
-dummyRootTok = Cupt.Token
-  { tokID = Cupt.TokID 0
-  , orth = ""
-  , lemma = ""
-  , upos = dummyRootPOS
-  , xpos = ""
-  , feats = M.empty
-  , dephead = dummyRootParID
-  , deprel = dummyRootDepRel
-  , deps = ""
-  , misc = ""
-  , mwe = []
-  }
-
-
--- | ID to refer to the parent of the artificial root node.
-dummyRootParID :: Cupt.TokID
-dummyRootParID = Cupt.TokID (-1)
-
-
--- | Embedding of the dummy root.
-dummyRootEmb :: (KnownNat d) => R d
-dummyRootEmb = 0
-
-
-dummyRootPOS :: T.Text
-dummyRootPOS = "DUMMY-ROOT-POS"
-
-
-dummyRootDepRel :: T.Text
-dummyRootDepRel = "DUMMY-ROOT-DEPREL"
-
-
-discardMerged :: (KnownNat d) => Sent d -> Sent d
-discardMerged sent0 
-  = uncurry Sent . unzip
-  $ filter cond 
-  $ zip (cuptSent sent0) (wordEmbs sent0)
-  where
-    cond (tok, emb) =
-      case Cupt.tokID tok of
-        Cupt.TokID _ -> True
-        _ -> False
-
-
--- | Mark MWE in the given dataset element.
-markMWE :: N.Elem d -> Cupt.Mwe -> N.Elem d
-markMWE el mwe =
-  List.foldl' markArc el (S.toList arcSet)
-  where
-    markArc el arc = el {N.arcMap = M.insert arc 1.0 (N.arcMap el)}
-    arcSet =
-      N.treeConnectAll
-        (N.graph el)
-        (S.fromList . map tokID . S.toList $ Cupt.mweToks mwe)
-
-
--- | Create a dataset element based on nodes and labeled arcs.
---
--- Works under the assumption that incoming/outgoing arcs are ,,naturally''
--- ordered in accordance with their corresponding vertex IDs (e.g., for two
--- children nodes x, v, the node with lower ID precedes the other node).
---
--- Version of `createElem` in which node labels are explicitly handled.
---
-createElem
-  :: (KnownNat d)
-  => [(G.Vertex, (Cupt.Token, R d), Bool)]
-  -> [(Graph.Arc, Bool)]
-  -> N.Elem (R d)
-createElem nodes arcs0 = N.Elem
-  { graph = graph
-  , nodMap = _nodMap
-  , arcMap = _arcMap
-  , tokMap = M.fromList [(v, tok) | (v, (tok, _), _) <- nodes]
-  }
-  where
-    -- arcs = List.sortBy (Ord.comparing _1) arcs0
-    arcs = List.sortBy (Ord.comparing fst) arcs0
-    vertices = [v | (v, _, _) <- nodes]
-    gStr = G.buildG
-      (minimum vertices, maximum vertices)
-      (map fst arcs)
-    graph = verify . Graph.mkAsc $ Graph.Graph
-      { Graph.graphStr = gStr
-      , Graph.graphInv = G.transposeG gStr
-      , Graph.nodeLabelMap = M.fromList $
-          map (\(x, y, _) -> (x, snd y)) nodes
-      , Graph.arcLabelMap = M.fromList $
-          map (\(x, _) -> (x, ())) arcs
-      }
-    _arcMap = M.fromList $ do
-      -- (arc, _arcLab, isMwe) <- arcs
-      (arc, isMwe) <- arcs
-      return (arc, if isMwe then 1.0 else 0.0)
-    _nodMap = M.fromList $ do
-      (v, _, isMwe) <- nodes
-      return (v, if isMwe then 1.0 else 0.0)
-    _1 (x, _, _) = x
-    verify g
-      | Graph.isAsc g = g
-      | otherwise = error "MWE.createElem: constructed graph not ascending!"
-
-
-
-
--- -- | Create an unlabeled dataset element based on nodes and arcs.
--- --
--- -- Works under the assumption that incoming/outgoing arcs are ,,naturally''
--- -- ordered in accordance with their corresponding vertex IDs (e.g., for two
--- -- children nodes x, v, the node with lower ID precedes the other node).
--- createElem'
---   :: (KnownNat d)
---   => [(G.Vertex, Graph.Node d POS)]
---   -> [(Graph.Arc, DepRel)]
---   -> N.Elem d DepRel POS
--- createElem' nodes arcs0 = N.Elem
---   { graph = graph
---   , nodMap = _nodMap
---   , arcMap = _arcMap
---   }
---   where
---     arcs = List.sortBy (Ord.comparing fst) arcs0
---     vertices = [v | (v, _) <- nodes]
---     gStr = G.buildG
---       (minimum vertices, maximum vertices)
---       (map fst arcs)
---     graph = verify . Graph.mkAsc $ Graph.Graph
---       { Graph.graphStr = gStr
---       , Graph.graphInv = G.transposeG gStr
---       , Graph.nodeLabelMap = M.fromList nodes
---       , Graph.arcLabelMap = M.fromList arcs
---       }
---     _arcMap = M.fromList $ do
---       (arc, _arcLab) <- arcs
---       return (arc, 0.0)
---     _nodMap = M.fromList $ do
---       (v, _nodeLab) <- nodes
---       return (v, 0.0)
---     verify g
---       | Graph.isAsc g = g
---       | otherwise = error "MWE.createElem: constructed graph not ascending!"
-
-
--- -- | Is MWE or not?
--- mwe, notMwe :: R 2
--- notMwe = LA.vector [1, 0]
--- mwe = LA.vector [0, 1]
-
-
--- | Token ID
-tokID :: Cupt.Token -> Int
-tokID tok =
-  case Cupt.tokID tok of
-    Cupt.TokID i -> i
-    Cupt.TokIDRange _ _ ->
-      error "MWE.tokID: token ID ranges not supported"
+-- import Debug.Trace (trace)
 
 
 ----------------------------------------------
 -- Training
---
--- TODO: mostly copy from MWE
 ----------------------------------------------
 
 
@@ -483,7 +89,6 @@ instance Interpret Mom.Config
 instance Interpret Ada.Config
 instance Interpret Adam.Config
 instance Interpret SGD.Config
--- instance Interpret SGD.Method
 
 
 data Method
@@ -532,45 +137,10 @@ type DepRel = T.Text
 type POS = T.Text
 
 
--- -- | Train the MWE identification network.
--- train
---   :: ( KnownNat d
---      , B.BiComp d comp
---      , SGD.ParamSet comp, NFData comp
---      )
---   => Config
---     -- ^ General training confiration
---   -> Cupt.MweTyp
---     -- ^ Selected MWE type (category)
---   -> [Sent d]
---     -- ^ Training dataset
---   -> comp
--- --   -> N.Param 300
---     -- ^ Initial network
---   -> IO comp
--- --   -> IO (N.Param 300)
--- train cfg mweTyp cupt net0 = do
---   -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
---   let cupt' = map (mkElem (== mweTyp)) cupt
---   net' <- SGD.withDisk cupt' $ \dataSet -> do
---     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
---     -- net0 <- N.new 300 2
---     -- trainProgSGD sgd dataSet globalDepth net0
---     SGD.runIO (sgd cfg)
---       (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
---       (SGD.reportObjective quality dataSet)
---       dataSet net0
--- --   N.printParam net'
---   return net'
---   where
---     gradient x = BP.gradBP (N.netError (probTyp cfg) [fmap BP.auto x])
---     quality x = BP.evalBP (N.netError (probTyp cfg) [fmap BP.auto x])
-
-
 -- | Extract dependeny relations present in the given dataset.
 depRelsIn :: [Cupt.GenSent mwe] -> S.Set DepRel
 depRelsIn =
-  S.fromList . (dummyRootDepRel:) . concatMap extract 
+  S.fromList . (Sent.dummyRootDepRel:) . concatMap extract 
   where
     extract = map Cupt.deprel
 
@@ -578,51 +148,13 @@ depRelsIn =
 -- | Extract dependeny relations present in the given dataset.
 posTagsIn :: [Cupt.GenSent mwe] -> S.Set POS
 posTagsIn =
-  S.fromList . (dummyRootPOS:) . concatMap extract 
+  S.fromList . (Sent.dummyRootPOS:) . concatMap extract 
   where
     extract = map Cupt.upos
 
 
-----------------------------------------------
--- Working with opaque network architecture
---
--- TODO: copy from MWE
-----------------------------------------------
-
-
--- -- | Train the opaque MWE identification network.
--- trainO
---   :: Config
---     -- ^ General training confiration
---   -> Cupt.MweTyp
---     -- ^ Selected MWE type (category)
---   -> [Sent 300]
---     -- ^ Training dataset
---   -> N.Opaque 300 DepRel POS
---     -- ^ Initial network
---   -> IO (N.Opaque 300 DepRel POS)
--- trainO cfg mweTyp cupt net =
---   case net of
---     N.Opaque t p -> N.Opaque t <$> train cfg mweTyp cupt p
-
-
--- -- | Tag sentences with the opaque network.
--- tagManyO
---   :: TagConfig
---   -> N.Opaque 300 DepRel POS
---   -> [Sent 300]
---   -> IO ()
--- tagManyO cfg = \case
---   N.Opaque _ p -> tagMany cfg p
-
-
-----------------------------------------------
--- Trainin with input transformations
-----------------------------------------------
-
-
 -- | Train the MWE identification network.
-trainT
+train
   :: Config
     -- ^ General training confiration
   -> Cupt.MweTyp
@@ -630,22 +162,20 @@ trainT
   -> [Sent 300]
     -- ^ Training dataset
   -> N.Transparent
-    -- ^ Initial networks
+    -- ^ Initial network
   -> (N.Transparent -> IO ())
     -- ^ Action to execute at the end of each epoch
   -> IO N.Transparent
---   -> IO (N.Param 300)
-trainT cfg mweTyp cupt tra0 action = do
-  -- dataSet <- mkDataSet (== mweTyp) tmpDir cupt
-  let cupt' = map (mkElem (== mweTyp)) cupt
+train cfg mweTyp cupt tra0 action = do
+  let cupt' = map (Sent.mkElem (== mweTyp)) cupt
   SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     SGD.runIO (sgd cfg)
       (toSGD cfg (SGD.size dataSet) (SGD.batchGradPar gradient))
       (reportAndExec dataSet) dataSet tra0
-  where 
-    gradient x = BP.gradBP (N.netErrorT (probCfg cfg) x)
-    quality x = BP.evalBP (N.netErrorT (probCfg cfg) x)
+  where
+    gradient x = BP.gradBP (N.netError (probCfg cfg) x)
+    quality x = BP.evalBP (N.netError (probCfg cfg) x)
     reportAndExec dataSet tra = do
       x <- SGD.reportObjective quality dataSet tra
       action tra
@@ -654,73 +184,37 @@ trainT cfg mweTyp cupt tra0 action = do
 
 ----------------------------------------------
 -- Tagging
---
--- TODO: copy from MWE, apart from `tag`
 ----------------------------------------------
 
 
 -- | Tagging configuration
 data TagConfig = TagConfig
-  { mweThreshold :: Double
-    -- ^ The minimum probability to consider an arc a MWE component
-    -- (with 0.5 being the default)
-  , mweTyp :: Cupt.MweTyp
+  { mweTyp :: Cupt.MweTyp
     -- ^ MWE category to annotate
-  , mweGlobal :: Bool
-    -- ^ Use global (tree) inference; if so, the `mweThreshold` option is
-    -- ignored
   , mweConstrained :: Bool
-    -- ^ Constrained global inference; implies `mweGlobal`
+    -- ^ Constrained global decoding
   } deriving (Show, Eq, Ord)
 
 
--- -- | Tag sentences based on the given configuration and multi/quad-affine
--- -- network.  The output is directed to stdout.
--- tagMany
---   :: ( KnownNat d
---      , B.BiComp d comp
---      -- , SGD.ParamSet comp, NFData comp
---      )
---   => TagConfig
---   -> comp
---                       -- ^ Network parameters
---   -> [Sent d]       -- ^ Cupt sentences
---   -> IO ()
--- tagMany tagCfg net cupt = do
---   forM_ cupt $ \sent -> do
---     T.putStr "# "
---     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
---     tag tagCfg net sent
-
-
--- -- | Tag a single sentence with the given network.
--- tag
---   :: ( KnownNat d
---      , B.BiComp d comp
---      )
---   => TagConfig
---   -> comp             -- ^ Network parameters
---   -> Sent d           -- ^ Cupt sentence
---   -> IO ()
--- tag tagCfg net sent = do
---   L.putStrLn $ Cupt.renderPar [Cupt.abstract sent']
---   where
---     elem = mkElem (const False) sent
---     tagF
---       | mweConstrained tagCfg =
---           N.treeTagConstrained (N.graph elem)
---       | mweGlobal tagCfg =
---           N.treeTagGlobal (N.graph elem)
---       | otherwise = N.tagGreedy mweChoice
---     mweChoice ps = geoMean ps >= mweThreshold tagCfg
---     labeling = tagF . N.evalRaw net $ N.graph elem
---     sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
-
-
-zipSafe :: [a] -> [b] -> [(a, b)]
-zipSafe xs ys
-  | length xs == length ys = zip xs ys
-  | otherwise = error "zipSafe: length not the same!"
+-- | Tag a single sentence with the given network.
+tag
+  :: TagConfig
+  -> N.Transparent   -- ^ Network parameters
+  -> Sent 300        -- ^ Cupt sentence
+  -> Cupt.Sent
+tag tagCfg net sent =
+  sent'
+  where
+    elem = N.evalInp (Sent.mkElem (const False) sent) net
+    tagF
+      | mweConstrained tagCfg =
+          N.treeTagConstrained (N.graph elem)
+      | otherwise =
+          N.treeTagGlobal (N.graph elem)
+    labeling = tagF
+      (N.evalBia (net ^. N.biaMod) (N.graph elem))
+      (N.evalUni (net ^. N.uniMod) (N.graph elem))
+    sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
 
 
 -- | Tag a single sentence with the given network.
@@ -732,20 +226,7 @@ tagToText
 tagToText tagCfg net sent =
   L.toStrict $ Cupt.renderPar [Cupt.abstract sent']
   where
-    elem = N.evalInp (mkElem (const False) sent) net
-    tagF
-      | mweConstrained tagCfg =
-          N.treeTagConstrained (N.graph elem)
-      | mweGlobal tagCfg =
-          N.treeTagGlobal (N.graph elem)
-      | otherwise =
-          error "tag': greedy not implemented"
-          -- N.tagGreedy mweChoice
-    mweChoice ps = geoMean ps >= mweThreshold tagCfg
-    labeling = tagF
-      (N.evalBia (net ^. N.biaMod) (N.graph elem))
-      (N.evalUni (net ^. N.uniMod) (N.graph elem))
-    sent' = annotate (mweTyp tagCfg) (cuptSent sent) labeling
+    sent' = tag tagCfg net sent
 
 
 -- | Tag and annotate sentences in parallel.
@@ -770,250 +251,3 @@ tagManyT cfg net cupt0 = do
     T.putStrLn sent
   where
     cupt = tagManyTpar cfg net cupt0
-
-
--- -- | Tag a single sentence with the given network.
--- tagT
---   :: TagConfig
---   -> N.Transparent   -- ^ Network parameters
---   -> Sent 300        -- ^ Cupt sentence
---   -> IO ()
--- tagT tagCfg net sent =
---   let sent' = tagToText tagCfg net sent
---    in T.putStrLn sent'
--- 
--- 
--- -- | Tag sentences with the opaque network.
--- tagManyT
---   :: TagConfig
---   -> N.Transparent
---   -> [Sent 300]
---   -> IO ()
--- tagManyT cfg net cupt = do
---   forM_ cupt $ \sent -> do
---     T.putStr "# "
---     T.putStrLn . T.unwords $ map Cupt.orth (cuptSent sent)
---     tagT cfg net sent
-
-
--- | Average of the list of numbers
-average :: Floating a => [a] -> a
-average xs = sum xs / fromIntegral (length xs)
-{-# INLINE average #-}
-
-
--- | Geometric mean
-geoMean :: Floating a => [a] -> a
-geoMean xs =
-  product xs ** (1.0 / fromIntegral (length xs))
-  -- consider also the version in the log scale:
-  -- exp . (/ fromIntegral (length xs)) . sum $ map log xs
-{-# INLINE geoMean #-}
-
-
-----------------------------------------------
--- Annotation with both arc and node labels
-----------------------------------------------
-
-
--- -- | Annotate the sentence with the given MWE type, given the specified arc and
--- -- node labeling.
--- annotate
---   :: Cupt.MweTyp
---     -- ^ MWE type to annotate with
---   -> Cupt.Sent
---     -- ^ .cupt sentence to annotate
---   -> N.Labelling Bool
---     -- ^ Node/arc labeling
---   -> Cupt.Sent
--- annotate mweTyp cupt N.Labelling{..} =
--- 
---   map enrich cupt
--- 
---   where
--- 
---     -- Enrich the token with new MWE information
---     enrich tok = Prelude.maybe tok id $ do
---       Cupt.TokID i <- return (Cupt.tokID tok)
---       mweId <- M.lookup i mweIdMap
---       let newMwe = (mweId, mweTyp)
---       return tok {Cupt.mwe = newMwe : Cupt.mwe tok}
--- 
---     -- Determine the set of MWE nodes and arcs
---     nodSet = trueKeys nodLab
---     arcSet = trueKeys arcLab
--- 
---     -- The set of keys with `True` values
---     trueKeys m = S.fromList $ do
---       (x, val) <- M.toList m
---       guard val
---       return x
--- 
---     -- Determine the mapping from nodes to new MWE id's
---     ccs = findConnectedComponents arcSet
---     mweIdMap = M.fromList . concat $ do
---       (cc, mweId) <- zip ccs [maxMweID cupt + 1 ..]
---       (v, w) <- S.toList cc
---       return $ filter ((`S.member` nodSet) . fst)
---         [(v, mweId), (w, mweId)]
-
-
-
--- | Annotate the sentence with the given MWE type, given the specified arc and
--- node labeling.
-annotate
-  :: Cupt.MweTyp
-    -- ^ MWE type to annotate with
-  -> Cupt.Sent
-    -- ^ .cupt sentence to annotate
-  -> C.Labelling Bool
-    -- ^ Node/arc labeling
-  -> Cupt.Sent
-annotate mweTyp cupt C.Labelling{..} =
-
-  map enrich cupt
-  
---   -- We only annotate sentence of length > 1!
---   | length cupt > 1 = map enrich cupt
---   | otherwise = cupt
-
-  where
-
-    -- Enrich the token with new MWE information
-    enrich tok = Prelude.maybe tok id $ do
-      Cupt.TokID i <- return (Cupt.tokID tok)
-      mweId <- M.lookup i mweIdMap
-      let newMwe = (mweId, mweTyp)
-      return tok {Cupt.mwe = newMwe : Cupt.mwe tok}
-
-    -- Determine the set of MWE nodes and arcs
-    nodSet = trueKeys nodLab
-    arcSet = trueKeys arcLab `S.union` nodeLoops
-
-    -- The set of keys with `True` values
-    trueKeys m = S.fromList $ do
-      (x, val) <- M.toList m
-      guard val
-      return x
-
-    -- The set of one node cycles
-    nodeLoops = S.fromList $ do
-      v <- S.toList nodSet
-      return (v, v)
-
-    -- Determine the mapping from nodes to new MWE id's
-    ccs = findConnectedComponents arcSet
-    mweIdMap = M.fromList . concat $ do
-      (cc, mweId) <- zip ccs [maxMweID cupt + 1 ..]
-      (v, w) <- S.toList cc
-      return $ filter ((`S.member` nodSet) . fst)
-        [(v, mweId), (w, mweId)]
-
-
-----------------------------------------------
--- Annotation continued
-----------------------------------------------
-
-
--- | Given a set of graph arcs, determine all the connected arc subsets in the
--- corresponding graph.
-findConnectedComponents
-  :: S.Set Graph.Arc
-  -> [S.Set Graph.Arc]
-findConnectedComponents arcSet
-  | S.null arcSet = []
-  | otherwise
-      -- Some components can be empty!  Perhaps because the graph is sparse?
-      = filter (not . S.null)
-      $ map (arcsInTree arcSet) (G.components graph)
-  where
-    vertices = S.toList (nodesIn arcSet)
-    graph = G.buildG
-      (minimum vertices, maximum vertices)
-      (S.toList arcSet)
-
-
--- | Determine the set of arcs in the given connected graph component.
--- TODO: This could be done much more efficiently!
-arcsInTree
-  :: S.Set Graph.Arc
-    -- ^ The set of all arcs
-  -> G.Tree G.Vertex
-    -- ^ Connected component
-  -> S.Set Graph.Arc
-arcsInTree arcSet cc = S.fromList $ do
-  (v, w) <- S.toList arcSet
-  guard $ v `S.member` vset
-  guard $ w `S.member` vset
-  return (v, w)
-  where
-    vset = S.fromList (Fold.toList cc)
-
-
--- | The set of nodes in the given arc set.
-nodesIn :: S.Set Graph.Arc -> S.Set G.Vertex
-nodesIn arcSet =
-  (S.fromList . concat)
-    [[v, w] | (v, w) <- S.toList arcSet]
-
-
--- | Determine the maximum mwe ID present in the given sentence.
-maxMweID :: Cupt.Sent -> Int
-maxMweID =
-  getMax . Fold.foldMap mweID
-  where
-    mweID tok = case Cupt.mwe tok of
-      [] -> Max 0
-      xs -> Max . maximum $ map fst xs
-
-
--- ----------------------------------------------
--- -- Dhall Utils
--- --
--- -- TODO: copy from MWE
--- ----------------------------------------------
--- 
--- 
--- -- | Remove the top-level _1 fields from the given union type.
--- rmUnion_1 :: Type a -> Type a
--- rmUnion_1 typ = typ
---   { extract = \expr -> extract typ (add1 expr)
---   , expected = rm1 (expected typ)
---   }
---   where
---     -- Add _1 to union expression
---     add1 expr =
---       case expr of
---         Union m -> Union (fmap addField_1 m)
---         UnionLit key val m -> UnionLit key (addField_1 val) (fmap addField_1 m)
---         _ -> expr
---     -- Remove _1 from union epxression
---     rm1 expr =
---       case expr of
---         Union m -> Union (fmap rmField_1 m)
---         UnionLit key val m -> UnionLit key (rmField_1 val) (fmap rmField_1 m)
---         _ -> expr
--- 
--- 
--- -- | Add _1 in the given record expression.
--- addField_1 :: Expr s a -> Expr s a
--- addField_1 expr =
---   case expr of
---     RecordLit m -> RecordLit (Map.singleton "_1" (RecordLit m))
---     Record m -> Record (Map.singleton "_1" (Record m))
---     _ -> expr
--- 
--- 
--- -- | Remove _1 from the given record expression.
--- rmField_1 :: Expr s a -> Expr s a
--- rmField_1 expr =
---   case expr of
---     RecordLit m -> Prelude.maybe (RecordLit m) id $ do
---       guard $ Map.keys m == ["_1"]
---       RecordLit m' <- Map.lookup "_1" m
---       return (RecordLit m')
---     Record m -> Prelude.maybe (Record m) id $ do
---       guard $ Map.keys m == ["_1"]
---       Record m' <- Map.lookup "_1" m
---       return (Record m')
---     _ -> expr

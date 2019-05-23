@@ -70,7 +70,6 @@ import           Lens.Micro.TH (makeLenses)
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop (Backprop, Reifies, W, BVar, (^^.), (^^?))
 import           Numeric.LinearAlgebra.Static.Backprop (R, L, (#), (#>)) -- dot
-import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
 
 import           Data.Binary (Binary)
 import qualified Data.Map.Strict as M
@@ -78,7 +77,6 @@ import qualified Data.Text as T
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
-import           Net.Pair
 import           Net.New
 import qualified Net.Util as U
 import qualified Format.Cupt as Cupt
@@ -237,7 +235,7 @@ data NoTrans = NoTrans
 makeLenses ''NoTrans
 
 instance New a b NoTrans where
-  new xs ys = pure NoTrans
+  new _xs _ys = pure NoTrans
 
 instance (KnownNat i, i ~ o) => Transform NoTrans i o where
   runTransform _ = id

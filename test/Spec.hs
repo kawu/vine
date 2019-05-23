@@ -10,7 +10,7 @@ import qualified Data.Map.Strict as M
 import qualified Numeric.Backprop as BP
 
 import qualified Net.Util as U
-import qualified Net.Graph as N
+-- import qualified Net.Graph as N
 import qualified Net.Graph.Arc as B
 import qualified Net.Graph.Marginals as Margs
 
@@ -43,7 +43,7 @@ scProps = testGroup "(checked by SmallCheck)"
   , Tasty.localOption (SC.SmallCheckDepth 4) .
     SC.testProperty "obfuscate == evalBP0 . obfuscateBP" $
       \xs ->
-        let m = M.fromList (zip N.enumerate $ pad 8 xs)
+        let m = M.fromList (zip B.enumerate $ pad 8 xs)
             lst = U.toList . B.unVec
             eq v1 v2 = lst v1 == lst v2
          in null xs || B.obfuscate m `eq`
@@ -53,10 +53,10 @@ scProps = testGroup "(checked by SmallCheck)"
       \x0 y0 ->
         let x = x0 `mod` 8
             y = y0 `mod` 8
-         in U.toList (N.mask (N.enumerate !! x)) !! y ==
+         in U.toList (B.mask (B.enumerate !! x)) !! y ==
               if x == y then 1.0 else 0.0
   , SC.testProperty "explicate (mask x) M.! y == [x == y]" $
-      \x y -> N.explicate (B.Vec $ N.mask x) M.! y ==
+      \x y -> B.explicate (B.Vec $ B.mask x) M.! y ==
         if x == y then 1.0 else 0.0
   , Tasty.localOption (SC.SmallCheckDepth 4) .
     SC.testProperty "Res: additive identity" $
