@@ -71,6 +71,7 @@ import qualified Format.Cupt as Cupt
 import qualified Net.Graph as N
 import qualified DhallUtils as DU
 import           MWE.Sent (Sent(..))
+import qualified MWE.Sent as Sent
 import qualified MWE.Encode as Enc
 import qualified MWE.Decode as Dec
 
@@ -138,7 +139,7 @@ type POS = T.Text
 -- | Extract dependeny relations present in the given dataset.
 depRelsIn :: [Cupt.GenSent mwe] -> S.Set DepRel
 depRelsIn =
-  S.fromList . (Enc.dummyRootDepRel:) . concatMap extract
+  S.fromList . (Sent.dummyRootDepRel:) . concatMap extract
   where
     extract = map Cupt.deprel
 
@@ -146,7 +147,7 @@ depRelsIn =
 -- | Extract dependeny relations present in the given dataset.
 posTagsIn :: [Cupt.GenSent mwe] -> S.Set POS
 posTagsIn =
-  S.fromList . (Enc.dummyRootPOS:) . concatMap extract
+  S.fromList . (Sent.dummyRootPOS:) . concatMap extract
   where
     extract = map Cupt.upos
 
