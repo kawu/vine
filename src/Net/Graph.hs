@@ -79,8 +79,8 @@ module Net.Graph
   , Arc.mask
 
   -- * Inference
-  , treeTagGlobal
-  , treeTagConstrained
+  , Dec.treeTagGlobal
+  , Dec.treeTagConstrained
 
   -- * Trees
   , treeConnectAll
@@ -89,84 +89,44 @@ module Net.Graph
 
 import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
--- import           GHC.Natural (naturalToInt)
--- import qualified GHC.TypeNats as Nats
--- import           GHC.TypeLits (Symbol, KnownSymbol)
-
--- import           System.Random (randomRIO)
-
--- import           Control.Monad (forM_, forM, guard)
 
 import           Lens.Micro.TH (makeLenses)
 import           Lens.Micro ((^.))
 
--- import           Data.Monoid (Sum(..))
-import           Data.Monoid (Any(..))
--- import           Data.Proxy (Proxy(..))
--- import           Data.Ord (comparing)
-import qualified Data.List as List
--- import qualified Data.Foldable as F
--- import           Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text as T
 import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
--- import qualified Data.Array as A
 import           Data.Binary (Binary)
--- import qualified Data.Vector.Sized as VS
 
--- import qualified Data.Number.LogFloat as LF
--- import           Data.Number.LogFloat (LogFloat)
-
--- import qualified Text.Read as R
--- import qualified Text.ParserCombinators.ReadP as R
-
--- import qualified Data.Map.Lens as ML
--- import           Control.Lens.At (ixAt)
--- import           Control.Lens.At (ix)
--- import           Control.Lens (Lens)
 import           Control.DeepSeq (NFData)
 
 import           Dhall (Interpret)
--- import qualified Data.Aeson as JSON
 
--- import qualified Prelude.Backprop as PB
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop (Backprop, (^^.)) -- , (^^?))
--- import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
-import           Numeric.LinearAlgebra.Static.Backprop
-  (R, L, BVar, Reifies, W, (#), (#>), dot)
-import qualified Numeric.LinearAlgebra.Static as LA
-import qualified Numeric.LinearAlgebra        as LD
+import           Numeric.LinearAlgebra.Static.Backprop (R, BVar, Reifies, W)
 
-import           Net.New
-import           Net.Pair
-import           Net.Util
--- import qualified Net.List as NL
-import qualified Net.FeedForward as FFN
-import           Net.FeedForward (FFN(..))
--- import qualified GradientDescent as GD
--- import qualified GradientDescent.Momentum as Mom
--- import qualified GradientDescent.Nestorov as Mom
--- import qualified GradientDescent.AdaDelta as Ada
+import           Net.New (New, new)
 import           Numeric.SGD.ParamSet (ParamSet)
 
 import qualified Format.Cupt as Cupt
 
 import           Graph
 import           Graph.SeqTree
-import qualified Net.List as NL
 import qualified Net.Graph.Core as Core
 import           Net.Graph.Core (Labelling(..))
 import           Net.Graph.Arc
-  (Pot, Prob, Vec(..), Vec8, Out(..))
+  (Pot, Prob, Vec8, Out(..))
 import qualified Net.Graph.Arc as Arc
 import qualified Net.Graph.BiComp as B
 import qualified Net.Graph.UniComp as U
 import qualified Net.Graph.Marginals as Margs
 import qualified Net.Graph.Global as Global
+import qualified Net.Graph.Decode as Dec
+import qualified Net.Graph.Error as Err
 import qualified Net.Input as I
 
-import           Debug.Trace (trace)
+-- import           Debug.Trace (trace)
 
 
 ----------------------------------------------
@@ -263,8 +223,7 @@ runInp x net =
    in replace embs' x
 
 
--- | Run the given uni-affine network over the given graph within the context
--- of back-propagation.
+-- | Run the given uni-affine network over the given graph.
 runUni
   :: ( KnownNat dim
      , Reifies s W
@@ -282,8 +241,7 @@ runUni net graph = M.fromList $ do
   return (v, x)
 
 
--- | Run the given (bi-affine) network over the given graph within the context
--- of back-propagation.
+-- | Run the given (bi-affine) network over the given graph.
 runBia
   :: ( KnownNat dim --, Ord a, Show a, Ord b, Show b
      , Reifies s W
@@ -301,7 +259,8 @@ runBia net graph = M.fromList $ do
   return (arc, x)
 
 
--- | `runUni` + `runBia` + marginals
+-- | `runUni` + `runBia` + marginal scores (depending on the selected
+-- `Core.Version`).
 runBoth
   :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
      , Reifies s W
@@ -384,262 +343,6 @@ evalBia net graph =
 
 
 ----------------------------------------------
--- Global decoding
-----------------------------------------------
-
-
--- | Determine the node/arc labeling which maximizes the global potential over
--- the given tree and return the resulting arc labeling.
---
--- WARNING: This function is only guaranteed to work correctly if the argument
--- graph is a tree!
---
-treeTagGlobal
-  :: Graph a b
-  -> M.Map Arc (Vec8 Pot)
-  -> M.Map G.Vertex Double
-  -> Labelling Bool
-treeTagGlobal graph labMap nodMap =
-  let (trueBest, falseBest) =
-        tagSubTree
-          (treeRoot graph)
-          graph
-          (fmap Arc.explicate labMap)
-          nodMap
-      best = better trueBest falseBest
-   in fmap getAny (bestLab best)
-
-
--- | The function returns two `Best`s:
---
---   * The best labeling if the label of the root is `True`
---   * The best labeling if the label of the root is `False`
---
-tagSubTree
-  :: G.Vertex
-    -- ^ Root of the subtree
-  -> Graph a b
-    -- ^ The entire graph
-  -> M.Map Arc (M.Map (Out Bool) Double)
-    -- ^ Explicated labeling potentials
-  -> M.Map G.Vertex Double
-    -- ^ Node labeling potentials
-  -> (Best, Best)
-tagSubTree root graph lmap nmap =
-  (bestWith True, bestWith False)
-  where
-    nodePot rootVal
-      | rootVal = nmap M.! root
-      | otherwise = 0.0
-    bestWith rootVal = addNode root rootVal (nodePot rootVal) . mconcat $ do
-      child <- Graph.incoming root graph
-      let arc = (child, root)
-          pot arcv depv = (lmap M.! arc) M.!
-            Out {arcVal=arcv, hedVal=rootVal, depVal=depv}
-          (true, false) = tagSubTree child graph lmap nmap
-      return $ List.foldl1' better
-        [ addArc arc True  (pot True  True)  true
-        , addArc arc False (pot False True)  true
-        , addArc arc True  (pot True  False) false
-        , addArc arc False (pot False False) false ]
-
-
-----------------------------------------------
--- Best (global decoding)
-----------------------------------------------
-
-
--- | The best arc labeling for a given subtree.
-data Best = Best
-  { bestLab :: Labelling Any
-    -- ^ Labelling (using `Any` guarantees that disjunction is used in case some
-    -- label is accidentally assigned to a given object twice)
-  , bestPot :: Double
-    -- ^ Total potential
-  }
-
-instance Semigroup Best where
-  Best l1 p1 <> Best l2 p2 =
-    Best (l1 <> l2) (p1 + p2)
-
-instance Monoid Best where
-  mempty = Best mempty 0
-
-
--- | Impossible labeling (with infinitely poor potential)
-impossible :: Best
-impossible = Best mempty (read "-Infinity")
-
-
--- | Choose the better `Best`.
-better :: Best -> Best -> Best
-better b1 b2
-  | bestPot b1 >= bestPot b2 = b1
-  | otherwise = b2
-
-
--- | Add the given arc, its labeling, and the resulting potential to the given
--- `Best` structure.
-addArc :: Arc -> Bool -> Double -> Best -> Best
-addArc arc lab pot Best{..} = Best
-  { bestLab = bestLab
-      {arcLab = M.insert arc (Any lab) (arcLab bestLab)}
-  , bestPot = bestPot + pot 
-  }
-
-
--- | Set label of the given node in the given `Best` structure.  Similar to
--- `addArc`, but used when the potential of the node has been already accounted
--- for.
-setNode :: G.Vertex -> Bool -> Best -> Best
-setNode node lab best@Best{..} = best
-  { bestLab = bestLab
-      {nodLab = M.insert node (Any lab) (nodLab bestLab)}
-  }
-
-
--- | Add the given node, its labeling, and the resulting potential to the given
--- `Best` structure.
-addNode :: G.Vertex -> Bool -> Double -> Best -> Best
-addNode node lab pot Best{..} = Best
-  { bestLab = bestLab
-      {nodLab = M.insert node (Any lab) (nodLab bestLab)}
-  , bestPot = bestPot + pot
-  }
-
-
-----------------------------------------------
--- Constrained decoding'
-----------------------------------------------
-
-
--- | Constrained version of `treeTagGlobal`
-treeTagConstrained
-  :: Graph a b
-  -> M.Map Arc (Vec8 Pot)
-  -> M.Map G.Vertex Double
-  -> Labelling Bool
-treeTagConstrained graph labMap nodMap =
-  let Best4{..} =
-        tagSubTreeC'
-          (treeRoot graph)
-          graph
-          (fmap Arc.explicate labMap)
-          nodMap
-      best = List.foldl1' better
-        -- NOTE: `falseZeroOne` can be excluded in constrained decoding
-        [true, falseZeroTrue, falseMoreTrue]
-   in getAny <$> bestLab best
-
-
--- | Calculate `Best3` of the subtree.
-tagSubTreeC'
-  :: G.Vertex
-    -- ^ Root of the subtree
-  -> Graph a b
-    -- ^ The entire graph (tree)
-  -> M.Map Arc (M.Map (Out Bool) Double)
-    -- ^ Explicated labeling potentials
-  -> M.Map G.Vertex Double
-    -- ^ Node labeling potentials
-  -> Best4
-tagSubTreeC' root graph lmap nmap =
-  List.foldl' (<>)
-    (emptyBest4 root $ nmap M.! root)
-    (map bestFor children)
-  where
-    children = Graph.incoming root graph
-    bestFor child =
-      let arc = (child, root)
-          pot arcv hedv depv = (lmap M.! arc) M.!
-            Out {arcVal=arcv, hedVal=hedv, depVal=depv}
-          Best4{..} = tagSubTreeC' child graph lmap nmap
-          -- NOTE: some of the configurations below are not allowed in
-          -- constrained decoding and hence are commented out.
-          true' = List.foldl1' better
-            [ addArc arc True  (pot True  True True)  true
-            , addArc arc False (pot False True True)  true
-            -- , addArc arc True  (pot True  True False) falseZeroTrue
-            , addArc arc False (pot False True False) falseZeroTrue
-            , addArc arc True  (pot True  True False) falseOneTrue
-            -- , addArc arc False (pot False True False) falseOneTrue
-            , addArc arc True  (pot True  True False) falseMoreTrue
-            , addArc arc False (pot False True False) falseMoreTrue
-            ]
-          falseZeroTrue' = List.foldl1' better
-            [ addArc arc False (pot False False True)  true
-            , addArc arc False (pot False False False) falseZeroTrue
-            -- , addArc arc False (pot False False False) falseOneTrue
-            , addArc arc False (pot False False False) falseMoreTrue
-            ]
-          falseOneTrue' = List.foldl1' better
-            [ addArc arc True (pot True False True)  true
-            -- , addArc arc True (pot True False False) falseZeroTrue
-            , addArc arc True (pot True False False) falseOneTrue
-            , addArc arc True (pot True False False) falseMoreTrue
-            ]
-       in Best4
-            { true = true'
-            , falseZeroTrue = falseZeroTrue'
-            , falseOneTrue  = falseOneTrue'
-            , falseMoreTrue = impossible
-            }
-
-
-----------------------------------------------
--- Best4 (constrained decoding)
-----------------------------------------------
-
-
--- | The best labeling
-data Best4 = Best4
-  { true          :: Best
-    -- ^ The label of the root is `True`.  The root's outgoing arc can be
-    -- `True` or `False.
-  , falseZeroTrue :: Best
-    -- ^ The label of the root is `False` and all its incoming arcs are `False`
-    -- too.  The outgoing arc must be `False`.
-  , falseOneTrue  :: Best
-    -- ^ The label of the root is `False` and exactly one of its incoming arcs
-    -- is `True`.  The outgoing arc must be `True`.
-  , falseMoreTrue :: Best
-    -- ^ The label of the root is `False` and more than one of its incoming
-    -- arcs is `True`.  The outgoing arc can be `True` or `False.
-  }
-
-instance Semigroup Best4 where
-  b1 <> b2 = Best4
-    { true =
-        true b1 <> true b2
-    , falseZeroTrue =
-        falseZeroTrue b1 <> falseZeroTrue b2
-    , falseOneTrue = List.foldl1' better
-        [ falseZeroTrue b1 <> falseOneTrue  b2
-        , falseOneTrue  b1 <> falseZeroTrue b2
-        ]
-    , falseMoreTrue = List.foldl1' better
-        [ falseZeroTrue b1 <> falseMoreTrue b2
-        , falseMoreTrue b1 <> falseZeroTrue b2
-        , falseOneTrue  b1 <> falseOneTrue  b2
-        , falseOneTrue  b1 <> falseMoreTrue b2
-        , falseMoreTrue b1 <> falseOneTrue  b2
-        , falseMoreTrue b1 <> falseMoreTrue b2
-        ]
-    }
-
-
--- | Empty `Best4` for a given tree node.  Think of `mempty` with obligatory
--- vertex and potential argument.
-emptyBest4 :: G.Vertex -> Double -> Best4
-emptyBest4 node pot = Best4
-  { true = addNode node True pot mempty
-  , falseZeroTrue = addNode node False 0.0 mempty
-  , falseOneTrue = impossible
-  , falseMoreTrue = impossible
-  }
-
-
-----------------------------------------------
 -- DataSet
 ----------------------------------------------
 
@@ -683,118 +386,6 @@ replace xs el =
       return (v, x)
 
 
-----------------------------------------------
--- Error
-----------------------------------------------
-
-
-softMaxCrossEntropy
-  :: forall s. (Reifies s W)
-  => Vec8 Prob
-    -- ^ Target ,,true'' distribution
-  -> BVar s (Vec8 Pot)
-    -- ^ Output ,,artificial'' distribution (represted by potentials)
-  -> BVar s Double
-softMaxCrossEntropy p0 q0 =
-  softMaxCrossEntropy' (Arc.unVec p0) (BP.coerceVar q0)
---   checkNaNBP "softMaxCrossEntropy" $ negate (p `dot` LBP.vmap' log' q)
---   where
---     -- p = BP.coerceVar p0 :: BVar s (R 8)
---     p = BP.coerceVar (BP.auto p0) :: BVar s (R 8)
---     q = BP.coerceVar q0
---     -- avoid NaN when p = 0 and q = 0
---     log' x
---       | x > 0 = log x
---       | otherwise = -1.0e8
-
-
--- | Softmax + cross-entropy with manual gradient calculation.  Code adapted
--- from the backprop tutorial to use the exp-normalize trick (see
--- https://timvieira.github.io/blog/post/2014/02/11/exp-normalize-trick).
-softMaxCrossEntropy'
-  :: (KnownNat n, Reifies s W)
-  => R n
-    -- ^ Target *probabilities*
-  -> BVar s (R n)
-    -- ^ Output *potentials*
-  -> BVar s Double
-softMaxCrossEntropy' x = BP.liftOp1 . BP.op1 $ \y ->
-  let ymax     = LD.maxElement (LA.extract y)
-      expy     = LA.dvmap (exp . (\o -> o - ymax)) y
-      toty     = LD.sumElements (LA.extract expy)
-      softMaxY = LA.konst (1 / toty) * expy
-      smce     = negate (LA.dvmap log' softMaxY `LA.dot` x)
---    in trace ("y: " ++ show (toList y)) $
---       trace ("ymax: " ++ show ymax) $
---       trace ("expy: " ++ show (toList expy)) $
---       trace ("toty: " ++ show toty) $
---       trace ("softMaxY: " ++ show (toList softMaxY)) $
---       trace ("smce: " ++ show smce) $
-   in ( smce
-      , \d -> LA.konst d * (softMaxY - x)
-      )
-  where
-    toList = LD.toList . LA.extract
-    -- to avoid NaN when p_i = 0 and q_i = 0
-    log' x
-      | x > 0 = log x
-      -- TODO: is it a proper choice of epsilon?
-      | otherwise = -1.0e10
-
-
--- | Cross entropy between the target and the output values
-errorOne
-  :: (Ord a, Reifies s W)
-  => M.Map a (Vec8 Prob)
-    -- ^ Target values
-  -> M.Map a (BVar s (Vec8 Pot))
-    -- ^ Output values
-  -> BVar s Double
-errorOne target output = sum $ do
-  (key, tval) <- M.toList target
-  let oval = output M.! key
-  return $ softMaxCrossEntropy tval oval
-
-
--- | Error on a dataset.
-errorMany
-  :: (Ord a, Reifies s W)
-  => [M.Map a (Vec8 Prob)] 
-    -- ^ Targets
-  -> [M.Map a (BVar s (Vec8 Pot))] 
-    -- ^ Outputs
-  -> BVar s Double
-errorMany targets outputs =
-  go targets outputs
-  where
-    go ts os =
-      case (ts, os) of
-        (t:tr, o:or) -> errorOne t o + go tr or
-        ([], []) -> 0
-        _ -> error "errorMany: lists of different size"
-
-
--- | Network error on a given dataset.
-netError'
-  :: ( Reifies s W, KnownNat dim
-     , B.BiComp dim comp
-     , U.UniComp dim comp'
-     )
-  => Core.Version
-  -> [Elem (BVar s (R dim))]
-  -> BVar s comp
-  -> BVar s comp'
-  -> BVar s Double
-netError' version dataSet net netU =
-  let
-    inputs = map graph dataSet
-    -- outputs = map (runBoth ptyp net netU) inputs
-    outputs = map (runBoth version net netU) inputs
-    targets = map mkTarget dataSet
-  in
-    errorMany targets outputs
-
-
 -- | Create the target map from the given dataset element.
 mkTarget :: Elem a -> M.Map Arc (Vec8 Prob)
 mkTarget el = M.fromList $ do
@@ -808,7 +399,13 @@ mkTarget el = M.fromList $ do
   return ((v, w), Arc.encode target)
 
 
--- | Net error with `Transparent`
+----------------------------------------------
+-- Error
+----------------------------------------------
+
+
+-- | Net error with `Transparent` over the given dataset `Elem`.  Depending on
+-- the configuration, use negated `logLL` or `crossEntropyErr`.
 netErrorT
   :: (Reifies s W)
   => Config
@@ -818,16 +415,30 @@ netErrorT
 netErrorT cfg x net =
   case probTyp cfg of
     Marginals ->
-      netError' (version cfg) [x'] (net ^^. biaMod) (net ^^. uniMod)
+      crossEntropyErr (version cfg) [x'] (net ^^. biaMod) (net ^^. uniMod)
     Global ->
       negate $ logLL (version cfg) [x'] (net ^^. biaMod) (net ^^. uniMod)
   where
     x' = runInp x net
 
 
-----------------------------------------------
--- Log-likelihood
-----------------------------------------------
+-- | Cross-entropy-based network error for a given dataset.
+crossEntropyErr
+  :: ( Reifies s W, KnownNat dim
+     , B.BiComp dim comp
+     , U.UniComp dim comp'
+     )
+  => Core.Version
+  -> [Elem (BVar s (R dim))]
+  -> BVar s comp
+  -> BVar s comp'
+  -> BVar s Double
+crossEntropyErr version dataSet net netU =
+  let
+    outputs = map (runBoth version net netU) (map graph dataSet)
+    targets = map mkTarget dataSet
+  in
+    Err.errorMany targets outputs
 
 
 -- | Log-likelihood of the given dataset
