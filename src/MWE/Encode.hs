@@ -9,7 +9,6 @@
 
 module MWE.Encode
   ( mkElem
-  , encode
   ) where
 
 
