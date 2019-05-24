@@ -1,3 +1,3 @@
-# Changelog for bpfun
+# Changelog for vine
 
 ## Unreleased changes
