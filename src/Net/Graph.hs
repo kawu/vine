@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -27,435 +28,313 @@
 {-# LANGUAGE DeriveAnyClass #-}
 
 
--- | Processing graphs with artificial neural networks.
+-- | Processing graphs (see `Graph`) with artificial neural networks.  This
+-- module allows to model labels assigned to both arcs and nodes.
+--
+-- The module also implements some plumbing between the different network
+-- layers: input extraction and transformation, node scoring, and arc scoring.
 
 
 module Net.Graph
   ( 
+  -- * Config
+    Config(..)
+  , ProbTyp(..)
+
   -- * Network
-    run
-  , eval
-  , runQ
-  , evalQ
-
-  -- * Opaque
-  , Opaque(..)
-  , Typ(..)
-  , newO
-
-  -- * Serialization
-  , save
-  , load
+  -- ** New
+  , new
+  -- ** "Transparent"
+  , Transparent
+  , evalLoc
+  , netError
 
   -- * Data set
-  , DataSet
   , Elem(..)
 
-  -- * Error
-  , netError
-  , netErrorQ
+  -- * Decoding
+  , Dec.treeTagGlobal
+  , Dec.treeTagConstrained
+
+  -- * Trees
+  , treeConnectAll
   ) where
 
 
 import           GHC.Generics (Generic)
-import           GHC.TypeNats (KnownNat, natVal)
--- import           GHC.Natural (naturalToInt)
-import qualified GHC.TypeNats as Nats
-import           GHC.TypeLits (Symbol, KnownSymbol)
-
-import           System.Random (randomRIO)
-
-import           Control.Monad (forM_, forM)
+import           GHC.TypeNats (KnownNat)
 
 import           Lens.Micro.TH (makeLenses)
--- import           Lens.Micro ((^.))
+import           Lens.Micro ((^.))
 
-import           Data.Proxy (Proxy(..))
--- import           Data.Ord (comparing)
--- import qualified Data.List as L
-import           Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Text as T
-import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Graph as G
-import qualified Data.Array as A
 import           Data.Binary (Binary)
-import qualified Data.Binary as Bin
-import qualified Data.ByteString.Lazy as BL
-import           Codec.Compression.Zlib (compress, decompress)
 
--- import qualified Text.Read as R
--- import qualified Text.ParserCombinators.ReadP as R
-
--- import qualified Data.Map.Lens as ML
-import           Control.Lens.At (ixAt)
-import           Control.Lens (Lens)
 import           Control.DeepSeq (NFData)
 
 import           Dhall (Interpret)
-import qualified Data.Aeson as JSON
 
-import qualified Prelude.Backprop as PB
 import qualified Numeric.Backprop as BP
-import           Numeric.Backprop (Backprop, (^^.), (^^?))
-import qualified Numeric.LinearAlgebra.Static.Backprop as LBP
-import           Numeric.LinearAlgebra.Static.Backprop
-  (R, L, BVar, Reifies, W, (#), (#>), dot)
-import qualified Numeric.LinearAlgebra.Static as LA
+import           Numeric.Backprop (Backprop, (^^.)) -- , (^^?))
+import           Numeric.LinearAlgebra.Static.Backprop (R, BVar, Reifies, W)
 
-import           Net.New
-import           Net.Pair
-import           Net.Util
--- import qualified Net.List as NL
-import qualified Net.FeedForward as FFN
-import           Net.FeedForward (FFN(..))
--- import qualified GradientDescent as GD
--- import qualified GradientDescent.Momentum as Mom
--- import qualified GradientDescent.Nestorov as Mom
--- import qualified GradientDescent.AdaDelta as Ada
+import           Net.New (New, new)
 import           Numeric.SGD.ParamSet (ParamSet)
 
+import qualified Format.Cupt as Cupt
+
 import           Graph
+import           Graph.SeqTree
+import qualified Net.Graph.Core as Core
+import           Net.Graph.Arc
+  (Pot, Prob, Vec8, Out(..))
+import qualified Net.Graph.Arc as Arc
 import qualified Net.Graph.BiComp as B
-import qualified Net.Graph.QuadComp as Q
+import qualified Net.Graph.UniComp as U
+import qualified Net.Graph.Marginals as Margs
+import qualified Net.Graph.Global as Global
+import qualified Net.Graph.Decode as Dec
+import qualified Net.Graph.Error as Err
+import qualified Net.Input as I
 
--- import qualified Embedding.Dict as D
-
-import           Debug.Trace (trace)
-
-
-----------------------------------------------
--- Opaque
-----------------------------------------------
-
-
--- | Each constructor of `Typ` corresponds to a specific network architecture.
-data Typ
-  = Arc0T
-  | Arc1T
-  | Arc2T
-  | Arc3T
-  | Arc4T
-  | Arc5T
-  | Arc6T
-  | Arc7T
-  | Quad0T
-  | Quad1T
-  | Quad2T
-  deriving (Generic, Binary, Read)
-
-
--- NOTE: the code below is commented out because it requires manually
--- specifying the correspondence between the different `Typ` constructors and
--- their string representation.  Maybe we could use (and export) an additional
--- newtype to automate this?
---
--- instance Read Typ where
---   readPrec =
---     Arc0T <$ str "arc0"
---     Arc1T <$ str "arc1"
---     Arc2T <$ str "arc2"
---     where
---       str = R.lift . R.string
---   readListPrec = R.readListPrecDefault
-
-
--- | Opaque neural network with the actual architecture abstracted away.
--- The type (`Typ`) is kept for the sake of (de-)serialization.
---
--- `Opaque` is motivated by the fact that each network architecture is
--- represeted by a different type.  We know, however, that each architecture is
--- an instance of `Q.QuadComp`, `ParamSet`, etc., and this is precisely
--- what `Opaque` preserves.
-data Opaque :: Nats.Nat -> * -> * -> * where
-  Opaque 
-    :: (Binary p, NFData p, ParamSet p, Q.QuadComp d a b p)
-    => Typ -> p -> Opaque d a b
-
-
-instance ( KnownNat d
-         , Binary a, Binary b, NFData a, NFData b
-         , Ord a, Ord b, Show a, Show b
-         )
-  => Binary (Opaque d a b) where
-  put (Opaque typ p) = Bin.put typ >> Bin.put p
-  get = do
-    typ <- Bin.get
-    exec typ Bin.get
-
-
--- | Execute the action within the context of the given model type.  Just a
--- helper function, really, which allows to avoid boilerplate code.
-exec
-  :: forall d a b m.
-    ( KnownNat d
-    , Binary a, NFData a, Show a, Ord a
-    , Binary b, NFData b, Show b, Ord b
-    , Functor m
-    )
-  => Typ
-  -> (forall p. (Binary p, New a b p) => m p)
-  -> m (Opaque d a b)
-exec typ action =
-  case typ of
-    Arc0T -> Opaque typ <$> (action :: m (Arc0 d a b))
-    Arc1T -> Opaque typ <$> (action :: m (Arc1 d a b))
-    Arc2T -> Opaque typ <$> (action :: m (Arc2 d a b))
-    Arc3T -> Opaque typ <$> (action :: m (Arc3 d a b))
-    Arc4T -> Opaque typ <$> (action :: m (Arc4 d a b))
-    Arc5T -> Opaque typ <$> (action :: m (Arc5 d a b))
-    Arc6T -> Opaque typ <$> (action :: m (Arc6 d a b))
-    Arc7T -> Opaque typ <$> (action :: m (Arc7 d a b))
-    Quad0T -> Opaque typ <$> (action :: m (Quad0 d a b))
-    Quad1T -> Opaque typ <$> (action :: m (Quad1 d a b))
-    Quad2T -> Opaque typ <$> (action :: m (Quad2 d a b))
-
-
--- | Create a new network of the given type.
-newO
-  :: forall d a b.
-    ( KnownNat d
-    , Binary a, NFData a, Show a, Ord a
-    , Binary b, NFData b, Show b, Ord b
-    )
-  => Typ     -- ^ Network type, which determines its architecture
-  -> S.Set a -- ^ The set of node labels
-  -> S.Set b -- ^ The set of arc labels
-  -> IO (Opaque d a b)
-newO typ xs ys =
-  exec typ (new xs ys)
+-- import           Debug.Trace (trace)
 
 
 ----------------------------------------------
--- Different network architectures
+-- Config
 ----------------------------------------------
 
 
--- | Arc-factored model (0)
-type Arc0 d a b
-   = Q.BiAff d 100
-  :& Q.Bias
+-- | Typ of probabilities to employ
+data ProbTyp
+  = Marginals
+    -- ^ Marginals
+  | Global
+    -- ^ Global
+  deriving (Generic)
+
+instance Interpret ProbTyp
 
 
--- | Arc-factored model (1)
-type Arc1 d a b
-   = Q.BiAff d 100
-  :& Q.BiQuad (BiParam a b)
+-- | Configuration concerning the selected probability variant
+data Config = Config
+  { probTyp :: ProbTyp
+    -- ^ Type of probability (global, marginals)
+  , version :: Core.Version
+    -- ^ Variant (free, constrained)
+  } deriving (Generic)
 
-
--- | Arc-factored model (2)
---
--- Outcome (LVC.full, French, dev): results much better than both (0) and (1).
--- Optimal arc probability threshold: 0.25 (tested 0.1, 0.25, 0.5)
---
--- Ablation study (LVC.full, French, dev): better than (5), not by far but
--- still significantly, which suggests that `BiParam` information is useful.
--- On par with (6), which suggests that the unordered component may not be so
--- important after all.
---
--- WARNING: this model performs much worse on test than both (6) and (5)!
--- Funnily enough, (5) is on par with (6) on test.  So it's not necessarily the
--- lack of the unordered component which makes `Arc2` poor on test, maybe it's
--- just bad luck.  At the end of the day, it's not clear which of the models is
--- actually the best.  At least it seems clear that both (5) and (6) are better
--- than (0) and (1).
---
-type Arc2 d a b
-   = Q.BiAffExt d 50 a b 100
-  :& Q.BiQuad (BiParam a b)
-
-
--- | Arc-factored model (3)
-type Arc3 d a b
-  = Q.BiQuad (PotArc d 100 a b)
-
-
--- | Arc-factored model (4); similar to (3), but with (h = d).
--- The best for LVC.full in French found so far!
-type Arc4 d a b
-  = Q.BiQuad (PotArc d d a b)
-
-
--- | Arc-factored model (5): (2) - `BiParam`
-type Arc5 d a b
-   = Q.BiAffExt d 50 a b 100
-
-
--- | Arc-factored model (6): (2) + `Q.UnordBiAff`
-type Arc6 d a b
-   = Q.BiAffExt d 50 a b 100
-  :& Q.UnordBiAff d 100
-  :& Q.BiQuad (BiParam a b)
-
-
--- | `Arc5` with increased size of the hidden layers.
-type Arc7 d a b
-   = Q.BiAffExt d 50 a b 200
-
-
--- | Basic bi-affine compoments (easy to compute, based on POS and DEP labels
--- exclusively)
-type BiParam a b
-   = B.Bias
-  :& B.HeadPosAff a
-  :& B.DepPosAff a
-  :& B.PapyPosAff a
-  :& B.EnkelPosAff a
-  :& B.ArcBias b
-  :& B.PapyArcAff b
-  :& B.EnkelArcAff b
-
-
--- | The best arc-factored model you found so far (with h = dim).
-type PotArc dim h a b
-   = B.Biaff dim h
-  :& B.UnordBiaff dim h
-  :& B.HeadAff dim h
-  :& B.DepAff dim h
-  :& BiParam a b
-
-
--- | Quad-factored model (0) with hidden layers of size 100
-type Quad0 d a b =
-  QuadH d 100 a b
-
-
--- | Quad-factored model (1); (0) + unordered bi-affine component.  That's the
--- last model you tried on cl-srv2.  Turned out better than `Quad0`, the
--- `Q.UnordBiAff` seems to make a difference.
---
--- Now you could try to do some ablation/enriching study:
---
---   * What if you remove `Q.TriAff` and `Q.SibAff`?
---   * What if you also remove `Q.UnAff`?
---
--- You can also try `Arc3`, a simplified (with dim = 100) version of the best
--- model obtained so far (`Arc4`).  Just to see how much you potentialy (well,
--- it can depend on training anyway...) lose by using smaller dimension.
---
--- The next thing to do would be to check if you can gain somethin by using
--- POS/DEP embeddings.  For instance by enriching `Arc3` or `Arc4` with
--- `Q.BiAffExt` (see `Arc2`).  In fact, it makes sense to test `Arc1`, `Arc2`,
--- and `Arc3` first and see what they give.
---
-type Quad1 d a b
-   = QuadH d 100 a b
-  :& Q.UnordBiAff d 100
-
-
--- | Quad-factored model with underspecified size of the hidden layers
-type QuadH d h a b
-   = Q.TriAff d h
-  :& Q.SibAff d h
-  :& Q.BiAff d h
-  :& Q.UnAff d h
-  :& Q.Bias
-
-
--- | `Arc5` extended with `Q.TriAff`, to see if such extension can even have
--- some beneficial impact on the results.
-type Quad2 d a b
-   = Arc5 d a b
-  :& Q.TriAff d 100
+instance Interpret Config
 
 
 ----------------------------------------------
--- Evaluation
+-- Transparent
 ----------------------------------------------
 
 
--- | Run the given (bi-affine) network over the given graph.  The function
--- works within the context of back-propagation, hence the complicated types.
-run
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
-     , B.BiComp dim a b comp
+-- | The network composed from different layers responsible for input
+-- extraction, node scoring, and arc scoring.
+--
+-- NOTE: Should be rather named sth. like `Fixed`...
+data Transparent = Transparent
+  { _inpMod :: I.PosDepInp 25 25
+  , _traMod :: I.NoTrans
+  , _uniMod :: U.UniAff 350 200
+  , _biaMod :: B.BiAffMix 350 200
+  } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+-- NOTE: alternative complex networks
+--
+-- data Transparent = Transparent
+--   { _inpMod :: I.PosDepInp 25 25
+--   -- { _inpMod :: I.RawInp
+--   -- , _traMod :: I.NoTrans
+--   -- , _traMod :: I.ScaleLeakyRelu 350 100
+--   , _traMod :: I.Scale 350 150
+--   -- , _uniMod :: U.NoUni
+--   , _uniMod :: U.UniAff 150 100 :& U.PairAffLeft 150 100 :& U.PairAffRight 150 100
+--   -- , _uniMod :: U.UniAff 150 100
+--   -- , _biaMod :: B.BiAff 150 100
+--   , _biaMod :: B.BiAffMix 150 200
+--   -- , _biaMod :: B.BiAff 150 100
+--   -- , _biaMod :: B.NoBi
+--   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+--
+-- -- | Should be rather named sth. like `Fixed`...
+-- data Transparent = Transparent
+--   { _inpMod :: I.PosDepInp 25 25
+--   , _traMod :: I.Scale 350 150
+--   , _uniMod :: U.UniAff 150 150
+--   , _biaMod :: B.BiAffMix 150 200
+--   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
+
+makeLenses ''Transparent
+
+instance (a ~ T.Text, b ~ T.Text) => New a b Transparent where
+  new xs ys = Transparent
+    <$> new xs ys <*> new xs ys <*> new xs ys <*> new xs ys
+
+
+----------------------------------------------
+-- Network running
+----------------------------------------------
+
+
+-- | Run the input transformation layers.
+runInp
+  :: (Reifies s W)
+  => Elem (R 300) 
+  -> BVar s Transparent
+  -> Elem (BVar s (R 350))
+runInp x net =
+  let toksEmbs = tokens x
+      embs' = I.runTransform (net ^^. traMod)
+            . I.runInput (net ^^. inpMod)
+            $ toksEmbs
+   in replace embs' x
+
+
+-- | Run the given uni-affine network over the given graph.
+runUni
+  :: ( KnownNat dim
+     , Reifies s W
+     , U.UniComp dim comp
      )
   => BVar s comp
     -- ^ Graph network / params
-  -> Graph (Node dim a) b
-    -- ^ Input graph labeled with initial hidden states
-  -> M.Map Arc (BVar s Double)
+  -> Graph (BVar s (R dim)) ()
+    -- ^ Input graph labeled with hidden states
+  -> M.Map G.Vertex (BVar s Double)
     -- ^ Output map with output potential values
-run net graph = M.fromList $ do
+runUni net graph = M.fromList $ do
+  v <- graphNodes graph
+  let x = U.runUniComp graph v net
+  return (v, x)
+
+
+-- | Run the given (bi-affine) network over the given graph.
+runBia
+  :: ( KnownNat dim --, Ord a, Show a, Ord b, Show b
+     , Reifies s W
+     , B.BiComp dim comp
+     )
+  => BVar s comp
+    -- ^ Graph network / params
+  -> Graph (BVar s (R dim)) ()
+    -- ^ Input graph labeled with initial hidden states
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Output map with output potential values
+runBia net graph = M.fromList $ do
   arc <- graphArcs graph
   let x = B.runBiComp graph arc net
-  return (arc, logistic x)
+  return (arc, x)
+
+
+-- | `runUni` + `runBia` + marginal scores (depending on the selected
+-- `Core.Version`).
+runBoth
+  :: ( KnownNat dim -- , Ord a, Show a, Ord b, Show b
+     , Reifies s W
+     , B.BiComp dim comp
+     , U.UniComp dim comp'
+     )
+  => Core.Version
+  -> BVar s comp
+  -> BVar s comp'
+  -> Graph (BVar s (R dim)) ()
+    -- ^ Input graph labeled with initial hidden states
+  -> M.Map Arc (BVar s (Vec8 Pot))
+    -- ^ Output map with output potential values
+runBoth version net netU graph =
+  case version of
+    Core.Free ->
+      Margs.marginalsMemo graph (runBia net graph) (runUni netU graph)
+    Core.Constrained ->
+      Margs.marginalsMemoC graph (runBia net graph) (runUni netU graph)
+    Core.Local ->
+      Margs.dummyMarginals graph (runBia net graph) (runUni netU graph)
+
+
+----------------------------------------------
+-- Network evaluation
+----------------------------------------------
+
+
+-- | Evaluate the input transformation layers.
+evalInp
+  :: Elem (R 300) 
+  -> Transparent
+  -> Elem (R 350)
+evalInp x net =
+  let toksEmbs = tokens x
+      embs' = I.evalTransform (net ^. traMod)
+            . I.evalInput (net ^. inpMod)
+            $ toksEmbs
+   in replace embs' x
 
 
 -- | Evaluate the network over the given graph.  User-friendly (and without
--- back-propagation) version of `run`.
-eval
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
-     , B.BiComp dim a b comp
+-- back-propagation) version of `runUni`.
+evalUni
+  :: ( KnownNat dim
+     , U.UniComp dim comp
      )
   => comp
     -- ^ Graph network / params
-  -- -> Graph (R d) b
-  -> Graph (Node dim a) b
+  -> Graph (R dim) ()
     -- ^ Input graph labeled with initial hidden states (word embeddings)
-  -> M.Map Arc Double
-eval net graph =
+  -> M.Map G.Vertex Double
+evalUni net graph =
   BP.evalBP0
     ( BP.collectVar
-    $ run
+    $ runUni
         (BP.constVar net)
-        graph
+        (nmap BP.auto graph)
     )
 
 
--- | Run the given (quad/multi-affine) network over the given graph within the
--- context of back-propagation.
-runQ
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
-     , Q.QuadComp dim a b comp
+-- | Evaluate the network over the given graph.  User-friendly (and without
+-- back-propagation) version of `runBia`.
+evalBia
+  :: ( KnownNat dim
+     , B.BiComp dim comp
      )
-  => BVar s comp
-    -- ^ Quad component
-  -> Graph (Node dim a) b
-    -- ^ Input graph labeled with initial hidden states
-  -> M.Map Arc (BVar s Double)
-    -- ^ Output map with output potential values
-runQ net graph = normalize . M.unionsWith (+) $ do
-  arc <- graphArcs graph
-  return $ Q.runQuadComp graph arc net
+  => comp
+    -- ^ Graph network / params
+  -> Graph (R dim) ()
+    -- ^ Input graph labeled with initial hidden states (word embeddings)
+  -> M.Map Arc (Vec8 Pot)
+evalBia net graph =
+  BP.evalBP0
+    ( BP.collectVar
+    $ runBia
+        (BP.constVar net)
+        (nmap BP.auto graph)
+    )
+
+
+-- | Evaluate the entire network over the given element.  The result is a pair
+-- of two maps with the node and arc local scores.
+--
+-- NOTE: The resulting scores are local, not "marginal"!  This is intentional,
+-- as it allows to perform global decoding.  An alternative would be to somehow
+-- decode based on marginal scores, but we didn't explore this possibility.
+--
+evalLoc
+  :: Transparent
+  -> Elem (R 300) 
+  -> ( M.Map G.Vertex Double
+     , M.Map Arc (Vec8 Pot)
+     )
+evalLoc net el0 =
+  ( evalUni (net ^. uniMod) gr
+  , evalBia (net ^. biaMod) gr
+  )
   where
-    normalize = fmap logistic
-
-
--- | User-friendly (and without back-propagation) version of `runQ`.
-evalQ
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b
-     , Q.QuadComp dim a b comp
-     )
-  => comp
-    -- ^ Graph network / params
-  -> Graph (Node dim a) b
-    -- ^ Input graph labeled with initial hidden states (word embeddings)
-  -> M.Map Arc Double
-evalQ net graph =
-  BP.evalBP0
-    ( BP.collectVar
-    $ runQ
-        (BP.constVar net)
-        graph
-    )
-
-
-----------------------------------------------
--- Serialization
-----------------------------------------------
-
-
--- | Save the parameters in the given file.
-save :: (Binary a) => FilePath -> a -> IO ()
-save path =
-  BL.writeFile path . compress . Bin.encode
-
-
--- | Load the parameters from the given file.
-load :: (Binary a) => FilePath -> IO a
-load path =
-  Bin.decode . decompress <$> BL.readFile path
+    el = evalInp el0 net
+    gr = graph el
 
 
 ----------------------------------------------
@@ -464,16 +343,55 @@ load path =
 
 
 -- | Dataset element
-data Elem dim a b = Elem
-  { graph :: Graph (Node dim a) b
+data Elem a = Elem
+  { graph :: Graph a ()
     -- ^ Input graph
-  , labMap :: M.Map Arc Double
-    -- ^ Target probabilities
+  , arcMap :: M.Map Arc Double
+    -- ^ Target arc probabilities
+  , nodMap :: M.Map G.Vertex Double
+    -- ^ Target node probabilities
+  , tokMap :: M.Map G.Vertex Cupt.Token
+    -- ^ Map of .cupt tokens
   } deriving (Show, Generic, Binary)
 
+instance Functor Elem where
+  fmap f el = el {graph = nmap f (graph el)}
 
--- | DataSet: a list of dataset elements
-type DataSet d a b = [Elem d a b]
+
+-- | Get the list of tokens with the corresponding labels present in the given
+-- training element.
+tokens :: Elem a -> [(Cupt.Token, a)]
+tokens el = do
+  (v, tok) <- M.toList (tokMap el)
+  let y = just $ nodeLabAt (graph el) v
+  return (tok, y)
+  where
+    just Nothing = error "Neg.Graph.tokens: got Nothing"
+    just (Just x) = x
+
+
+-- | Replace the labels in the given training element.
+replace :: [b] -> Elem a -> Elem b
+replace xs el =
+  el {graph = nmap' update (graph el)}
+  where
+    update v _ = newMap M.! v
+    newMap = M.fromList $ do
+      ((v, _tok), x) <- zip (M.toList $ tokMap el) xs
+      return (v, x)
+
+
+-- | Create the target map from the given dataset element.
+mkTarget :: Elem a -> M.Map Arc (Vec8 Prob)
+mkTarget el = M.fromList $ do
+  ((v, w), arcP) <- M.toList (arcMap el)
+  let vP = nodMap el M.! v
+      wP = nodMap el M.! w
+      target = Out
+        { arcVal = arcP
+        , hedVal = wP
+        , depVal = vP }
+  return ((v, w), Arc.encode target)
 
 
 ----------------------------------------------
@@ -481,119 +399,63 @@ type DataSet d a b = [Elem d a b]
 ----------------------------------------------
 
 
--- -- | Squared error between the target and the actual output.
--- errorOne
---   :: (Ord a, KnownNat n, Reifies s W)
---   => M.Map a (BVar s (R n))
---     -- ^ Target values
---   -> M.Map a (BVar s (R n))
---     -- ^ Output values
---   -> BVar s Double
--- errorOne target output = PB.sum . BP.collectVar $ do
---   (key, tval) <- M.toList target
---   let oval = output M.! key
---       err = tval - oval
---   return $ err `dot` err
-
-
--- | Cross entropy between the true and the artificial distributions
-crossEntropy
-  :: (Reifies s W)
-  => BVar s Double
-    -- ^ Target ,,true'' MWE probability
-  -> BVar s Double
-    -- ^ Output ,,artificial'' MWE probability
-  -> BVar s Double
-crossEntropy p q = negate
-  ( p0 * log q0
-  + p1 * log q1
-  )
-  where
-    p1 = p
-    p0 = 1 - p1
-    q1 = q
-    q0 = 1 - q1
-
-
--- -- | Cross entropy between the true and the artificial distributions
--- crossEntropy
---   :: (KnownNat n, Reifies s W)
---   => BVar s (R n)
---     -- ^ Target ,,true'' distribution
---   -> BVar s (R n)
---     -- ^ Output ,,artificial'' distribution
---   -> BVar s Double
--- crossEntropy p q =
---   negate (p `dot` LBP.vmap' log q)
-
-
--- | Cross entropy between the target and the output values
-errorOne
-  :: (Ord a, Reifies s W)
---   => M.Map a (BVar s (R n))
-  => M.Map a (BVar s Double)
-    -- ^ Target values
---   -> M.Map a (BVar s (R n))
-  -> M.Map a (BVar s Double)
-    -- ^ Output values
-  -> BVar s Double
-errorOne target output = PB.sum . BP.collectVar $ do
-  (key, tval) <- M.toList target
-  let oval = output M.! key
-  return $ crossEntropy tval oval
-
-
--- | Error on a dataset.
-errorMany
-  :: (Ord a, Reifies s W)
---   => [M.Map a (BVar s (R n))] -- ^ Targets
---   -> [M.Map a (BVar s (R n))] -- ^ Outputs
-  => [M.Map a (BVar s Double)] -- ^ Targets
-  -> [M.Map a (BVar s Double)] -- ^ Outputs
-  -> BVar s Double
-errorMany targets outputs =
-  go targets outputs
-  where
-    go ts os =
-      case (ts, os) of
-        (t:tr, o:or) -> errorOne t o + go tr or
-        ([], []) -> 0
-        _ -> error "errorMany: lists of different size"
-
-
--- | Network error on a given dataset.
+-- | Net error with `Transparent` over the given dataset `Elem`.  Depending on
+-- the configuration, uses negated `logLL` or `crossEntropyErr`.
 netError
+  :: (Reifies s W)
+  => Config
+  -> Elem (R 300)
+  -> BVar s Transparent
+  -> BVar s Double
+netError cfg x net =
+  case probTyp cfg of
+    Marginals ->
+      crossEntropyErr (version cfg) [x'] (net ^^. biaMod) (net ^^. uniMod)
+    Global ->
+      negate $ logLL (version cfg) [x'] (net ^^. biaMod) (net ^^. uniMod)
+  where
+    x' = runInp x net
+
+
+-- | Cross-entropy-based network error over a given dataset.
+crossEntropyErr
   :: ( Reifies s W, KnownNat dim
-     , Ord a, Show a, Ord b, Show b
-     , B.BiComp dim a b comp
+     , B.BiComp dim comp
+     , U.UniComp dim comp'
      )
-  => DataSet dim a b
-  -- -> BVar s (Param dim a b)
+  => Core.Version
+  -> [Elem (BVar s (R dim))]
   -> BVar s comp
+  -> BVar s comp'
   -> BVar s Double
-netError dataSet net =
+crossEntropyErr version dataSet net netU =
   let
-    inputs = map graph dataSet
-    -- outputs = map (run net . nmap BP.auto) inputs
-    outputs = map (run net) inputs
-    targets = map (fmap BP.auto . labMap) dataSet
-  in  
-    errorMany targets outputs -- + (size net * 0.01)
+    outputs = map (runBoth version net netU) (map graph dataSet)
+    targets = map mkTarget dataSet
+  in
+    Err.errorMany targets outputs
 
 
--- | Network error on a given dataset.
-netErrorQ
-  :: ( KnownNat dim, Ord a, Show a, Ord b, Show b, Reifies s W
-     , Q.QuadComp dim a b comp
+-- | Log-likelihood of the given dataset
+logLL
+  :: ( Reifies s W, KnownNat dim
+     , B.BiComp dim comp
+     , U.UniComp dim comp'
      )
-  => DataSet dim a b
+  => Core.Version
+  -> [Elem (BVar s (R dim))]
   -> BVar s comp
+  -> BVar s comp'
   -> BVar s Double
-netErrorQ dataSet net =
-  let
-    inputs = map graph dataSet
-    -- outputs = map (run net . nmap BP.auto) inputs
-    outputs = map (runQ net) inputs
-    targets = map (fmap BP.auto . labMap) dataSet
-  in  
-    errorMany targets outputs -- + (size net * 0.01)
+logLL version dataSet bi uni = sum $ do
+  el <- dataSet
+  let labelling = Labeling
+        { nodLab = fmap (>0.5) (nodMap el)
+        , arcLab = fmap (>0.5) (arcMap el)
+        }
+  return $ Global.probLog
+    version
+    (graph el)
+    labelling
+    (runBia bi $ graph el)
+    (runUni uni $ graph el)

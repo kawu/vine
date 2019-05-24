@@ -20,7 +20,9 @@ module Format.Cupt
   , TokID (..)
   , MweID
   , MweTyp
+  , Mwe (..)
   , chosen
+  , retrieveMWEs
 
     -- * Parsing
   , readCupt
@@ -33,23 +35,21 @@ module Format.Cupt
   , renderPar
 
     -- * Conversion
-  , rootParID
   , decorate
   , preserveOnly
   , abstract
 
---     -- * Serialization
---   , saveSent
---   , loadSent
-
     -- * Merging
   , mergeCupt
+
+    -- * Cleanup
+  , removeMweAnnotations
   ) where
 
 
--- import           Control.Arrow (second)
-
 import           GHC.Generics (Generic)
+
+import           Control.DeepSeq (NFData)
 
 import           Data.Binary (Binary)
 -- import qualified Data.Binary as Bin
@@ -106,7 +106,7 @@ data GenToken mwe = Token
     -- ^ MWE-related annotation. It might be a list, i.e., the token can be a
     -- part of several MWEs. Note that only the first occurrence of an MWE is
     -- supplied with the `MweTyp`e.
-  } deriving (Show, Eq, Ord, Generic, Binary)
+  } deriving (Show, Eq, Ord, Generic, Binary, NFData)
 
 
 -- | Word index, integer starting at 1 for each new sentence; may be a range for
@@ -121,7 +121,7 @@ data TokID
   --   -- ^ An empty node (marked as `CopyOf` in UD data)
   -- NOTE: `TokIDCopy` was commented out because it is very rare and makes data
   -- processing much harder at the same time.
-  deriving (Show, Eq, Ord, Generic, Binary)
+  deriving (Show, Eq, Ord, Generic, Binary, NFData)
 
 
 -- | Sentence-local MWE ID.
@@ -130,6 +130,32 @@ type MweID = Int
 
 -- | MWE type.
 type MweTyp = T.Text
+
+
+-- | MWE annotation
+data Mwe = Mwe
+  { mweTyp' :: MweTyp
+  , mweToks :: S.Set Token
+  } deriving (Show, Eq, Ord)
+
+instance Semigroup Mwe where
+  Mwe t1 s1 <> Mwe t2 s2
+    | t1 == t2 = Mwe t1 (S.union s1 s2)
+    | otherwise = error
+        "Cupt.Mwe.<>: multi-type MWE?"
+
+
+-- | Retrieve the set of multiword expressions in the given sentence.
+retrieveMWEs :: Sent -> M.Map MweID Mwe
+retrieveMWEs =
+  List.foldl' update M.empty
+  where
+    update m0 tok =
+      List.foldl' updateOne m0 (mwe tok)
+      where
+        tokSng = S.singleton tok
+        updateOne m (mweId, mweTyp) =
+          M.insertWith (<>) mweId (Mwe mweTyp tokSng) m
 
 
 -----------------------------------
@@ -318,26 +344,26 @@ renderMWE xs
 -----------------------------------
 
 
--- | An artificial root token.
-root :: Token
-root = Token
-  { tokID = TokID 0
-  , orth = ""
-  , lemma = ""
-  , upos = ""
-  , xpos = ""
-  , feats = M.empty
-  , dephead = rootParID
-  , deprel = ""
-  , deps = ""
-  , misc = ""
-  , mwe = []
-  }
+-- -- | An artificial root token.
+-- root :: Token
+-- root = Token
+--   { tokID = TokID 0
+--   , orth = ""
+--   , lemma = ""
+--   , upos = ""
+--   , xpos = ""
+--   , feats = M.empty
+--   , dephead = rootParID
+--   , deprel = ""
+--   , deps = ""
+--   , misc = ""
+--   , mwe = []
+--   }
 
 
--- | ID to refer to the parent of the artificial root node.
-rootParID :: TokID
-rootParID = TokID (-1)
+-- -- | ID to refer to the parent of the artificial root node.
+-- rootParID :: TokID
+-- rootParID = TokID (-1)
 
 
 -- | Decorate all MWE instances with their types.
@@ -413,25 +439,23 @@ mergeSent =
     go [] (_:_) = error "Cupt.mergeSent: impossible2 happened"
 
 
-----------------------------------------------
--- Serialization
-----------------------------------------------
+--------------------------------------------------
+-- Cleaning up
+--------------------------------------------------
 
 
--- -- | Encode the sentence in a file.
--- saveSent :: (Binary mwe) => FilePath -> GenSent mwe -> IO ()
--- saveSent path
---   = B.writeFile path
---   -- . compress
---   . Bin.encode
--- 
--- 
--- -- | Load the parameters from the given file.
--- loadSent :: (Binary mwe) => FilePath -> IO (GenSent mwe)
--- loadSent path
---   = Bin.decode
---   -- . decompress
---   <$> B.readFile path
+-- | Clear MWE annotations related to the given MWE category.
+removeMweAnnotations :: MweTyp -> MaySent -> MaySent
+removeMweAnnotations mweTyp 
+  = abstract
+  . map clear
+  . decorate
+  where
+    clear tok = tok
+      { mwe = filter
+          (\(_id, typ) -> typ /= mweTyp)
+          (mwe tok)
+      }
 
 
 -----------------------------------
@@ -447,5 +471,5 @@ groupBy eq (x : y : rest)
   | eq x y = addHD x $ groupBy eq (y : rest)
   | otherwise = [x] : groupBy eq (y : rest)
   where
-    addHD x (xs : xss) = (x : xs) : xss
-    addHD x [] = [[x]]
+    addHD v (xs : xss) = (v : xs) : xss
+    addHD v [] = [[v]]

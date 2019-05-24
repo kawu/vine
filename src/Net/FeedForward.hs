@@ -17,10 +17,9 @@
 
 module Net.FeedForward
   ( FFN (..)
-  -- , new
   , run
-  -- , substract
   ) where
+
 
 import           GHC.Generics (Generic)
 import           GHC.TypeNats (KnownNat)
@@ -34,8 +33,7 @@ import           Data.Binary (Binary)
 import qualified Numeric.Backprop as BP
 import           Numeric.Backprop ((^^.))
 import           Numeric.LinearAlgebra.Static.Backprop
-  (R, L, BVar, Reifies, W)
-import           Numeric.LinearAlgebra.Static.Backprop ((#>))
+  (R, L, BVar, Reifies, W, (#>))
 
 import           Numeric.SGD.ParamSet (ParamSet)
 
@@ -89,5 +87,6 @@ run net x = z
   where
     -- run first layer
     y = leakyRelu $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
+    -- y = LBP.vmap' leakyRelu $ (net ^^. nWeights1) #> x + (net ^^. nBias1)
     -- run second layer
     z = (net ^^. nWeights2) #> y + (net ^^. nBias2)

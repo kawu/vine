@@ -7,8 +7,9 @@
 
 
 -- | The module provies the class `New` for creating new, random networks.
--- Normally we would like to just use MonadRandom, but we need to make the set
--- of labels available at the time of network creation.
+-- Normally we would like to just use MonadRandom, but we want to have the set
+-- of labels available at the time of network creation.  Probably not the most
+-- elegant way to implement this, but it works.
 
 
 module Net.New
