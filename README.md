@@ -19,6 +19,18 @@ The above command builds the `vine` command-line tool and (on Linux) puts it in
 the `~/.local/bin/` directory by default.
 
 
+Usage
+=====
+
+Coming soon.
+
+
+PARSEME-ST
+==========
+
+Coming soon.
+
+
 [stack]: http://docs.haskellstack.org "Haskell Tool Stack"
 [backprop]: https://backprop.jle.im/index.html "Backpropagation library"
 [parseme-st]: http://multiword.sourceforge.net/PHITE.php?sitesig=CONF&page=CONF_04_LAW-MWE-CxG_2018___lb__COLING__rb__&subpage=CONF_40_Shared_Task "PARSEME Shared Task"
