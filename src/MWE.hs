@@ -54,7 +54,9 @@ import qualified Numeric.Backprop as BP
 
 import           Dhall (Interpret(..), genericAuto)
 
+import qualified Data.List as List
 import qualified Data.Set as S
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as L
@@ -195,17 +197,40 @@ data TagConfig = TagConfig
   } deriving (Show, Eq, Ord)
 
 
--- | Tag a single sentence with the given network.
+-- -- | Tag a single sentence with the given network.
+-- --
+-- -- Note that the output sentence has a different type than the input sentence.
+-- -- This is because we don't need word embeddings on output anymore.
+-- --
+-- tag
+--   :: TagConfig
+--   -> N.Transparent   -- ^ Network parameters
+--   -> Sent 300        -- ^ Cupt sentence
+--   -> Cupt.Sent
+-- tag tagCfg net sent =
+--   sent'
+--   where
+--     elem = Enc.mkElem (const False) sent
+--     tagF
+--       | mweConstrained tagCfg =
+--           N.treeTagConstrained (N.graph elem)
+--       | otherwise =
+--           N.treeTagGlobal (N.graph elem)
+--     labeling = uncurry (flip tagF) (N.evalLoc net elem)
+--     sent' = Dec.annotate (mweTyp tagCfg) (cuptSent sent) labeling
+
+
+-- | Tag a single sentence with the given network ensemble.
 --
 -- Note that the output sentence has a different type than the input sentence.
 -- This is because we don't need word embeddings on output anymore.
 --
 tag
   :: TagConfig
-  -> N.Transparent   -- ^ Network parameters
+  -> [N.Transparent] -- ^ Network ensemble
   -> Sent 300        -- ^ Cupt sentence
   -> Cupt.Sent
-tag tagCfg net sent =
+tag tagCfg nets sent =
   sent'
   where
     elem = Enc.mkElem (const False) sent
@@ -214,14 +239,21 @@ tag tagCfg net sent =
           N.treeTagConstrained (N.graph elem)
       | otherwise =
           N.treeTagGlobal (N.graph elem)
-    labeling = uncurry (flip tagF) (N.evalLoc net elem)
+    scores = [N.evalLoc net elem | net <- nets]
+    labeling = uncurry
+      (flip tagF)
+      (List.foldl' add (M.empty, M.empty) scores)
+    add (x1, y1) (x2, y2) =
+      ( M.unionWith (+) x1 x2
+      , M.unionWith (+) y1 y2
+      )
     sent' = Dec.annotate (mweTyp tagCfg) (cuptSent sent) labeling
 
 
 -- | Tag a single sentence with the given network.
 tagToText
   :: TagConfig
-  -> N.Transparent   -- ^ Network parameters
+  -> [N.Transparent] -- ^ Network ensemble
   -> Sent 300        -- ^ Cupt sentence
   -> T.Text
 tagToText tagCfg net sent =
@@ -233,7 +265,7 @@ tagToText tagCfg net sent =
 -- | Tag and annotate sentences in parallel.
 tagManyPar
   :: TagConfig
-  -> N.Transparent
+  -> [N.Transparent]
   -> [Sent 300]
   -> [T.Text]
 tagManyPar cfg net = parMap rseq (tagToText cfg net)
@@ -243,7 +275,7 @@ tagManyPar cfg net = parMap rseq (tagToText cfg net)
 -- format on output.
 tagManyIO
   :: TagConfig
-  -> N.Transparent
+  -> [N.Transparent]
   -> [Sent 300]
   -> IO ()
 tagManyIO cfg net cupt0 = do

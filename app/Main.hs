@@ -83,8 +83,8 @@ data TagConfig = TagConfig
     -- ^ MWE probability threshold
   , tagConstrained :: Bool
     -- ^ Use constrained global inference
-  , tagModel   :: FilePath
-    -- ^ Input model (otherwise, randomly initialized)
+  , tagModels   :: [FilePath]
+    -- ^ Input models
   }
 
 
@@ -172,7 +172,7 @@ tagOptions = fmap Tag $ TagConfig
        <> short 'c'
        <> help "Use constrained global inference"
         )
-  <*> strOption
+  <*> (some . strOption)
         ( metavar "FILE"
        <> long "model"
        <> short 'm'
@@ -276,14 +276,14 @@ run cmd =
       putStrLn "Done!"
 
     Tag TagConfig{..} -> do
-      -- Load the model
-      net <- U.load tagModel
+      -- Load the models
+      nets <- mapM U.load tagModels
       -- Read .cupt (ignore paragraph boundaries)
       cupt <- map Cupt.decorate . concat
         <$> Cupt.readCupt tagCupt
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings tagEmbs
-      MWE.tagManyIO cfg net
+      MWE.tagManyIO cfg nets
         (mkInput cupt embs)
       where
         cfg = MWE.TagConfig
