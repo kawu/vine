@@ -51,7 +51,7 @@ data Command
       -- ^ Train a model
     | Tag TagConfig
       -- ^ Tagging
-    | Clear Cupt.MweTyp
+    | Clear (S.Set Cupt.MweTyp)
       -- ^ Tagging
 
 
@@ -181,11 +181,11 @@ tagOptions = fmap Tag $ TagConfig
 
 
 clearOptions :: Parser Command
-clearOptions = Clear
-  <$> strOption
+clearOptions = (Clear . S.fromList)
+  <$> (many . strOption)
         ( long "mwe"
-       <> short 't'
-       <> help "MWE category (type) to clear"
+       <> short 'c'
+       <> help "MWE category to clear (optional)"
         )
 
 
@@ -291,9 +291,9 @@ run cmd =
           , MWE.mweConstrained = tagConstrained
           }
 
-    Clear mweTyp -> do
+    Clear mweTypSet -> do
       cupt <- concat . Cupt.parseCupt <$> TL.getContents
-      let cupt' = map (Cupt.removeMweAnnotations mweTyp) cupt
+      let cupt' = map (Cupt.removeMweAnnotations mweTypSet) cupt
       forM_ cupt' $ \sent -> do
         T.putStr "# "
         T.putStrLn . T.unwords $ map Cupt.orth sent

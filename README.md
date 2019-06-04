@@ -95,12 +95,31 @@ threads and 256M allocation area size, run:
 Tagging
 -------
 
-TODO
+Use the following command to tag a given `test.blind.cupt` file (`blind` is
+used here to mark a file with no VMWE annotations) with light verbs using a
+`LVC.full.bin` model file:
 
+    vine tag --constrained -t LVC.full -m LVC.full.bin -i test.blind.cupt -e test.embs
+
+where `test.embs` is a file with the embedding vectors corresponding to the
+words in `test.blind.cupt`, and the `--constrained` (`-c`) option specifies
+that constrained prediction is to be used.
+
+### Clearing
+
+The `tag` command does not erase the VMWE annotations present in the input
+file.  If you want to tag a file already containing VMWE annotations, you can
+`clear` it first:
+
+    vine clear < test.cupt > test.blind.cupt
 
 ### Ensemble averaging
 
-TODO
+The quality of the identification models can vary between the different
+training runs.  To counteract this issue, you can train several models and use
+them together for tagging, for instance:
+
+    vine tag -c -t LVC.full -m LVC.full.1.bin -m LVC.full.2.bin -m LVC.full.3.bin -i test.blind.cupt -e test.embs
 
 
 PARSEME-ST

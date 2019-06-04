@@ -12,9 +12,9 @@ let
   Version = <Free : {} | Constrained : {} | Local : {}>
 in
 { sgd =
-  { iterNum = 60
-  , batchSize = 30
-  , batchOverlap = 15
+  { iterNum = 30
+  , batchSize = 3
+  , batchOverlap = 0
   , batchRandom = True
   , reportEvery = 1.0 
   }

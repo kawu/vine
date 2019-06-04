@@ -444,18 +444,22 @@ mergeSent =
 --------------------------------------------------
 
 
--- | Clear MWE annotations related to the given MWE category.
-removeMweAnnotations :: MweTyp -> MaySent -> MaySent
-removeMweAnnotations mweTyp 
+-- | Clear the MWE annotations of the given type(s).  If the input set of
+-- `MweTyp`es is empty, the function will remove all the MWE annotations.
+removeMweAnnotations :: S.Set MweTyp -> MaySent -> MaySent
+removeMweAnnotations mweTypSet 
   = abstract
   . map clear
   . decorate
   where
     clear tok = tok
       { mwe = filter
-          (\(_id, typ) -> typ /= mweTyp)
+          (\(_id, typ) -> preserve typ)
           (mwe tok)
       }
+    preserve typ
+      | S.null mweTypSet = False
+      | otherwise = typ `S.member` mweTypSet
 
 
 -----------------------------------
