@@ -47,8 +47,8 @@ function to optimize.  An example configuration can be found in the
 
 *WARNING*: the example `config.dhall` file will work well with the example
 training files.  If you want to train a model on a larger dataset, consider
-using the `example/config.real.dhall` configuration file with a significantly
-smaller stepsize parameter `alpha0`.
+using the `example/config.real.dhall` configuration file with a smaller
+stepsize and a larger mini-batch size.
 
 
 Training
