@@ -42,7 +42,7 @@ TODO: You can find an example training set in the `example` directory.
 
 You need to specify the training configuration to train a model.  The
 configuration includes the SGD parameters and the type of the objective
-function to optimize.  The default configuration can be found in the
+function to optimize.  TODO: The default configuration can be found in the
 `config/config.dhall` file.  It is written in the [Dhall][dhall] programming
 language.
 
@@ -102,3 +102,4 @@ Coming soon.
 [parseme-st]: http://multiword.sourceforge.net/PHITE.php?sitesig=CONF&page=CONF_04_LAW-MWE-CxG_2018___lb__COLING__rb__&subpage=CONF_40_Shared_Task "PARSEME Shared Task"
 [cupt]: http://multiword.sourceforge.net/PHITE.php?sitesig=CONF&page=CONF_04_LAW-MWE-CxG_2018___lb__COLING__rb__&subpage=CONF_45_Format_specification "PARSEME .cupt format"
 [ghc-rts]: http://www.haskell.org/ghc/docs/latest/html/users_guide/runtime-control.html "GHC runtime system options"
+[dhall]: https://github.com/dhall-lang/dhall-lang "Dhall"
