@@ -115,3 +115,4 @@ Coming soon.
 [cupt]: http://multiword.sourceforge.net/PHITE.php?sitesig=CONF&page=CONF_04_LAW-MWE-CxG_2018___lb__COLING__rb__&subpage=CONF_45_Format_specification "PARSEME .cupt format"
 [ghc-rts]: http://www.haskell.org/ghc/docs/latest/html/users_guide/runtime_control.html "GHC runtime system options"
 [dhall]: https://github.com/dhall-lang/dhall-lang "Dhall"
+[PARSEME-annotation-guidelines]: http://parsemefr.lif.univ-mrs.fr/parseme-st-guidelines/1.1/ "PARSEME annotation guidelines"
