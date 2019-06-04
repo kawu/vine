@@ -6,7 +6,7 @@ on top of the [backprop][backprop] library.
 
 
 Installation
-============
+------------
 
 First you will need to download and install the [Haskell Tool Stack][stack].
 Then run the following commands:
@@ -20,13 +20,13 @@ the `~/.local/bin/` directory by default.
 
 
 Data format
-==============
+-----------
 
 Vine works with the PARSEME [.cupt][cupt] (extended CoNLL-U) format.
 
 
 Prerequisites
-=============
+-------------
 
 Before you can use the tool to identify verbal MWEs (VMWEs) in a given
 language, you will need to train the appropriate identification models.
@@ -38,8 +38,7 @@ To this end, you will need:
 
 TODO: You can find an example training set in the `example` directory.
 
-Configuration
--------------
+### Configuration
 
 You need to specify the training configuration to train a model.  The
 configuration includes the SGD parameters and the type of the objective
@@ -49,7 +48,7 @@ language.
 
 
 Training
-========
+--------
 
 Vine requires training one model per MWE category (`VID` -- verbal idiom,
 `LVC.full` -- light-verb construction, etc.).  See `TODO` for a description of
@@ -71,8 +70,7 @@ intermediate model files in the form `VID.bin.N` in the target directory `VID`,
 where `N` is the number of the iteration (epoch).
 
 
-Runtime options
----------------
+### Runtime options
 
 You can use the [GHC runtime system options][ghc-rts] to speed up training.
 For instance, you can make use of multiple cores using `-N`, or increase the
@@ -83,19 +81,18 @@ allocation area size using `-A`. For example, to train the model using four
 
 
 Tagging
-=======
+-------
 
 TODO
 
 
-Ensemble averaging
-------------------
+### Ensemble averaging
 
 TODO
 
 
 PARSEME-ST
-==========
+----------
 
 Coming soon.
 
