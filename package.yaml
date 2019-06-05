@@ -63,6 +63,7 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    # - -eventlog
     dependencies:
     - vine
     - optparse-applicative >= 0.12 && < 0.15
