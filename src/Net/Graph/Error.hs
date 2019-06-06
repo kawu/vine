@@ -18,6 +18,7 @@ import           Prelude hiding (or)
 
 import           GHC.TypeNats (KnownNat)
 
+import qualified Data.List as List
 import qualified Data.Map.Strict as M
 
 import qualified Numeric.LinearAlgebra as LD
@@ -106,6 +107,11 @@ errorOne target output = sum $ do
   (key, tval) <- M.toList target
   let oval = output M.! key
   return $ softMaxCrossEntropy tval oval
+
+
+-- -- | A `BVar` lifted sum of elements.
+-- liftedSum :: (Reifies s W) => [BVar s Double] -> BVar s Double
+-- liftedSum = List.foldl' (+) 0
 
 
 -- | Extension of `errorOne` to a pair of lists
