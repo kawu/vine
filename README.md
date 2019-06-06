@@ -43,7 +43,7 @@ You can find an example training set in the `example` directory.
 You need to specify the training configuration to train a model.  The
 configuration includes the SGD parameters and the type of the objective
 function to optimize for.  The default configuration can be found in
-[config/config.dhall](example/config.dhall). The configuration is written in
+[config/config.dhall](config/config.dhall). The configuration is written in
 [Dhall][dhall].
 
 
