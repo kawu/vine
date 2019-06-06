@@ -46,10 +46,10 @@ function to optimize for.  An example configuration can be found in
 [example/config.dhall](example/config.dhall). The configuration is written in
 [Dhall][dhall].
 
-*WARNING*: the example `config.dhall` file will work well with the example
-training files.  If you want to train a model on a larger dataset, consider
-using the `config.real.dhall` configuration file with a smaller stepsize and a
-larger mini-batch size.
+*WARNING*: the [example/config.dhall](example/config.dhall) file will work well
+with the example training files.  If you want to train a model on a larger
+dataset, consider using the [config/config.dhall](config/config.dhall)
+configuration file with a smaller stepsize and a larger mini-batch size.
 
 
 Training
