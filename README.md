@@ -42,13 +42,14 @@ You can find an example training set in the `example` directory.
 
 You need to specify the training configuration to train a model.  The
 configuration includes the SGD parameters and the type of the objective
-function to optimize.  An example configuration can be found in the
-`example/config.dhall` file.  The configuration is written in [Dhall][dhall].
+function to optimize for.  An example configuration can be found in
+[example/config.dhall](example/config.dhall). The configuration is written in
+[Dhall][dhall].
 
 *WARNING*: the example `config.dhall` file will work well with the example
 training files.  If you want to train a model on a larger dataset, consider
-using the `example/config.real.dhall` configuration file with a smaller
-stepsize and a larger mini-batch size.
+using the `config.real.dhall` configuration file with a smaller stepsize and a
+larger mini-batch size.
 
 
 Training
