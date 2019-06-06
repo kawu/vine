@@ -42,13 +42,9 @@ You can find an example training set in the `example` directory.
 
 You need to specify the training configuration to train a model.  The
 configuration includes the SGD parameters and the type of the objective
-function to optimize.  An example configuration can be found in the
-`example/config.dhall` file.  The configuration is written in [Dhall][dhall].
-
-*WARNING*: the example `config.dhall` file will work well with the example
-training files.  If you want to train a model on a larger dataset, consider
-using the `example/config.real.dhall` configuration file with a smaller
-stepsize and a larger mini-batch size.
+function to optimize for.  The default configuration can be found in
+[config/config.dhall](config/config.dhall). The configuration is written in
+[Dhall][dhall].
 
 
 Training
@@ -59,7 +55,7 @@ Vine requires training one model per VMWE category (`VID` -- verbal idiom,
 guidelines][PARSEME-annotation-guidelines] for a description of the different
 categories employed in the PARSEME annotation framework.
 
-Given:
+Given the:
 
   * Training file `train.cupt` in the [.cupt][cupt] format
   * File with the corresponding training word emeddings `train.embs`
@@ -77,9 +73,10 @@ manually before training.
 
 While training, the tool reports the value of the objective function, which
 should reach a relatively low level at the end of the process.  In case of the
-example training set, the final objective value should be very close to 0,
-which represents a perfect fit of the model to the training data (modulo VMWE
-encoding errors).
+example training set, the final objective value should be very close to 0
+(provided that you use the training configuration present in the `example`
+directory), which represents a perfect fit of the model to the training data
+(modulo VMWE encoding errors).
 
 
 ### Runtime options

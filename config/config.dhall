@@ -19,12 +19,12 @@ let
 in
 { sgd =
     -- Number of iterations (epochs) over the entire dataset
-  { iterNum = 30
+  { iterNum = 60
     -- Size of the mini-batch
-  , batchSize = 3
+  , batchSize = 30
     -- Overlap between two subsequent mini-batches.  The value should be 
     -- in the range [0, iterNum).
-  , batchOverlap = 0
+  , batchOverlap = 15
     -- Randomize the stream of the SGD mini-batches, i.e., shuffle
     -- the training dataset before each epoch.
   , batchRandom = True
@@ -34,17 +34,17 @@ in
   }
   -- Use Adam for optimization (alternatives: AdaDelta, Momentum; see above)
 , method = Method.Adam
-      -- Initial stepsize (should be around 0.001 in large-scale experiments)
-    { alpha0 = 0.05
+      -- Initial stepsize
+    { alpha0 = 0.001
       -- Time-based stepsize decay parameter.  Represents the number of 
       -- iterations after which the initial stepsize is halved.
     , tau = 15.0
       -- The exponential decay rates
-    , beta1 = 0.9 
+    , beta1 = 0.9
     , beta2 = 0.999
       -- Epsilon
     , eps = 1.0e-8
-    }   
+    }
   -- Objective configuration
 , probCfg =
       -- Use marginal probabilities
