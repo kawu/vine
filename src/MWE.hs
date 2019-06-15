@@ -158,8 +158,8 @@ posTagsIn =
 train
   :: Config
     -- ^ General training confiration
-  -> Cupt.MweTyp
-    -- ^ Selected MWE type (category)
+  -> (Cupt.MweTyp -> Bool)
+    -- ^ MWE type (category) selection
   -> [Sent 300]
     -- ^ Training dataset
   -> N.Transparent
@@ -167,8 +167,9 @@ train
   -> (N.Transparent -> IO ())
     -- ^ Action to execute at the end of each epoch
   -> IO N.Transparent
-train cfg mweTyp cupt tra0 action = do
-  let cupt' = map (Enc.mkElem (== mweTyp)) cupt
+train cfg mweTypSel cupt tra0 action = do
+  -- let cupt' = map (Enc.mkElem (== mweTyp)) cupt
+  let cupt' = map (Enc.mkElem mweTypSel) cupt
   SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     SGD.runIO (sgd cfg)

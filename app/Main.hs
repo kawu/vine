@@ -60,7 +60,7 @@ data TrainConfig = TrainConfig
   { trainCupt :: FilePath
   , trainEmbs :: FilePath
   -- , trainModelTyp :: MWE.Typ
-  , trainMweCat :: T.Text
+  , trainMweCats :: S.Set T.Text
     -- ^ MWE category (e.g., LVC) to focus on
   , trainSgdCfgPath :: FilePath
     -- ^ SGD configuration path
@@ -111,7 +111,7 @@ trainOptions = fmap Train $ TrainConfig
 --         ( long "typ"
 --        <> help "MWE model type (Arc1, Arc2, ...)"
 --         )
-  <*> strOption
+  <*> (fmap S.fromList . many . strOption)
         ( long "mwe"
        <> short 't'
        <> help "MWE category (type) to learn"
@@ -255,7 +255,11 @@ run cmd =
       -- Read the corresponding embeddings
       embs <- Emb.readEmbeddings trainEmbs
       epochRef <- IORef.newIORef (0 :: Int)
-      net <- MWE.train sgdCfg trainMweCat
+      let mweCatSel =
+            if S.null trainMweCats
+               then const True
+               else (`S.member` trainMweCats)
+      net <- MWE.train sgdCfg mweCatSel
         (mkInput cupt embs) net0 $ \net ->
           case trainOutModel of
             Nothing -> return ()
