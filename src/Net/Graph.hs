@@ -141,8 +141,8 @@ instance Interpret Config
 data Transparent = Transparent
   { _inpMod :: I.PosDepInp 25 25
   , _traMod :: I.NoTrans
-  , _uniMod :: U.UniAff 350 200
-  , _biaMod :: B.BiAffMix 350 200
+  , _uniMod :: U.UniAff 350 400
+  , _biaMod :: B.BiAffMix 350 400
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
 
 -- NOTE: alternative complex networks
