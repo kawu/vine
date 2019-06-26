@@ -140,7 +140,7 @@ instance Interpret Config
 -- NOTE: Should be rather named sth. like `Fixed`...
 data Transparent = Transparent
   { _inpMod :: I.PosDepInp 25 25
-  , _traMod :: I.NoTrans
+  , _traMod :: I.Scale 1074 350
   , _uniMod :: U.UniAff 350 200
   , _biaMod :: B.BiAffMix 350 200
   } deriving (Generic, Binary, NFData, ParamSet, Backprop)
