@@ -160,7 +160,7 @@ train
     -- ^ General training confiration
   -> (Cupt.MweTyp -> Bool)
     -- ^ MWE type (category) selection
-  -> [Sent 300]
+  -> [Sent 1024]
     -- ^ Training dataset
   -> N.Transparent
     -- ^ Initial network
@@ -206,7 +206,7 @@ data TagConfig = TagConfig
 -- tag
 --   :: TagConfig
 --   -> N.Transparent   -- ^ Network parameters
---   -> Sent 300        -- ^ Cupt sentence
+--   -> Sent 1024       -- ^ Cupt sentence
 --   -> Cupt.Sent
 -- tag tagCfg net sent =
 --   sent'
@@ -229,7 +229,7 @@ data TagConfig = TagConfig
 tag
   :: TagConfig
   -> [N.Transparent] -- ^ Network ensemble
-  -> Sent 300        -- ^ Cupt sentence
+  -> Sent 1024       -- ^ Cupt sentence
   -> Cupt.Sent
 tag tagCfg nets sent =
   sent'
@@ -255,7 +255,7 @@ tag tagCfg nets sent =
 tagToText
   :: TagConfig
   -> [N.Transparent] -- ^ Network ensemble
-  -> Sent 300        -- ^ Cupt sentence
+  -> Sent 1024       -- ^ Cupt sentence
   -> T.Text
 tagToText tagCfg net sent =
   L.toStrict $ Cupt.renderPar [Cupt.abstract sent']
@@ -267,7 +267,7 @@ tagToText tagCfg net sent =
 tagManyPar
   :: TagConfig
   -> [N.Transparent]
-  -> [Sent 300]
+  -> [Sent 1024]
   -> [T.Text]
 tagManyPar cfg net = parMap rseq (tagToText cfg net)
 
@@ -277,7 +277,7 @@ tagManyPar cfg net = parMap rseq (tagToText cfg net)
 tagManyIO
   :: TagConfig
   -> [N.Transparent]
-  -> [Sent 300]
+  -> [Sent 1024]
   -> IO ()
 tagManyIO cfg net cupt0 = do
   forM_ (zip cupt0 cupt) $ \(sent0, sent) -> do

@@ -185,7 +185,7 @@ instance (a ~ T.Text, b ~ T.Text) => New a b Transparent where
 -- | Run the input transformation layers.
 runInp
   :: (Reifies s W)
-  => Elem (R 300) 
+  => Elem (R 1024) 
   -> BVar s Transparent
   -> Elem (BVar s (R 350))
 runInp x net =
@@ -264,7 +264,7 @@ runBoth version net netU graph =
 
 -- | Evaluate the input transformation layers.
 evalInp
-  :: Elem (R 300) 
+  :: Elem (R 1024) 
   -> Transparent
   -> Elem (R 350)
 evalInp x net =
@@ -324,7 +324,7 @@ evalBia net graph =
 --
 evalLoc
   :: Transparent
-  -> Elem (R 300) 
+  -> Elem (R 1024) 
   -> ( M.Map G.Vertex Double
      , M.Map Arc (Vec8 Pot)
      )
@@ -404,7 +404,7 @@ mkTarget el = M.fromList $ do
 netError
   :: (Reifies s W)
   => Config
-  -> Elem (R 300)
+  -> Elem (R 1024)
   -> BVar s Transparent
   -> BVar s Double
 netError cfg x net =
