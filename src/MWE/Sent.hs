@@ -74,7 +74,7 @@ discardMerged :: Sent d -> Sent d
 discardMerged sent0 
   = uncurry Sent . unzip
   $ filter cond 
-  $ zip (cuptSent sent0) (wordEmbs sent0)
+  $ zipSafe (cuptSent sent0) (wordEmbs sent0)
   where
     cond (tok, _emb) =
       case Cupt.tokID tok of
