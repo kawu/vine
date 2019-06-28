@@ -11,6 +11,7 @@
 
 module MWE.Sent
   ( Sent (..)
+  , CleanUpCfg (..)
   , cleanUp
   , dummyRootPOS
   , dummyRootDepRel
@@ -23,6 +24,8 @@ module MWE.Sent
 
 import           GHC.TypeNats (KnownNat)
 import           GHC.Generics (Generic)
+
+-- import           Dhall (Interpret(..))
 
 import           Control.Monad (guard)
 import           Numeric.LinearAlgebra.Static.Backprop (R)
@@ -50,6 +53,16 @@ data Sent d = Sent
   , wordEmbs :: [R d]
     -- ^ The corresponding word embeddings
   } deriving (Show, Generic, Binary)
+ 
+
+-- | Clean-up configuration
+data CleanUpCfg = CleanUpCfg
+  { multiTokenEmbeddings :: Bool
+    -- ^ Are there dummy vectors assigned to the multitoken words in the
+    -- embedding file?
+  } deriving (Show, Eq, Ord) --, Generic)
+
+-- instance Interpret CleanUpCfg
 
 
 -- | Prepare the sentence for further processing:
@@ -61,15 +74,18 @@ data Sent d = Sent
 -- annotations assigned to tokens with ID ranges.  This step should be perhaps
 -- made more explicit.
 --
-cleanUp :: (KnownNat d) => Sent d -> Sent d
-cleanUp sent0 =
-  discardMerged sent0
-    { cuptSent = dummyRootTok : cuptSent sent0
-    , wordEmbs = dummyRootEmb : wordEmbs sent0
-    }
+cleanUp :: (KnownNat d) => CleanUpCfg -> Sent d -> Sent d
+cleanUp CleanUpCfg{..} sent0
+  | multiTokenEmbeddings = discardMerged sent
+  | otherwise = discardMergedCupt sent
+  where
+    sent = sent0
+      { cuptSent = dummyRootTok : cuptSent sent0
+      , wordEmbs = dummyRootEmb : wordEmbs sent0
+      }
 
 
--- | Remove tokens with ID ranges
+-- | Remove tokens with ID ranges (so called multitoken words).
 discardMerged :: Sent d -> Sent d
 discardMerged sent0 
   = uncurry Sent . unzip
@@ -77,6 +93,18 @@ discardMerged sent0
   $ zipSafe (cuptSent sent0) (wordEmbs sent0)
   where
     cond (tok, _emb) =
+      case Cupt.tokID tok of
+        Cupt.TokID _ -> True
+        _ -> False
+
+
+-- | Remove tokens with ID ranges, but only from `cuptSent`ences.
+discardMergedCupt :: Sent d -> Sent d
+discardMergedCupt Sent{..} = Sent
+  { cuptSent = filter cond cuptSent
+  , wordEmbs = wordEmbs
+  } where
+    cond tok =
       case Cupt.tokID tok of
         Cupt.TokID _ -> True
         _ -> False

@@ -47,10 +47,12 @@ mkElem
   :: (KnownNat d)
   => (Cupt.MweTyp -> Bool)
     -- ^ MWE type (category) selection method
+  -> Sent.CleanUpCfg
+    -- ^ Sentence clean-up configuration
   -> Sent d
     -- ^ Input sentence
   -> N.Elem (R d)
-mkElem mweSel sent0 = N.Elem
+mkElem mweSel clupCfg sent0 = N.Elem
   { graph = G.nmap Sent.emb graph
   , tokMap = fmap Sent.tok (G.nodeLabelMap graph)
   , nodMap = M.fromList $ do
@@ -62,7 +64,7 @@ mkElem mweSel sent0 = N.Elem
   }
   where
     -- Remove tokens with ID ranges + add additional dummy root token
-    sent = Sent.cleanUp sent0
+    sent = Sent.cleanUp clupCfg sent0
     -- The corresponding graph
     graph = Sent.toGraph sent
     -- And the resulting labeling

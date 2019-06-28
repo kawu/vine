@@ -34,6 +34,7 @@ import           System.FilePath (isAbsolute, (</>), (<.>))
 import qualified Net.Graph as Graph
 import qualified Net.Util as U
 import qualified MWE
+import qualified MWE.Sent as Sent
 import qualified Format.Embedding as Emb
 import qualified Format.Cupt as Cupt
 
@@ -70,6 +71,9 @@ data TrainConfig = TrainConfig
     -- ^ Input model (otherwise, random)
   , trainOutModel  :: Maybe FilePath
     -- ^ Where to store the output model
+  , trainMultitokEmbeddings :: Bool
+    -- ^ Are there dummy vectors assigned to the multitoken words in the
+    -- embedding file?
   }
 
 
@@ -85,6 +89,9 @@ data TagConfig = TagConfig
     -- ^ Use constrained global inference
   , tagModels   :: [FilePath]
     -- ^ Input models
+  , tagMultitokEmbeddings :: Bool
+    -- ^ Are there dummy vectors assigned to the multitoken words in the
+    -- embedding file?
   }
 
 
@@ -140,6 +147,10 @@ trainOptions = fmap Train $ TrainConfig
        <> short 'o'
        <> help "Output model"
         )
+  <*> flag True False
+        ( long "no-dummy-embs"
+       <> help "Use if no dummy embeddings are assigned to multitoken words"
+        )
 
 
 tagOptions :: Parser Command
@@ -177,6 +188,10 @@ tagOptions = fmap Tag $ TagConfig
        <> long "model"
        <> short 'm'
        <> help "Input model"
+        )
+  <*> flag True False
+        ( long "no-dummy-embs"
+       <> help "Use if no dummy embeddings are assigned to multitoken words"
         )
 
 
@@ -259,7 +274,10 @@ run cmd =
             if S.null trainMweCats
                then const True
                else (`S.member` trainMweCats)
-      net <- MWE.train sgdCfg mweCatSel
+          clupCfg = Sent.CleanUpCfg
+            { multiTokenEmbeddings = trainMultitokEmbeddings
+            }
+      net <- MWE.train sgdCfg mweCatSel clupCfg
         (mkInput cupt embs) net0 $ \net ->
           case trainOutModel of
             Nothing -> return ()
@@ -293,6 +311,9 @@ run cmd =
         cfg = MWE.TagConfig
           { MWE.mweTyp = tagMweCat
           , MWE.mweConstrained = tagConstrained
+          , MWE.cleanUpCfg = Sent.CleanUpCfg
+              { multiTokenEmbeddings = tagMultitokEmbeddings
+              }
           }
 
     Clear mweTypSet -> do
@@ -311,7 +332,7 @@ main =
     optsExt = info (helper <*> opts)
        ( fullDesc
       <> progDesc "MWE identification tool"
-      <> header "galago" )
+      <> header "vine" )
 
 
 --------------------------------------------------

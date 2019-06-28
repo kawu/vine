@@ -72,7 +72,7 @@ import qualified Numeric.SGD.Adam as Adam
 import qualified Format.Cupt as Cupt
 import qualified Net.Graph as N
 import qualified DhallUtils as DU
-import           MWE.Sent (Sent(..))
+import           MWE.Sent (Sent(..), CleanUpCfg)
 import qualified MWE.Sent as Sent
 import qualified MWE.Encode as Enc
 import qualified MWE.Decode as Dec
@@ -106,6 +106,7 @@ data Config = Config
   { sgd :: SGD.Config
   , method :: Method
   , probCfg :: N.Config
+  -- , cleanUpCfg :: CleanUpCfg
   } deriving (Generic)
 
 instance Interpret Config
@@ -160,6 +161,8 @@ train
     -- ^ General training confiration
   -> (Cupt.MweTyp -> Bool)
     -- ^ MWE type (category) selection
+  -> CleanUpCfg
+    -- ^ Sentence clean-up configuration
   -> [Sent 1024]
     -- ^ Training dataset
   -> N.Transparent
@@ -167,9 +170,9 @@ train
   -> (N.Transparent -> IO ())
     -- ^ Action to execute at the end of each epoch
   -> IO N.Transparent
-train cfg mweTypSel cupt tra0 action = do
+train cfg mweTypSel clupCfg cupt tra0 action = do
   -- let cupt' = map (Enc.mkElem (== mweTyp)) cupt
-  let cupt' = map (Enc.mkElem mweTypSel) cupt
+  let cupt' = map (Enc.mkElem mweTypSel clupCfg) cupt
   SGD.withDisk cupt' $ \dataSet -> do
     putStrLn $ "# Training dataset size: " ++ show (SGD.size dataSet)
     SGD.runIO (sgd cfg)
@@ -195,6 +198,8 @@ data TagConfig = TagConfig
     -- ^ MWE category to annotate
   , mweConstrained :: Bool
     -- ^ Constrained global decoding
+  , cleanUpCfg :: CleanUpCfg
+    -- ^ Sentence clean-up configuration
   } deriving (Show, Eq, Ord)
 
 
@@ -234,7 +239,7 @@ tag
 tag tagCfg nets sent =
   sent'
   where
-    elem = Enc.mkElem (const False) sent
+    elem = Enc.mkElem (const False) (cleanUpCfg tagCfg) sent
     tagF
       | mweConstrained tagCfg =
           N.treeTagConstrained (N.graph elem)
