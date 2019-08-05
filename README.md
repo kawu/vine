@@ -1,8 +1,8 @@
 Vine
 =====
 
-Vine is a neural graph-based [verbal MWE identification][parseme-st] tool built
-on top of the [backprop][backprop] library.
+Vine is a neural graph-based [verbal MWE identification][parseme-st-1.1] tool
+built on top of the [backprop][backprop] library.
 
 
 Installation
@@ -122,7 +122,29 @@ them together for tagging, for instance:
 PARSEME-ST
 ----------
 
-Coming soon.
+Vine was evaluated on the [PARSEME shared task corpus 1.1][parseme-corpus-1.1],
+as desribed in [1].  We provide the resulting [trained models][vine-models] as
+well as the [model predictions][vine-predictions] for the three datasets we
+experimented with (DE, FR, PL).  We also provide the [fastText
+embeddings][fasttext-for-de] for the German dataset, in case you'd like to try
+training a German model(s) yourself.
+
+### Comparison with SOTA
+
+Vine outperforms the best systems submitted to the [PARSEME shared tasks
+1.1][parseme-st-1.1] on the three datasets we experimented with.
+
+Vine has similar general performance to [ATILF][atilf], although the two
+systems make different tradeoffs.  In particular, Vine is better in handling
+discontinuous and not-seen-in-training VMWE instances, while ATILF is better
+with continuous and seen-in-training VMWE occurrences.
+
+Vine gives slightly worse results than those reported in [Bridging the Gap:
+Attending to Discontinuity in Identification of Multiword
+Expressions][gappy-mwes-paper] (note that the results reported in this paper
+assume training on both training and development sets).  However, Vine is
+conceptually much simpler (no self-attention, no contextualized embeddings, no
+BiLSTM).
 
 
 References
@@ -137,8 +159,13 @@ Workshop on Multiword Expressions and WordNet (MWE-WN 2019), Florence, Italy,
 
 [stack]: http://docs.haskellstack.org "Haskell Tool Stack"
 [backprop]: https://backprop.jle.im/index.html "Backpropagation library"
-[parseme-st]: http://multiword.sourceforge.net/PHITE.php?sitesig=CONF&page=CONF_04_LAW-MWE-CxG_2018___lb__COLING__rb__&subpage=CONF_40_Shared_Task "PARSEME Shared Task"
+[parseme-st-1.1]: http://multiword.sourceforge.net/PHITE.php?sitesig=CONF&page=CONF_04_LAW-MWE-CxG_2018___lb__COLING__rb__&subpage=CONF_40_Shared_Task "PARSEME Shared Task"
 [cupt]: http://multiword.sourceforge.net/PHITE.php?sitesig=CONF&page=CONF_04_LAW-MWE-CxG_2018___lb__COLING__rb__&subpage=CONF_45_Format_specification "PARSEME .cupt format"
 [ghc-rts]: http://www.haskell.org/ghc/docs/latest/html/users_guide/runtime_control.html "GHC runtime system options"
 [dhall]: https://github.com/dhall-lang/dhall-lang "Dhall"
 [PARSEME-annotation-guidelines]: http://parsemefr.lif.univ-mrs.fr/parseme-st-guidelines/1.1/ "PARSEME annotation guidelines"
+[parseme-corpus-1.1]: https://gitlab.com/parseme/sharedtask-data/tree/master/1.1 "PARSEME corpus 1.1"
+[gappy-mwes-paper]: https://arxiv.org/abs/1902.10667 "Bridging the Gap: Attending to Discontinuity in Identification of Multiword Expressions"
+[vine-models]: https://user.phil.hhu.de/~waszczuk/vine/models.zip "Vine trained models"
+[vine-predictions]: https://user.phil.hhu.de/~waszczuk/vine/pred.zip "Vine predictions"
+[fasttext-for-de]: https://user.phil.hhu.de/~waszczuk/vine/DE/de_token_embs.zip "fastText DE dataset embeddings"
