@@ -140,8 +140,8 @@ systems make different tradeoffs.  In particular, Vine is better in handling
 discontinuous and not-seen-in-training VMWE instances, while ATILF is better
 with continuous and seen-in-training VMWE occurrences.
 
-Vine gives slightly worse results than those reported in [Bridging the Gap:
-Attending to Discontinuity in Identification of Multiword
+The results achieved by Vine are a bit lower than those reported in [Bridging
+the Gap: Attending to Discontinuity in Identification of Multiword
 Expressions][gappy-mwes-paper] (note that the results reported in this paper
 assume training on both training and development sets).  However, Vine is
 conceptually much simpler (no self-attention, no contextualized embeddings, no
