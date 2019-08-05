@@ -142,10 +142,9 @@ with continuous and seen-in-training VMWE occurrences.
 
 The results achieved by Vine are a bit lower than those reported in [Bridging
 the Gap: Attending to Discontinuity in Identification of Multiword
-Expressions][gappy-mwes-paper] (note that the results reported in this paper
-assume training on both training and development sets).  However, Vine is
-conceptually much simpler (no self-attention, no contextualized embeddings, no
-BiLSTM).
+Expressions][gappy-mwes-paper] (see the [poster][vine-poster] for comparison).
+However, Vine is conceptually much simpler (no self-attention, no
+contextualized embeddings, no BiLSTM).
 
 
 References
@@ -171,3 +170,4 @@ Workshop on Multiword Expressions and WordNet (MWE-WN 2019), Florence, Italy,
 [vine-predictions]: https://user.phil.hhu.de/~waszczuk/vine/pred.zip "Vine predictions"
 [fasttext-for-de]: https://user.phil.hhu.de/~waszczuk/vine/DE/de_token_embs.zip "fastText DE dataset embeddings"
 [atilf]: https://github.com/hazemalsaied/IdenSys "ATILF system"
+[vine-poster]: https://user.phil.hhu.de/~waszczuk/vine/poster.pdf "Vine poster"
