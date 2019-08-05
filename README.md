@@ -132,7 +132,8 @@ training a German model(s) yourself.
 ### Comparison with SOTA
 
 Vine outperforms the best systems submitted to the [PARSEME shared tasks
-1.1][parseme-st-1.1] on the three datasets we experimented with.
+1.1][parseme-st-1.1] on the three datasets we experimented with (when trained
+on both training and development data, as the other systems do).
 
 Vine has similar general performance to [ATILF][atilf], although the two
 systems make different tradeoffs.  In particular, Vine is better in handling
@@ -169,3 +170,4 @@ Workshop on Multiword Expressions and WordNet (MWE-WN 2019), Florence, Italy,
 [vine-models]: https://user.phil.hhu.de/~waszczuk/vine/models.zip "Vine trained models"
 [vine-predictions]: https://user.phil.hhu.de/~waszczuk/vine/pred.zip "Vine predictions"
 [fasttext-for-de]: https://user.phil.hhu.de/~waszczuk/vine/DE/de_token_embs.zip "fastText DE dataset embeddings"
+[atilf]: https://github.com/hazemalsaied/IdenSys "ATILF system"
