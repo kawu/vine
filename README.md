@@ -170,4 +170,4 @@ Workshop on Multiword Expressions and WordNet (MWE-WN 2019), Florence, Italy,
 [vine-predictions]: https://user.phil.hhu.de/~waszczuk/vine/pred.zip "Vine predictions"
 [fasttext-for-de]: https://user.phil.hhu.de/~waszczuk/vine/DE/de_token_embs.zip "fastText DE dataset embeddings"
 [atilf]: https://github.com/hazemalsaied/IdenSys "ATILF system"
-[vine-poster]: https://user.phil.hhu.de/~waszczuk/vine/MWE_WN_2019_Poster "Vine poster"
+[vine-poster]: https://user.phil.hhu.de/~waszczuk/vine/MWE_WN_2019_Poster.pdf "Vine poster"
