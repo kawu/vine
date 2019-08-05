@@ -153,7 +153,7 @@ References
 [1] Jakub Waszczuk, Rafael Ehren, Regina Stodden, Laura Kallmeyer, *A Neural
 Graph-based Approach to Verbal MWE Identification*, Proceedings of the Joint
 Workshop on Multiword Expressions and WordNet (MWE-WN 2019), Florence, Italy,
-2019 (https://www.aclweb.org/anthology/W19-5113).
+2019 (https://www.aclweb.org/anthology/W19-5113, [poster][vine-poster]).
 
 
 
