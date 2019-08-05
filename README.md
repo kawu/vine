@@ -125,6 +125,16 @@ PARSEME-ST
 Coming soon.
 
 
+References
+----------
+
+[1] Jakub Waszczuk, Rafael Ehren, Regina Stodden, Laura Kallmeyer, *A Neural
+Graph-based Approach to Verbal MWE Identification*, Proceedings of the Joint
+Workshop on Multiword Expressions and WordNet (MWE-WN 2019), Florence, Italy,
+2019 (https://www.aclweb.org/anthology/W19-5113).
+
+
+
 [stack]: http://docs.haskellstack.org "Haskell Tool Stack"
 [backprop]: https://backprop.jle.im/index.html "Backpropagation library"
 [parseme-st]: http://multiword.sourceforge.net/PHITE.php?sitesig=CONF&page=CONF_04_LAW-MWE-CxG_2018___lb__COLING__rb__&subpage=CONF_40_Shared_Task "PARSEME Shared Task"
