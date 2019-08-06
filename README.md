@@ -143,8 +143,8 @@ with continuous and seen-in-training VMWE occurrences.
 The results achieved by Vine are a bit lower than those reported in [Bridging
 the Gap: Attending to Discontinuity in Identification of Multiword
 Expressions][gappy-mwes-paper] (see the [poster][vine-poster] for comparison).
-However, Vine is conceptually much simpler (no self-attention, no
-contextualized embeddings, no BiLSTM).
+However, Vine is conceptually simpler (no self-attention, no contextualized
+embeddings, no BiLSTM).
 
 
 References
